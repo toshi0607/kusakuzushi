@@ -21,18 +21,23 @@
 | 同 API は CORS 許可 | VERIFIED | access-control-allow-origin: * 実測 |
 | GitHub 草 DOM は td.ContributionCalendar-day + data-level/data-date | VERIFIED | 2026-07-24 curl 実測、375セル |
 | node v26 / pnpm 10.30 / gh(toshi0607@github.com, repo scope) 利用可 | VERIFIED | 2026-07-24 コマンド実測 |
-| jogruber API のレート制限は個人利用で問題ない | UNVERIFIED | アダプタ分離で緩和。Phase 2 で自前 Worker 化の判断 |
+| jogruber API のレート制限は個人利用で問題ない | UNVERIFIED(許容) | 2026-07-24 実測: レート制限ヘッダーなし・公表値なしで外形検証不能。ただし x-cache: HIT でCDNキャッシュ確認済み(同一ユーザーへの連打は origin に届かない)。緩和策: fetchGrid アダプタ分離済み+障害時は自前 Worker プロキシへ差し替え(DESIGN.md §2)。Phase 2 で自前化を再判断 |
 
 ## セッション1: リポジトリ + core エンジン
 
 - [x] 環境確認(node/pnpm/gh) — 実測済み
-- [ ] git init + 初回コミット(DESIGN.md, tasks/, .gitignore) + gh repo create(private) + push
-- [ ] モノレポ scaffold(→ haiku): pnpm-workspace, root package.json, tsconfig base, packages/core 骨格, apps/web(Vite vanilla-ts)骨格, CI(GitHub Actions: install+test)
-      検証: `pnpm install` exit 0
-- [ ] core エンジン実装(→ sonnet): model/grid変換/physics/game/renderer + Vitest
-      検証: `pnpm -F @kusakuzushi/core test` exit 0、全テスト pass
-- [ ] フェーズゲート: reviewer(opus) で core レビュー、Critical/High は修正
-- [ ] コミット + push、セッション2への引き継ぎメモを本ファイルに追記
+- [x] git init + 初回コミット + gh repo create(private) + push — https://github.com/toshi0607/kusakuzushi (96d2ccb)
+- [x] モノレポ scaffold(→ haiku) — `pnpm install` / `pnpm -r test` exit 0 (47d8670)
+- [x] core エンジン実装(→ sonnet) — テスト 29/29 pass、`tsc -p .` exit 0
+- [x] フェーズゲート: reviewer(opus) — Approve、M1/M2 は同セッションで修正済み(回帰テスト2件追加、修正前コードで fail することも確認済み)。詳細は下の Review 欄
+- [x] コミット + push、セッション2への引き継ぎメモ追記
+
+### セッション2への引き継ぎ
+
+- core の公開API: `toGrid`, `Game`, `DEFAULT_CONFIG`, `MAX_FRAME_DT`, `render`, `LIGHT_THEME`/`DARK_THEME`(packages/core/src/index.ts)
+- **必須ガード(レビューM3)**: ブロック0個(草ゼロ)で launch すると即 clear になる。web 側で liveBricks 数を確認して「崩す草がありません🌵」を出すこと
+- apps/web は scaffold のみ(main.ts は VERSION の console.log だけ)
+- デプロイ先: Cloudflare Pages + カスタムドメイン kusakuzushi.toshi0607.com(toshi0607.com の DNS 管理場所を要確認)
 
 ## セッション2: Web アプリ MVP(未着手)
 
@@ -41,7 +46,7 @@
 - [ ] X intent 共有 + canvas 画像保存
 - [ ] Cloudflare Pages デプロイ(wrangler 認証はユーザー操作が必要な可能性)
 - [ ] カスタムドメイン kusakuzushi.toshi0607.com 設定(toshi0607.com の DNS 管理場所を要確認。Cloudflare 管理なら Pages から直付け、他社なら CNAME)
-- [ ] 草ゼロユーザーの「崩す草がありません🌵」画面
+- [ ] 草ゼロユーザーの「崩す草がありません🌵」画面(レビューM3: ブロック0個で launch すると即 clear になるため必須ガード)
 
 ## セッション3: OGP Worker + 演出(未着手)
 ## セッション4: Chrome 拡張(未着手)
@@ -52,4 +57,17 @@
 
 ## Review
 
-(レビュー結果をここに記録)
+### セッション1 フェーズゲート(reviewer/opus, 2026-07-24)
+
+判定: **Approve**(Critical/High なし)。検証: tsc --noEmit exit 0、vitest 27/27 pass。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| M1 | Medium | update(dt) が dt 未クランプ → タブ復帰時にボールがパドル/ブロックを貫通 | セッション1内で修正(回帰テスト付き) |
+| M2 | Medium | パドルのコーナーヒットが left/right 判定になり取りこぼし | セッション1内で修正(回帰テスト付き) |
+| M3 | Medium | ブロック0個だと launch 直後に即 clear。**セッション2の web 側で「崩す草がありません🌵」ガード必須** | セッション2に申し送り |
+| L1 | Low | toGrid が366日+土曜開始で54週になり得る(下流は動的なので壊れない) | 保留(実害なし) |
+| L2 | Low | liveBricks が名前に反して全ブロック返却 & 要素が可変 | 保留 |
+| L3 | Low | 破壊パーティクルが常に最薄緑(破壊後 level=0 のため) | 保留(cosmetic) |
+| L4 | Low | 拡張版(Phase 3)は count=0 のためスコア0になる → **拡張アダプタで count=level² を投入すること** | セッション4に申し送り |
+| L5 | Low | 最終ブロック破壊とボール落下が同フレームだと loss 優先 | 保留(極稀) |
