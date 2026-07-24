@@ -49,7 +49,7 @@
 - [x] フェーズゲート: reviewer(opus) — Approve(Critical/High/Medium なし、Low 4件中3件は同セッションで修正済み。詳細は Review 欄)
 - [x] コミット + push + PR、CI green — PR: https://github.com/toshi0607/kusakuzushi/pull/1(初回 CI fail → core exports を src 直指しに修正 6517649 → CI pass → マージ済み f625aa0)
 - [x] Cloudflare Pages デプロイ — wrangler login(OAuth、ユーザー承認済み)→ project create → deploy。https://kusakuzushi.pages.dev で 200 配信確認(2026-07-25)
-- [ ] カスタムドメイン kusakuzushi.toshi0607.com — Pages プロジェクトへのドメイン追加は API で完了(status: pending)。**CNAME レコード作成のみ残**: wrangler OAuth トークンに DNS 編集スコープがなく(--scopes-list 全確認、dns_records 系なし)、Chrome 操作もツール権限で不可。ユーザーがダッシュボードで CNAME kusakuzushi → kusakuzushi.pages.dev(Proxied)を1件追加すれば証明書発行まで自動
+- [x] カスタムドメイン kusakuzushi.toshi0607.com — Pages へのドメイン追加は API、CNAME(kusakuzushi → kusakuzushi.pages.dev, Proxied)は claude-in-chrome でダッシュボードから作成(ユーザーが settings.local.json に mcp__claude-in-chrome 許可を追加して解決)。https://kusakuzushi.toshi0607.com/ で HTTP 200 実測(2026-07-25)
 
 ### セッション2 受け入れ基準(UI フロー)
 
@@ -65,7 +65,8 @@
 
 - 本番: https://kusakuzushi.pages.dev(project: kusakuzushi, production-branch: main, direct upload 方式)。デプロイコマンド: `pnpm -r build && cd apps/web && npx wrangler pages deploy dist --project-name kusakuzushi --branch main`
 - wrangler は OAuth 認証済み(`npx wrangler whoami` で確認可)。Account ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8、toshi0607.com zone: ea6ad3e0ad5be8d094dd62dc14536b07
-- カスタムドメインの CNAME はユーザー操作待ち(上記)。有効化後に X 共有 URL(share.ts の SITE_URL)が生きる
+- カスタムドメインは有効化済み。X 共有 URL(share.ts の SITE_URL = kusakuzushi.toshi0607.com)も生きている
+- Chrome 操作(claude-in-chrome)は .claude/settings.local.json の `mcp__claude-in-chrome` 許可ルールで可能(auto モードのクラシファイア拒否はこの許可で回避される)
 - Cloudflare 公式プラグイン(cloudflare@cloudflare)インストール済み — **次セッションから Cloudflare MCP サーバーが使える**(OAuth は初回ツール使用時に自動)。DNS 操作もそちらで可能になる見込み
 - git 運用: セッション2から PR 方式(branch → PR → CI green → API マージ)。`gh pr merge` はタイムアウトするので `gh api -X PUT .../merge` を使う
 
