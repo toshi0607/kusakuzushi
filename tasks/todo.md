@@ -47,9 +47,9 @@
 - [x] X intent 共有 + canvas 画像保存(toBlob → download / Web Share API)
 - [x] ブラウザで手動プレイ検証 — ?user=toshi0607 でグリッド描画・発射・gameOver→リザルト(スコア/共有URL/ボタン)・404エラー・ダークテーマを実証。※Browser ペーンは visibilityState=hidden で rAF/タイマー停止のため、rAF をキュー化して同期駆動する方式で検証(Notes 参照)
 - [x] フェーズゲート: reviewer(opus) — Approve(Critical/High/Medium なし、Low 4件中3件は同セッションで修正済み。詳細は Review 欄)
-- [ ] コミット + push + PR、CI green
-- [ ] Cloudflare Pages デプロイ(wrangler 認証はユーザー操作が必要な可能性)
-- [ ] カスタムドメイン kusakuzushi.toshi0607.com 設定 — toshi0607.com は Cloudflare 管理で確定(2026-07-25 ダッシュボード実見: Status Active, Free plan)。Pages のカスタムドメイン追加だけで DNS・証明書は自動
+- [x] コミット + push + PR、CI green — PR: https://github.com/toshi0607/kusakuzushi/pull/1(初回 CI fail → core exports を src 直指しに修正 6517649 → CI pass → マージ済み f625aa0)
+- [x] Cloudflare Pages デプロイ — wrangler login(OAuth、ユーザー承認済み)→ project create → deploy。https://kusakuzushi.pages.dev で 200 配信確認(2026-07-25)
+- [ ] カスタムドメイン kusakuzushi.toshi0607.com — Pages プロジェクトへのドメイン追加は API で完了(status: pending)。**CNAME レコード作成のみ残**: wrangler OAuth トークンに DNS 編集スコープがなく(--scopes-list 全確認、dns_records 系なし)、Chrome 操作もツール権限で不可。ユーザーがダッシュボードで CNAME kusakuzushi → kusakuzushi.pages.dev(Proxied)を1件追加すれば証明書発行まで自動
 
 ### セッション2 受け入れ基準(UI フロー)
 
@@ -61,12 +61,21 @@
 - 共有テキスト: 「{user} の草 {total} contributions を {pct}% 刈り取った🌱 スコア {score}」 + `https://kusakuzushi.toshi0607.com/?user={user}`
 - テーマ: prefers-color-scheme で LIGHT_THEME/DARK_THEME 切替
 
+### セッション3への引き継ぎ
+
+- 本番: https://kusakuzushi.pages.dev(project: kusakuzushi, production-branch: main, direct upload 方式)。デプロイコマンド: `pnpm -r build && cd apps/web && npx wrangler pages deploy dist --project-name kusakuzushi --branch main`
+- wrangler は OAuth 認証済み(`npx wrangler whoami` で確認可)。Account ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8、toshi0607.com zone: ea6ad3e0ad5be8d094dd62dc14536b07
+- カスタムドメインの CNAME はユーザー操作待ち(上記)。有効化後に X 共有 URL(share.ts の SITE_URL)が生きる
+- Cloudflare 公式プラグイン(cloudflare@cloudflare)インストール済み — **次セッションから Cloudflare MCP サーバーが使える**(OAuth は初回ツール使用時に自動)。DNS 操作もそちらで可能になる見込み
+- git 運用: セッション2から PR 方式(branch → PR → CI green → API マージ)。`gh pr merge` はタイムアウトするので `gh api -X PUT .../merge` を使う
+
 ## セッション3: OGP Worker + 演出(未着手)
 ## セッション4: Chrome 拡張(未着手)
 
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
+- 2026-07-25: CI で web テストが「Failed to resolve entry for package @kusakuzushi/core」で fail(CI は core の dist 未ビルド、ローカルは過去ビルドの stale dist で偶然通っていた)。内部専用パッケージのため core の exports を src/index.ts 直指しに変更して解消。moduleResolution: bundler なので tsc/Vite とも src 直参照で問題ない
 - 2026-07-25: Claude Code の Browser ペーンは visibilityState=hidden のため rAF・setTimeout が完全停止する。ライブプレイ検証は「requestAnimationFrame をキュー化して javascript_exec 内で同期的に drain する」ハーネスで実施(1フレーム=100ms の合成タイムスタンプ)。加えて viewport が一時的に 0px に崩壊する事象あり — resize_window(desktop) で復旧。getBoundingClientRect が 2px を返したらこれを疑う
 
 ## Review
