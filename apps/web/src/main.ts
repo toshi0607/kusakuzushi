@@ -1,3 +1,10 @@
-import { VERSION } from "@kusakuzushi/core";
+import "./style.css";
 
-console.log("kusakuzushi version:", VERSION);
+import { initApp } from "./app";
+
+const root = document.getElementById("app");
+if (!root) {
+  throw new Error("#app root element not found");
+}
+
+initApp(root);
