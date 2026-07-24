@@ -39,7 +39,7 @@
 - apps/web は scaffold のみ(main.ts は VERSION の console.log だけ)
 - デプロイ先: Cloudflare Pages + カスタムドメイン kusakuzushi.toshi0607.com(toshi0607.com の DNS 管理場所を要確認)
 
-## セッション2: Web アプリ MVP(進行中 2026-07-25)
+## セッション2: Web アプリ MVP(完了 2026-07-25)
 
 - [x] jogruber API アダプタ(fetchGrid: parse を純関数に分離しユニットテスト) — `pnpm --filter @kusakuzushi/web test` exit 0(20 tests)
 - [x] UI: ユーザー名入力 → プレイ → リザルト(?user= クエリ対応) — `pnpm -r build` exit 0
@@ -49,7 +49,7 @@
 - [x] フェーズゲート: reviewer(opus) — Approve(Critical/High/Medium なし、Low 4件中3件は同セッションで修正済み。詳細は Review 欄)
 - [x] コミット + push + PR、CI green — PR: https://github.com/toshi0607/kusakuzushi/pull/1(初回 CI fail → core exports を src 直指しに修正 6517649 → CI pass → マージ済み f625aa0)
 - [x] Cloudflare Pages デプロイ — wrangler login(OAuth、ユーザー承認済み)→ project create → deploy。https://kusakuzushi.pages.dev で 200 配信確認(2026-07-25)
-- [ ] カスタムドメイン kusakuzushi.toshi0607.com — Pages プロジェクトへのドメイン追加は API で完了(status: pending)。**CNAME レコード作成のみ残**: wrangler OAuth トークンに DNS 編集スコープがなく(--scopes-list 全確認、dns_records 系なし)、Chrome 操作もツール権限で不可。ユーザーがダッシュボードで CNAME kusakuzushi → kusakuzushi.pages.dev(Proxied)を1件追加すれば証明書発行まで自動
+- [x] カスタムドメイン kusakuzushi.toshi0607.com — 2026-07-25 有効化確認(オーケストレーターが curl 実測: HTTP 200、<title>草崩し</title>。CNAME はセッション2の Pages ドメイン追加後に解決)
 
 ### セッション2 受け入れ基準(UI フロー)
 
