@@ -78,6 +78,7 @@ type ContributionGrid = {
 - Vite + vanilla TS。フレームワーク不使用(UIは入力フォーム1つとリザルト画面だけ)
 - フロー: `/?user=toshi0607` → API fetch → グリッド描画 → スペースで開始 → リザルト
 - デプロイ: **Cloudflare Pages**(実績あり: saikyo.quest で Cloudflare 利用中)
+- ドメイン: **kusakuzushi.toshi0607.com**(toshi0607.com のサブドメイン。ユーザー決定 2026-07-24)
 
 ### 共有機能(MVPスコープ)
 

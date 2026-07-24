@@ -40,6 +40,7 @@
 - [ ] UI: ユーザー名入力 → プレイ → リザルト(?user= クエリ対応)
 - [ ] X intent 共有 + canvas 画像保存
 - [ ] Cloudflare Pages デプロイ(wrangler 認証はユーザー操作が必要な可能性)
+- [ ] カスタムドメイン kusakuzushi.toshi0607.com 設定(toshi0607.com の DNS 管理場所を要確認。Cloudflare 管理なら Pages から直付け、他社なら CNAME)
 - [ ] 草ゼロユーザーの「崩す草がありません🌵」画面
 
 ## セッション3: OGP Worker + 演出(未着手)
