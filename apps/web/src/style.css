@@ -228,7 +228,11 @@ button:disabled {
   pointer-events: none;
 }
 
-/* パドルの「影」— 幅は paddleWidth/canvasWidth の比率を JS が入れる */
+/*
+ * パドルの「影」— 幅は paddleWidth/canvasWidth の比率を JS が入れる。
+ * レール内では上寄せ: 影は本体(盤面のパドル)の近くにあるほど読める。
+ * 残りの下半分はヒント用の帯。
+ */
 .paddle-rail-handle {
   position: absolute;
   top: 16px;
