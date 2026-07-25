@@ -140,6 +140,10 @@ describe("readLevelColors", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    // Drop the previous test's rules too — they are keyed on `data-level`
+    // alone, so a leftover sheet silently answers for a level this test
+    // deliberately left unstyled.
+    document.head.querySelectorAll("style").forEach((el) => el.remove());
     styleEl = document.createElement("style");
     document.head.appendChild(styleEl);
   });
@@ -155,13 +159,48 @@ describe("readLevelColors", () => {
     expect(colors).toEqual(REAL_COLORS);
   });
 
-  it("returns null when even one level (e.g. level 4) has no cell at all", () => {
-    // #given a user who has never had a level-4 day: levels 0-3 are present, 4 is not
-    styleEl.textContent = styleRuleFor([0, 1, 2, 3]);
-    const cells = [0, 1, 2, 3].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+  it("probes a level that has no cell, so a profile with no idle days still gets GitHub's real level-0 colour", () => {
+    // #given someone who contributed every single day: GitHub styles level 0,
+    // but the graph contains no level-0 cell to read it from
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
     // #when
     const colors = readLevelColors(cells, window);
-    // #then all-or-nothing: a single missing level falls back to a bundled theme entirely
+    // #then level 0 comes back from the page, not from a bundled theme.
+    // Before this, the whole read failed and destroyed cells were painted with
+    // the OS-derived theme — near-black on a light GitHub.
+    expect(colors).toEqual(REAL_COLORS);
+  });
+
+  it("leaves the DOM exactly as it found it after probing", () => {
+    // #given a graph missing level 0
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    const before = document.body.innerHTML;
+    // #when
+    readLevelColors(cells, window);
+    // #then the throwaway probe cell is gone
+    expect(document.body.innerHTML).toBe(before);
+    expect(document.body.querySelectorAll("td")).toHaveLength(cells.length);
+  });
+
+  it("returns null when the missing level has no rule to read either", () => {
+    // #given level 0 is neither present nor styled: probing yields a transparent
+    // background, which would paint nothing at all
+    styleEl.textContent = styleRuleFor([1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    // #when
+    const colors = readLevelColors(cells, window);
+    // #then the caller keeps its bundled-theme fallback
+    expect(colors).toBeNull();
+  });
+
+  it("returns null when there are no cells to read or probe from", () => {
+    // #given
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    // #when
+    const colors = readLevelColors([], window);
+    // #then
     expect(colors).toBeNull();
   });
 });

@@ -74,19 +74,66 @@ export function readGrassCells(table: HTMLElement): GrassCell[] {
   return cells;
 }
 
+/** Rejects colours that would paint nothing: unset, or fully transparent. */
+function isPaintable(color: string | null | undefined): color is string {
+  if (!color) return false;
+  const alpha = /^rgba\(.*,\s*([\d.]+)\s*\)$/.exec(color)?.[1];
+  return alpha === undefined || Number(alpha) > 0;
+}
+
+/**
+ * Reads the colour GitHub *would* paint for `level` by momentarily
+ * inserting a `td` that matches its selectors next to a real cell.
+ *
+ * The probe copies the reference cell's classes and only overrides
+ * `data-level`, so whatever rule GitHub uses for that level applies. It is
+ * taken out of flow and hidden so it can't disturb the geometry measured
+ * elsewhere, and removed before this returns.
+ */
+function probeLevelColor(reference: HTMLElement, level: number, view: Window): string | null {
+  const parent = reference.parentElement;
+  if (!parent) return null;
+
+  const probe = reference.ownerDocument.createElement("td");
+  probe.className = reference.className;
+  probe.setAttribute("data-level", String(level));
+  probe.style.position = "absolute";
+  // `visibility: hidden` rather than `display: none` — the latter is still
+  // computed, but keeping the box avoids relying on that subtlety.
+  probe.style.visibility = "hidden";
+  parent.appendChild(probe);
+
+  try {
+    return view.getComputedStyle(probe).backgroundColor || null;
+  } finally {
+    probe.remove();
+  }
+}
+
 /**
  * Samples one `td` per contribution level (0-4) and reads its computed
- * `background-color`. Returns `null` if any level isn't represented in
- * `cells` — the caller falls back to a bundled theme in that case.
+ * `background-color`.
+ *
+ * A level with no cell of its own is ordinary, not exceptional: a profile
+ * with no idle days has no level-0 cell at all. Those levels are probed
+ * (see `probeLevelColor`) instead of failing the whole read, because the
+ * caller's fallback is a bundled theme picked from the *OS* colour scheme
+ * — which painted destroyed cells near-black on a light GitHub for anyone
+ * running a dark Mac.
+ *
+ * Returns `null` only when there is nothing to read or probe from, leaving
+ * the caller its theme fallback.
  */
 export function readLevelColors(cells: GrassCell[], view: Window): readonly string[] | null {
+  const reference = cells[0];
+  if (!reference) return null;
+
   const colors: string[] = [];
 
   for (let level = 0; level <= 4; level++) {
     const cell = cells.find((c) => c.level === level);
-    if (!cell) return null;
-    const color = view.getComputedStyle(cell.el).backgroundColor;
-    if (!color) return null;
+    const color = cell ? view.getComputedStyle(cell.el).backgroundColor : probeLevelColor(reference.el, level, view);
+    if (!isPaintable(color)) return null;
     colors.push(color);
   }
 
