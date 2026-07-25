@@ -399,7 +399,7 @@ pnpm --filter @kusakuzushi/extension build
 |------|--------|------|
 | FCP/LCP のボトルネックは Google Fonts CSS のレンダーブロッキング | VERIFIED | 上記 `render-blocking-resources` / LCP Render Delay 85% |
 | `media="print"` → onload で `all` に戻す方式で Lighthouse がレンダーブロッキングと見なさなくなる | VERIFIED | 対策後の再計測(下記「改善後」)で `render-blocking-resources` が 0 件 |
-| GitHub Actions の ubuntu-latest には Chrome が同梱され lhci が起動できる | UNVERIFIED → 本 PR の CI で検証 | ランナーイメージの Browsers セクション(GUESS)。落ちたら `browser-actions/setup-chrome` を足す |
+| GitHub Actions の ubuntu-latest には Chrome が同梱され lhci が起動できる | VERIFIED | PR #17 の Lighthouse / dist ジョブのログ `✅ Chrome installation found` → 3 runs 実行 → assertion 全通過(run 30150112214、47 秒) |
 | `uses-long-cache-ttl` は自前資産の問題ではない | VERIFIED | 本番実測で対象は Cloudflare Insights のビーコンと fonts.gstatic.com の 2 件のみ(どちらも第三者) |
 
 ### タスク
@@ -414,6 +414,8 @@ pnpm --filter @kusakuzushi/extension build
 - [x] 継続計測: `lighthouserc.cjs` + `.github/workflows/lighthouse.yml` + `pnpm lh` / `pnpm lh:prod`、レポートは artifact に 30 日保存
   - 検証(ネガティブテスト): index.html から `media="print" onload=...` を外して `pnpm lh` → **exit 1**(`render-blocking-resources` 3 > 1、LCP 3.1s > 2.5s)。ゲートが実際に落ちることを確認してから元に戻した
 - [x] 改善後の再計測とベースライン比較を本ファイルに記録(下記)
+- [x] PR → CI green — https://github.com/toshi0607/kusakuzushi/pull/17。`test` pass 46s、`Lighthouse / dist` pass 47s(ランナーで Chrome 起動 → 3 runs → assertion 全通過)、`Lighthouse / production` は PR では skip される設計どおり
+- [ ] マージ → `wrangler pages deploy` → 本番で `pnpm lh:prod` を再実行して green を確認(**ユーザー判断待ち**)
 
 ### 結果(dist / mobile / 3 runs)
 
