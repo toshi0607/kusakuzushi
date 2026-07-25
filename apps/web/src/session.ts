@@ -7,7 +7,7 @@
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
-import { buildIntentUrl, saveCanvasImage } from "./share";
+import { buildIntentUrl, saveResultImage } from "./share";
 
 /** Paddle speed, in px/sec, while an arrow key is held. */
 const KEY_MOVE_SPEED_PX_PER_SEC = 480;
@@ -129,10 +129,39 @@ export function createSession(
 
     const pct = grid.total > 0 ? Math.floor((harvestedCount(game) / grid.total) * 100) : 0;
 
-    const stats = document.createElement("p");
-    stats.className = "result-stats";
-    stats.textContent = `スコア: ${game.score} / 刈り取り率: ${pct}%`;
-    result.appendChild(stats);
+    const statGrid = document.createElement("div");
+    statGrid.className = "result-stat-grid";
+    const entries: Array<[string, string]> = [
+      ["スコア", game.score.toLocaleString()],
+      ["刈り取り率", `${pct}%`],
+    ];
+    for (const [labelText, valueText] of entries) {
+      const stat = document.createElement("div");
+      stat.className = "result-stat";
+      const label = document.createElement("span");
+      label.className = "result-stat-label";
+      label.textContent = labelText;
+      const value = document.createElement("span");
+      value.className = "result-stat-value";
+      value.textContent = valueText;
+      stat.append(label, value);
+      statGrid.appendChild(stat);
+    }
+    result.appendChild(statGrid);
+
+    // 刈り取り率もプログレスバーではなく草セルの並びで語る(DESIGN-VISUAL §3)
+    const HARVEST_CELLS = 18;
+    const filled = Math.round((pct / 100) * HARVEST_CELLS);
+    const bar = document.createElement("div");
+    bar.className = "harvest-bar";
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", `刈り取り率 ${pct}%`);
+    for (let i = 0; i < HARVEST_CELLS; i++) {
+      const cell = document.createElement("span");
+      cell.className = i < filled ? "harvest-cell harvest-cell-filled" : "harvest-cell";
+      bar.appendChild(cell);
+    }
+    result.appendChild(bar);
 
     const actions = document.createElement("div");
     actions.className = "result-actions";
@@ -150,7 +179,7 @@ export function createSession(
     saveButton.textContent = "画像を保存";
     saveButton.addEventListener("click", () => {
       saveButton.disabled = true;
-      saveCanvasImage(canvas, username)
+      saveResultImage(canvas, username, { score: game.score, percentage: pct, cleared: state === "clear" })
         .catch(() => {
           saveButton.textContent = "保存に失敗しました";
         })
