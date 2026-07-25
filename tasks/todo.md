@@ -771,3 +771,88 @@ viewBox を 32 → **16 単位**に変え、全図形を整数座標に置いた
   3 runs の LCP が 3.23 / 4.00 / 4.24s とばらつくので**この差は誤差**。改善も退行もしていない
 - 次にやるなら: 自前 CSS のインライン化(残る唯一の render-blocking)と、
   IBM Plex Sans JP の自前ホスト化 or サブセット化(60KB の CSS + 11 ファイルのフォント取得がクロスオリジン)
+
+## セッション12: 本番だけ Lighthouse が赤い件(依頼文の「セッション11」。11 は「ブロックを正方形にする」で使用済みのため 12 とした)
+
+セッション10 の「未解決(このセッションの範囲外・別件)」の続き。
+`pnpm lh`(dist)は 100/100/100/100 なのに `pnpm lh:prod`(本番)は performance 76 /
+FCP 4.1s / LCP 4.0s で exit 1。**同じ成果物・同じしきい値でこれだけ割れる理由**から設計する。
+
+### 依頼の分岐点への回答:「実ユーザーが遅いのか、しきい値が未校正なのか」
+
+結論は **どちらでもなく「dist という計測条件が、この種の劣化を構造的に検出できない」**。
+
+1. **しきい値は未校正ではない**。`lighthouserc.cjs` の FCP 1800ms / LCP 2500ms は
+   Core Web Vitals の "good" 境界そのもの(モバイル)であって、dist の実測から
+   逆算した値ではない。設定ファイルのコメントが「dist の実測を基準に」と書いているのは
+   *余裕の確認*をした、という意味で、数値の出どころは標準側。本番へ適用するのは正当。
+2. **実ユーザーは(まともな回線なら)遅くない**。本番の wall clock は全リソース 940ms で完了、
+   server-response-time 170ms、maxRtt 128ms。4.1s は Lighthouse モバイル既定の
+   シミュレーション(Slow 4G: RTT 150ms / 1.6Mbps / CPU 4x)を実グラフに載せた値。
+   ただし **それは「実在しない条件」ではない** — モバイル回線の悪い側の実ユーザーを模したもので、
+   赤いこと自体は「直す価値がある」という意味に読むのが素直。
+3. **本当の問題は dist ゲートの側**。dist は localhost 配信で RTT ≒ 0 / server-response-time 19ms
+   なので、**クリティカルパスの往復回数が何回だろうと 100 点が出る**。実際、下記の
+   「FCP が JS を待っている」構造はセッション9 の時点で既にあったが、dist では一度も赤くならなかった。
+   → しきい値を本番用に緩めるのではなく、**クリティカルパスを直し、dist ゲートに
+   ネットワーク形状を持ち込む**のが正しい向き。
+
+なお「実ユーザーが本当に遅いか」に決着をつけられるのはラボ値ではなく **フィールド値(CrUX)** だが、
+個人規模のサイトは CrUX の収集閾値に届かないためデータが存在しない見込み。
+よってラボのモバイル・スロットリング値を設計目標として扱う(= 上の 2 の判断)。
+
+### 見つけた真因(コード読解、2026-07-25)
+
+**トップページはクライアントレンダリングで、FCP が module JS の実行を待っている。**
+
+- `apps/web/index.html` の body は `<div id="app"></div>` だけ
+- `apps/web/src/app.ts` の `buildShell()` が header / main.stage / footer を
+  `document.createElement` で組み立てて `root.replaceChildren(...)` している
+- つまり FCP と LCP(要素は `p.subtitle`)の手前に
+  **HTML → CSS(render-blocking)→ module JS → JS 実行** という鎖がある
+
+localhost 配信ではこの鎖の各往復がほぼ 0ms なので `pnpm lh` は 1.0s で緑になる。
+実オリジン(TTFB 170ms + シミュレーション RTT 150ms)では往復 1 回あたり 300ms 以上かかり、
+そこに Slow 4G の帯域(1.6Mbps)を全リソースで分け合う分が乗る。
+
+セッション9・10 が「フォントの往復」に原因を求めていたのは、
+`render-blocking-resources` という監査名に引きずられたため。**フォント CSS は
+セッション9 で既に非ブロッキング化済みで、FCP の鎖には乗っていない。**
+
+### Constraints(セッション12)
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| 書体を変えない(DotGothic16 / IBM Plex Sans JP) | DESIGN-VISUAL §2(DotGothic16 は題材のピクセルグリッドと直結する唯一級の日本語ピクセルフォント) | index.html / style.css の font-family 差分 0 |
+| ゲーム挙動と見た目を変えない | ユーザー指示 2026-07-25 | `git diff main -- packages/core` 0 行、既存テスト全 pass、レイアウト実測 |
+| 新規ランタイム依存を増やさない | rules/constraints.md / DESIGN.md §4 | `apps/web/package.json` の dependencies / devDependencies 差分 0 |
+| `pnpm lh`(dist)の 100/100/100/100 を落とさない | ユーザー指示 | PR の `Lighthouse / dist` ジョブ |
+| CI(lighthouse.yml)を壊さない。`production` は PR で skip | ユーザー指示 / 既存設計 | ワークフローの `if:` 条件を保つ |
+| マージ・デプロイはしない(PR まで) | ユーザー指示 | main への直接コミットなし |
+| 生成物をコミットする方式は可(og.png / favicon.ico の前例) | ユーザー指示 | — |
+
+### Assumptions(セッション12)
+
+| Assumption | Status | 根拠 |
+|---|---|---|
+| A-1: FCP/LCP は module JS のダウンロードと実行を待っている(`#app` が空でシェルを JS が組み立てている) | VERIFIED | `apps/web/index.html`(body は `<div id="app"></div>` のみ)と `app.ts` の `buildShell()`。LCP 要素 `p.subtitle` は `buildShell` が生成している |
+| A-2: しきい値 FCP 1800 / LCP 2500 は Core Web Vitals の "good" 境界であり dist 由来の値ではない | VERIFIED | 数値が mobile の "good" 境界と一致。dist の実測は FCP 0.9s で、この値からは導けない |
+| A-3: localhost 配信では往復回数が FCP にほぼ効かない(= dist ゲートはこの種の劣化を検出できない) | VERIFIED | 下記ラボ実測(delay=0 では A→C の FCP 差が小さい) |
+| A-4: 本番の `server-response-time` 170ms を localhost に注入すると本番寄りの挙動が再現できる | VERIFIED(部分) | 下記ラボ実測。ただし TLS・HTTP/2・クロスオリジンのフォント取得は再現していない(「実測できなかったこと」参照) |
+| A-5: Google Fonts の CSS はセッション9 で非ブロッキング化済みで FCP の鎖に乗っていない | VERIFIED | 本番の `render-blocking-resources` が 1 件(自前 CSS)のみ。index.html の `media="print"` + `onload` |
+| A-6: フォントの自前ホスト化は FCP を直接動かさない | VERIFIED(前提が実測) | A-5 より、フォントは render-blocking ではない。効くとすればシミュレーション帯域の取り合いのみで、クリティカルパスの往復は減らない |
+| A-7: このサンドボックスからは本番 URL を計測できない | VERIFIED | egress ポリシーで `kusakuzushi.toshi0607.com:443` への CONNECT が 403(agent proxy の status に記録) |
+| A-8: このサンドボックスの Chrome は fonts.googleapis.com へ到達できない | VERIFIED | ラボの network-requests で当該 2 件が statusCode -1。curl は到達できるが Chrome は ERR_CONNECTION_RESET |
+| A-9: CI(ubuntu-latest)では `slow` ターゲットも dist と同様に走る | UNVERIFIED-ACCEPTED(2026-07-25) | dist ジョブが同じランナーの Chrome で動いている実績(セッション9)。`slow` は配信元が lhci 内蔵サーバから `tools/lh-slow-server.mjs` に変わるだけで Chrome の要件は同じ。**この PR の CI が初回検証** |
+| A-10: `slow` のしきい値(共通の 1800/2500)は CI 上でも通る | UNVERIFIED-ACCEPTED(2026-07-25) | ローカルラボはフォントを取得できないぶん楽観的な数字になる。CI ではフォント取得が帯域を食うので悪化しうる。**この PR の CI で校正する** |
+| A-11: 本番デプロイ後に `pnpm lh:prod` が緑になる | UNVERIFIED-ACCEPTED(2026-07-25) | 本番を計測できないため断定不可。ラボでは同じ変更で FCP/LCP がしきい値内に入る(下記)。マージ+デプロイ後に `Lighthouse` ワークフローを workflow_dispatch で回して確認すること |
+
+### 打ち手の比較(依頼の 1/2/3 + 実測から出てきた 4)
+
+| # | 打ち手 | FCP の鎖への効き方 | コスト | 判断 |
+|---|---|---|---|---|
+| 1 | Web フォントの自前ホスト化 | **無し**。フォント CSS は既に非ブロッキングで鎖に乗っていない(A-5/A-6)。効くのはシミュレーション帯域の取り合いだけ | 大。IBM Plex Sans JP は日本語で、Google が unicode-range で 100 以上のサブセットに割っている。全部持つとリポジトリが MB 級に膨らみ、絞ると「サブセットに無い文字が system-ui に落ちる」壊れ方をする(本文フォントなので入力値も通る) | **見送り**。効かないものに一番大きなコストを払うことになる |
+| 2 | 自前 CSS(5KB)のインライン化 | **1 往復ぶん**。残る唯一の render-blocking を消す | 小。Vite の生成物を書き換える 20 行のプラグインで済み、新規依存ゼロ | **採用**。セッション9 で見送った理由(「新規依存が要る / 既に 100 点」)は両方とも成り立たない |
+| 3 | production 用のしきい値を別建て | 指標を動かさない(見え方だけ変える) | 小 | **不採用**。1800/2500 は CWV の "good" 境界であって dist 由来ではない(A-2)。緩めると「本番では何 ms でもよい」という意味になる。**代わりに退行検知の側を足した**(打ち手 5) |
+| 4 | ページシェルを静的 HTML に出す | **JS を鎖から外す**。FCP/LCP がバンドルのダウンロードと実行を待たなくなる | 中。`buildShell()` を index.html の markup に移し、`.stage` に高さを確保して CLS を防ぐ | **採用**。真因への直接の対処で、効き幅が一番大きい |
+| 5 | `slow` ターゲット(TTFB 170ms を注入した dist)を PR ゲートに追加 | 指標を動かさない(退行を検知する) | 小。60 行のサーバ + lhci のターゲット追加 + CI ジョブ 1 つ | **採用**。「dist が緑でも本番が赤い」を二度繰り返さないための唯一の仕組み |

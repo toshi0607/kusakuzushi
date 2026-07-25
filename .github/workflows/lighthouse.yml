@@ -45,6 +45,39 @@ jobs:
           path: .lighthouseci/report
           retention-days: 30
 
+  # PR / main: 同じ成果物を TTFB 170ms のサーバから配信して計測する。
+  # dist ジョブは localhost 配信(RTT ≒ 0)なのでクリティカルパスの往復が増えても
+  # 気づけない。実オリジンの往復コストを持ち込むのがこのジョブの役割(セッション12)。
+  slow:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @kusakuzushi/web build
+
+      - run: pnpm exec lhci autorun
+        env:
+          KUSAKUZUSHI_LH_TARGET: slow
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-slow
+          path: .lighthouseci/report
+          retention-days: 30
+
   # schedule / 手動: 本番 URL をそのまま計測する
   production:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

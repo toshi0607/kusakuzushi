@@ -2,27 +2,46 @@
  * Lighthouse CI の設定。計測対象は apps/web(公開ページ)のみ。
  * 拡張版はページ所有者が GitHub なので計測しない。
  *
- * 2 つのターゲットを 1 ファイルで切り替える:
+ * 3 つのターゲットを 1 ファイルで切り替える(KUSAKUZUSHI_LH_TARGET):
  *
- *   pnpm lh        → dist(apps/web/dist をローカル静的サーバで配信して計測)
- *   pnpm lh:prod   → production(本番 URL をそのまま計測)
+ *   pnpm lh        → dist       (apps/web/dist を lhci のローカル静的サーバで配信)
+ *   pnpm lh:slow   → slow       (同じ dist を TTFB 170ms のサーバで配信)
+ *   pnpm lh:prod   → production (本番 URL をそのまま計測)
  *
- * dist は「PR の差分がスコアを落としていないか」を決定的に見るため、
- * production は「デプロイ済みの実物が劣化していないか」を定期的に見るため。
- * 同じしきい値を共有し、環境に固有の監査だけを足し引きする。
+ * なぜ 3 つ要るか(セッション12):
+ *
+ *   dist は localhost 配信なので RTT ≒ 0 / server-response-time ≒ 20ms になる。
+ *   その条件では **クリティカルパスの往復が何回あっても FCP はほとんど動かない**。
+ *   実際「First Paint が module JS の実行を待っている」という劣化が dist では
+ *   100 点のまま通り抜け、本番でだけ FCP 4.1s(しきい値 1.8s)として出た。
+ *   dist は「差分がバンドルサイズや監査項目を壊していないか」しか見られない。
+ *
+ *   slow はその穴を埋める PR ゲート。dist と同じ成果物を、本番実測の TTFB
+ *   (server-response-time 170ms、2026-07-25)を挟むサーバから配信するので、
+ *   往復が 1 回増えれば FCP に跳ね返る。外部要因(回線・Pages の機嫌)は入らないので
+ *   production と違って決定的に使える。
+ *
+ *   production はデプロイ済みの実物の健康診断。ネットワークとエッジの実状が入るぶん
+ *   ばらつくが、キャッシュヘッダなど本番でしか見られない監査がある。
  */
 
 const PRODUCTION_URL = "https://kusakuzushi.toshi0607.com/";
 
+/** slow ターゲットの TTFB。本番の server-response-time 実測値(2026-07-25)。 */
+const SLOW_TTFB_MS = 170;
+const SLOW_PORT = 4173;
+
 // 環境変数名を LHCI_ で始めてはいけない。lhci は LHCI_* を自分の CLI 引数として
 // 読むため、LHCI_TARGET=production は upload の --target production になり
 // 「Invalid values: target」で落ちる(実測で踏んだ)。
-const isProduction = process.env.KUSAKUZUSHI_LH_TARGET === "production";
+const target = process.env.KUSAKUZUSHI_LH_TARGET ?? "dist";
 
 /**
- * しきい値は 2026-07-25 の実測(dist / mobile / 3 runs)を基準に、
- * CI マシンのばらつき分の余裕を持たせた値。実測は
- * performance 100 / FCP 0.9s / LCP 0.9s / TBT 0ms / CLS 0.005。
+ * 全ターゲット共通の土台。
+ *
+ * FCP 1800ms / LCP 2500ms は Core Web Vitals の "good" 境界(モバイル)そのもので、
+ * どこかの実測から逆算した値ではない。**だからターゲットごとに緩めない** —
+ * 緩めた瞬間に「その環境では何 ms でも良い」という意味になり、退行が見えなくなる。
  *
  * 個別監査は「ここに書いたものだけ」を見る(preset を使わない)。
  * preset は lhci のローカル静的サーバに cache ヘッダが無いことなど、
@@ -42,9 +61,9 @@ const assertions = {
   /*
    * セッション8 の回帰ガード。Google Fonts の CSS を素の <link rel="stylesheet"> に
    * 戻すと 2 件増えて落ちる(それで FCP/LCP が 3.0s に戻る)。
-   * 許容 1 件は自前の /assets/*.css(同一オリジン・約 2KB)。
+   * セッション12 で自前 CSS をインライン化したので、いまは 0 件が正。
    */
-  "render-blocking-resources": ["error", { maxLength: 1 }],
+  "render-blocking-resources": ["error", { maxLength: 0 }],
 
   // JS が肥大化していないか。実測 9KB(転送量)に対する上限。
   "resource-summary:script:size": ["error", { maxNumericValue: 40000 }],
@@ -52,16 +71,32 @@ const assertions = {
   "resource-summary:total:size": ["warn", { maxNumericValue: 300000 }],
 };
 
-if (isProduction) {
+if (target === "production") {
   // Cloudflare Pages のキャッシュヘッダは本番でしか評価できない
   assertions["uses-long-cache-ttl"] = ["warn", {}];
 }
 
+const collectByTarget = {
+  dist: { staticDistDir: "apps/web/dist", numberOfRuns: 3 },
+  slow: {
+    startServerCommand: `node tools/lh-slow-server.mjs apps/web/dist ${SLOW_TTFB_MS} ${SLOW_PORT}`,
+    startServerReadyPattern: "lh-slow-server",
+    url: [`http://localhost:${SLOW_PORT}/`],
+    numberOfRuns: 3,
+  },
+  production: { url: [PRODUCTION_URL], numberOfRuns: 3 },
+};
+
+const collect = collectByTarget[target];
+if (!collect) {
+  throw new Error(
+    `unknown KUSAKUZUSHI_LH_TARGET: ${target} (expected one of ${Object.keys(collectByTarget).join(", ")})`,
+  );
+}
+
 module.exports = {
   ci: {
-    collect: isProduction
-      ? { url: [PRODUCTION_URL], numberOfRuns: 3 }
-      : { staticDistDir: "apps/web/dist", numberOfRuns: 3 },
+    collect,
     assert: {
       // 3 回の中央値で判定する(既定の optimistic は最良回だけを見るので回帰を見逃す)
       aggregationMethod: "median",
