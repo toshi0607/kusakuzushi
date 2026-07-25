@@ -1150,9 +1150,9 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 
 ### Phase A: ユーザー作業(エージェント不可)
 
-- [ ] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い — https://chrome.google.com/webstore/devconsole
-- [ ] A-2. Account タブで連絡先メールを確認済みにする(未確認だと提出できない)
-- [ ] A-3. Private 配布用に「信頼できるテスター」に自分の Google アカウントを追加
+- [x] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い(ユーザー実施 2026-07-26)。実測: コンソールにアクセス可、パブリッシャー ID `fe990368-036b-4a39-bb71-8e0aea1ce3e0`、表示名 `toshi0607`、メンバー登録日 2026/07/26、トレーダー申告は「非取引業者アカウント」
+- [x] A-2. 連絡先メール — 設定ページで `s.toshi0607@gmail.com` を登録し確認メールを送信(エージェント)→ メール内リンクのクリックはユーザー。**実測: リロード後も「s.toshi0607@gmail.com 確認済みのメールアドレス」**。このアドレスはアイテム詳細ページに公開される(ユーザー了承済み)
+- [x] A-3. Trusted Tester に `s.toshi0607@gmail.com` を追加(同じ設定ページの「管理」セクション)。**実測: 保存 → リロード後も値が残っている**。サービスアカウント欄は空のまま
 - [ ] A-4. `chrome://extensions` → デベロッパーモード ON → `apps/extension/dist` を読み込む(スクショ撮影の前提)
 - [ ] A-5. 最終「審査に送信」クリック
 
@@ -1176,6 +1176,17 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 
 - 2026-07-26: PR #30(https://github.com/toshi0607/kusakuzushi/pull/30)— CI green(test 36s / Lighthouse dist 1m49s / slow 1m10s、production は PR なので skip)→ マージ 30a0dce
 - 2026-07-26: `wrangler pages deploy`(64f75928)で `/privacy/` を本番公開。HTTP 200 実測
+- 2026-07-26: **Chrome 拡張(claude-in-chrome)ではウェブストアを操作できない**。`chrome.google.com/webstore` と
+  `chromewebstore.google.com` の両方で `The extensions gallery cannot be scripted.`(ブラウザ側の制限、回避不能)。
+  **Browser ペーン経由なら操作できる**(ログイン状態も共有されていた)
+- 2026-07-26: **Browser ペーンの `computer` の座標はスクリーンショット画像の座標系**で、CSS ピクセルではない。
+  このタブ(viewport 1280x800 / dpr 2 / 画像 800x500)では `shot = css * 800 / (innerWidth * devicePixelRatio)` = `css / 3.2`。
+  CSS 座標のまま押すと「クリックは trusted で届くが `HTML` に着弾する」状態になり、無反応に見える。
+  切り分けは `document.addEventListener('click', e => ..., true)` を仕込んで着弾要素を見るのが速い
+- 2026-07-26: 設定ページの Trusted Tester / サービスアカウントの入力欄は `<input>` ではなく `<textarea>`。
+  `querySelectorAll('input')` では見つからない
+- 2026-07-26: 住所は非取引業者なら必須ではない(必須マーク `*` が付くのは「投稿者の表示名」だけ、アラートも 0 件)。
+  入力するとアイテム詳細ページに公開されるので入れていない
 - dist の manifest 検証: `default_locale: en` に対応する `_locales/en/messages.json` が存在し、
   `__MSG_extName__` / `__MSG_extDescription__` が両ロケールで解決。名前 37 文字(上限 45)、
   簡単な説明 en 105 / ja 34 文字(上限 132)
