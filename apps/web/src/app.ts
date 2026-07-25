@@ -25,33 +25,17 @@ function syncUsernameQuery(username: string): void {
   window.history.replaceState(null, "", url.toString());
 }
 
-function buildShell(root: HTMLElement): HTMLElement {
-  const header = document.createElement("header");
-  header.className = "site-header";
-
-  const title = document.createElement("h1");
-  title.textContent = "草崩し";
-  header.appendChild(title);
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "subtitle";
-  subtitle.textContent = "GitHub の草を、ブロック崩しで刈り取ろう";
-  header.appendChild(subtitle);
-
-  const stage = document.createElement("main");
-  stage.className = "stage";
-
-  const footer = document.createElement("footer");
-  footer.className = "site-footer";
-
-  const credit = document.createElement("a");
-  credit.href = "https://github.com/toshi0607";
-  credit.target = "_blank";
-  credit.rel = "noopener noreferrer";
-  credit.textContent = "toshi0607";
-  footer.append("made by ", credit, " ・ Chrome拡張(準備中)");
-
-  root.replaceChildren(header, stage, footer);
+/**
+ * シェル(見出し / ステージ枠 / フッター)は index.html が持つ。JS で組み立てると
+ * First Contentful Paint がバンドルのダウンロードと実行を待つことになり、
+ * 実オリジンでだけ FCP/LCP が数秒に伸びる(index.html のコメント参照)。
+ * ここはその静的 markup からステージを拾うだけ。
+ */
+function findStage(root: HTMLElement): HTMLElement {
+  const stage = root.querySelector<HTMLElement>("main.stage");
+  if (!stage) {
+    throw new Error("main.stage not found: index.html のシェルと app.ts が食い違っている");
+  }
   return stage;
 }
 
@@ -138,7 +122,7 @@ function buildEmptyView(onBack: () => void): HTMLElement {
 }
 
 export function initApp(root: HTMLElement): void {
-  const stage = buildShell(root);
+  const stage = findStage(root);
   let sessionCleanup: (() => void) | null = null;
   let attractCleanup: (() => void) | null = null;
 
