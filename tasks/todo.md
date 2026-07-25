@@ -358,8 +358,92 @@ pnpm --filter @kusakuzushi/extension build
 - **トップは静的 PNG、share は Worker 動的**という役割分担にした。トップ URL は最も貼られるので、表示のたびに satori + Google Fonts に依存させたくない(それらが落ちてもカードは出る)。share カードはスコア依存なので動的でしか作れない
 - 途中で作った盤面の「空白帯カット」は、盤面 2:1 の下半分がほぼ無地であることに依存している。core の `computeLayout` が変わっても追従するよう境界値はそこから導出済み
 - ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため、dev 専用エンドポイント(vite.config.ts)で `public/og.png` を直接書く方式にした。結果として再生成手順が「開いてボタンを押す」だけになった
+## セッション9: Lighthouse によるパフォーマンス改善 + 継続計測(実装中)
 
-## セッション9: ブロック破壊時のアイテムドロップ(実装中)
+対象は apps/web(公開ページ)のみ。拡張は計測対象外(ページ所有者が GitHub)。
+
+### ベースライン(実測 2026-07-25、Lighthouse 12.6.1 / mobile / `lhci collect --staticDistDir=apps/web/dist`)
+
+| カテゴリ | スコア |
+|----------|--------|
+| Performance | **88** |
+| Accessibility | 100 |
+| Best Practices | 96 |
+| SEO | 100 |
+
+| 指標 | 値 |
+|------|-----|
+| FCP | 3.0 s (score 0.48) |
+| LCP | 3.0 s (score 0.77) — LCP 要素 `p.subtitle`、内訳は **Render Delay 2,579ms = 85%** |
+| TBT | 0 ms |
+| CLS | 0.005 |
+
+原因は 1 つに収束する: **head の Google Fonts CSS 2 本がレンダーブロッキング**(`render-blocking-resources` Est savings 2,220ms)。
+
+- `IBM+Plex+Sans+JP` の CSS が 60,776 B(unicode-range が大量。`unused-css-rules` は 100% 未使用と判定)
+- `DotGothic16`(text= サブセット)の CSS は 1,072 B だが、fonts.googleapis.com への往復だけで wastedMs 836
+- 副次: `errors-in-console` が favicon.ico の 404 で score 0(Best Practices 96 の原因)
+
+### Constraints(このセッション)
+
+| 制約 | 出典 | 検証方法 |
+|------|------|----------|
+| 書体は変えない(DotGothic16 / IBM Plex Sans JP) | DESIGN-VISUAL §1 | index.html / style.css の font-family 差分 |
+| ゲーム挙動・見た目を変えない | ユーザー依頼はパフォーマンスのみ | packages/core の差分 0 行、既存テスト全 pass |
+| 新規ランタイム依存を増やさない | rules/constraints.md | apps/web/package.json の dependencies 差分 0 |
+| CI は既存 ci.yml を壊さない | rules/pr.md | ci.yml と別ワークフローに分離 |
+
+### Assumptions
+
+| 仮定 | Status | 根拠 |
+|------|--------|------|
+| FCP/LCP のボトルネックは Google Fonts CSS のレンダーブロッキング | VERIFIED | 上記 `render-blocking-resources` / LCP Render Delay 85% |
+| `media="print"` → onload で `all` に戻す方式で Lighthouse がレンダーブロッキングと見なさなくなる | VERIFIED | 対策後の再計測(下記「改善後」)で `render-blocking-resources` が 0 件 |
+| GitHub Actions の ubuntu-latest には Chrome が同梱され lhci が起動できる | VERIFIED | PR #17 の Lighthouse / dist ジョブのログ `✅ Chrome installation found` → 3 runs 実行 → assertion 全通過(run 30150112214、47 秒) |
+| `uses-long-cache-ttl` は自前資産の問題ではない | VERIFIED | 本番実測で対象は Cloudflare Insights のビーコンと fonts.gstatic.com の 2 件のみ(どちらも第三者) |
+
+### タスク
+
+- [x] 対策1: Google Fonts CSS 2 本を非ブロッキング化(`media="print"` + `onload` で `all`、`<noscript>` フォールバック付き)
+  - 検証: `render-blocking-resources` が 3 件 → 1 件(残る 1 件は自前の `/assets/*.css` 1.9KB・152ms)、FCP/LCP とも 3.0s → 0.9s
+- [x] 対策2: favicon を追加して console 404 を解消(`apps/web/public/favicon.svg`)
+  - 検証: `errors-in-console` が 0 → 満点、Best Practices 96 → 100。ブラウザで `link[rel=icon]` の解決を実測
+- [x] 対策3: `document.fonts.load('16px "DotGothic16"')` を `link[data-font="display"]` の load 後に蹴るよう `main.ts` を修正
+  - 検証: ビルド成果物を `vite preview` で開き `document.fonts` を実測 — `DotGothic16:loaded` / `document.fonts.check('16px "DotGothic16"') === true`。スクリーンショットでも canvas 内 HUD(`DEMO PLAY`)がピクセルフォントで描画されている
+- [x] 対策4(本番計測で発見): `robots.txt` を追加。Cloudflare Pages が存在しないパスに index.html を 200 で返すため、クローラーが HTML を robots.txt として解釈していた(本番 SEO 92 / robots-txt 49 errors)
+- [x] 継続計測: `lighthouserc.cjs` + `.github/workflows/lighthouse.yml` + `pnpm lh` / `pnpm lh:prod`、レポートは artifact に 30 日保存
+  - 検証(ネガティブテスト): index.html から `media="print" onload=...` を外して `pnpm lh` → **exit 1**(`render-blocking-resources` 3 > 1、LCP 3.1s > 2.5s)。ゲートが実際に落ちることを確認してから元に戻した
+- [x] 改善後の再計測とベースライン比較を本ファイルに記録(下記)
+- [x] PR → CI green — https://github.com/toshi0607/kusakuzushi/pull/17。`test` pass 46s、`Lighthouse / dist` pass 47s(ランナーで Chrome 起動 → 3 runs → assertion 全通過)、`Lighthouse / production` は PR では skip される設計どおり
+- [ ] マージ → `wrangler pages deploy` → 本番で `pnpm lh:prod` を再実行して green を確認(**ユーザー判断待ち**)
+
+### 結果(dist / mobile / 3 runs)
+
+| | ベースライン | 改善後 |
+|---|---|---|
+| Performance | 88 | **100** |
+| Accessibility | 100 | 100 |
+| Best Practices | 96 | **100** |
+| SEO | 100 | 100 |
+| FCP | 3.0 s | **0.9 s** |
+| LCP | 3.0 s | **0.9 s** |
+| CLS | 0.005 | 0.005(悪化なし) |
+| TBT | 0 ms | 0 ms |
+
+本番(https://kusakuzushi.toshi0607.com/、デプロイ前の実測)は performance **78** / SEO 92 / FCP 3.8s / LCP 4.1s。
+ローカル配信より数値が悪いのは実回線と Cloudflare の TTFB が乗るため。**この PR をデプロイするまで
+`pnpm lh:prod` は落ちる**(render-blocking 3 件、FCP/LCP 超過)。デプロイ後に再計測して確認すること。
+
+### 見送った改善
+
+- **自前 CSS(1.9KB)のインライン化**: 残る唯一のレンダーブロッキングだが Est savings 150ms で、
+  すでに performance は 100。`<style>` 直挿しには Vite プラグイン(新規依存)が必要なので入れない
+- **IBM Plex Sans JP の削減**(フォント転送 109KB / 12 リクエスト): 書体は DESIGN-VISUAL §1 の指定であり
+  パフォーマンス都合で変えない。FCP 後のロードなので描画は止めていない
+- **`uses-long-cache-ttl`**: 本番で引っかかるのは Cloudflare Insights のビーコンと fonts.gstatic.com の
+  フォント(どちらも第三者・TTL 24h)で、自前の資産は対象外。assert は warn 止まりにしてある
+
+## セッション10: ブロック破壊時のアイテムドロップ(実装中)
 
 ユーザー要望(2026-07-25): 「たまにブロックを崩したときにアイテムが降ってくるようにしてください」
 - 玉の数が増える
@@ -367,7 +451,7 @@ pnpm --filter @kusakuzushi/extension build
 
 バー増加の挙動は **メインパドルの左右に追加バーが1本ずつ出て3本が一緒に動く**(ユーザー選択 2026-07-25)。
 
-### Constraints(セッション9)
+### Constraints(セッション10)
 
 | Constraint | Source | Verify by |
 |------------|--------|-----------|
@@ -380,7 +464,7 @@ pnpm --filter @kusakuzushi/extension build
 | 緑は草専用・UI/アイテムはアンバー系 | DESIGN-VISUAL §0 | renderer のアイテム色が accentColor 由来 |
 | 追加バーの隙間 < ボール直径(すり抜け防止) | 物理的要請 | gap = ballRadius(直径の半分)固定 + ユニットテスト |
 
-### Assumptions(セッション9)
+### Assumptions(セッション10)
 
 | Assumption | Status | Evidence |
 |------------|--------|----------|
@@ -411,7 +495,7 @@ pnpm --filter @kusakuzushi/extension build
 - [x] extension: 透過レンダラを複数ボール/複数バー/アイテム対応に + deriveConfig でアイテム寸法をスケール — `renderer.test.ts` 新設(3件)+ adapter に寸法テスト。拡張 44 → 48 tests
 - [x] web: attract の autopilot を「一番下のボール」追従に
 - [x] `pnpm -r test`(187 pass: core 46 / ogp 65 / web 28 / extension 48)/ `pnpm -r build` exit 0
-- [x] ブラウザ実機でアイテム取得までプレイ検証 — 下記「セッション9 検証記録」
+- [x] ブラウザ実機でアイテム取得までプレイ検証 — 下記「セッション10 検証記録」
 - [x] DESIGN.md §3 / DESIGN-VISUAL §5 にアイテム仕様を追記
 - [x] 自己レビュー(このセッションはサブエージェント禁止の実行環境のため reviewer エージェントは使わず、差分の通読で代替)。見つけた点: クリア時に落下中アイテムが結果画面へ凍りついたまま残る → `clear` 遷移時に `items` を空にする修正を入れた
 - [x] ユーザー指摘の調整(2026-07-25): アイテムを青に / 玉を「めちゃくちゃ多く」増やせるように — 下記「調整の記録」
@@ -427,7 +511,7 @@ pnpm --filter @kusakuzushi/extension build
 4. **実測(ブラウザ)**: ドロップ率100%の一時ページで玉が 1→2→4→8→16→191→196(上限)と複利で増え、**371ブロックの盤面が `clear` に到達**(スコア 3,717)。青タイルは light/dark 両方でスクリーンショット目視確認(アンバーの玉と明確に別物に見える)
 5. **序盤の加速**(ユーザー指摘「初期もう少し加速できますか」2026-07-25): ドロップ確率を固定 8% から **序盤 22% → 終盤 8% の線形ランプ**に(`earlyItemDropBonus = 0.14`、破壊済み割合で補間)。立ち上がりは玉1個で手が足りず、そこを厚くしないと複利が始まらないため。終盤は玉が増えているので絞る。ユニットテストは「同じ乱数値が序盤は通り終盤は弾かれる」形で検証(フラット確率に戻すと落ちる)。371ブロック盤面の 180 秒シミュレーション(完璧オートパイロット、3シード)では flat 8% が 3回とも 6ブロックだったのに対し、ランプありは 1回が 21ブロック(アイテムを拾って複利が始まった回)
 
-### セッション9 検証記録(2026-07-25 実ブラウザ実測)
+### セッション10 検証記録(2026-07-25 実ブラウザ実測)
 
 `itemDropChance: 1` に固定した一時ページ(`apps/web/item-check.html`、検証後に削除)を Vite dev で開き、core の `Game` + `render()` を同期駆動して実測。
 
@@ -453,6 +537,10 @@ pnpm --filter @kusakuzushi/extension build
 - 2026-07-25 (S4): 実ページ検証用の rAF ハーネスは **id をキーにした Map** で実装すること。単純な配列キューにして `cancelAnimationFrame` で全消しすると、GitHub 自身のコードが自分の rAF をキャンセルした瞬間にゲームループまで消えて「原因不明でループが止まる」現象になる(実際に1回踏んだ)
 - 2026-07-25 (S6): デプロイ後の本番確認で画面が真っ白になり production 障害に見えたが、**原因はブラウザペーン側の HTTP キャッシュに残った切り詰めレスポンス**だった(ネットワークログに `net::ERR_CONNECTION_CLOSED` あり)。判別方法: ページ内で `fetch(url)` と `fetch(url, {cache:"reload"})` の長さを比較 — キャッシュ 1,535 文字 / 実体 21,622 文字で確定した。origin 側は curl で dist と byte 一致、同一成果物が pages.dev と localhost では正常描画。切り詰めた JS はパースが通ってしまうと **console エラーを出さずに何もしない**ため「JS が実行されていない」ようにしか見えない。真っ白のときは (1) curl で HTML/JS を dist と shasum 比較、(2) pages.dev で同一成果物を確認、(3) ページ内 fetch のキャッシュ有無比較、の順で切り分ける
 - 2026-07-25: Claude Code の Browser ペーンは visibilityState=hidden のため rAF・setTimeout が完全停止する。ライブプレイ検証は「requestAnimationFrame をキュー化して javascript_exec 内で同期的に drain する」ハーネスで実施(1フレーム=100ms の合成タイムスタンプ)。加えて viewport が一時的に 0px に崩壊する事象あり — resize_window(desktop) で復旧。getBoundingClientRect が 2px を返したらこれを疑う
+
+- 2026-07-25 (S9): **lhci の設定切り替えに `LHCI_` 始まりの環境変数を使ってはいけない**。lhci は `LHCI_*` を自分の CLI 引数として読むため、`LHCI_TARGET=production` が upload の `--target production` になり `Invalid values: target` で落ちる。`KUSAKUZUSHI_LH_TARGET` に改名して解消
+- 2026-07-25 (S9): lhci の assert 既定 `aggregationMethod` は **optimistic**(3 回のうち最良回だけを見る)。回帰ゲートとしては甘いので `median` を明示している
+- 2026-07-25 (S9): Cloudflare Pages は存在しないパスに index.html を **200** で返す。`/robots.txt` が HTML になっていて Lighthouse SEO が 92 に落ちていた。`apps/web/public/` に置けば解決する(404 ページの挙動を前提にしないこと)
 
 ## Review
 
