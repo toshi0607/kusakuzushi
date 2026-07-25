@@ -107,7 +107,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   earlyItemDropBonus: 0.14,
   itemFallSpeed: 120,
   itemSize: 14,
-  multiBallSplitFactor: 2,
+  multiBallSplitFactor: 3,
   maxBalls: 200,
   extraPaddleDurationSec: 12,
   extraPaddleWidthRatio: 0.5,

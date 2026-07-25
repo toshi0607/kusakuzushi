@@ -271,7 +271,9 @@ describe("render", () => {
     render(fake.ctx, game, LIGHT_THEME);
 
     // #then the tile sits on the item's centre in the item colour...
-    const tile = fake.roundRects.find((call) => call.fillStyle === LIGHT_THEME.itemColor && call.width === item.size);
+    const tile = fake.roundRects.find(
+      (call) => call.fillStyle === LIGHT_THEME.itemColors?.multiBall && call.width === item.size,
+    );
     expect(tile).toMatchObject({ x: item.x - item.size / 2, y: item.y - item.size / 2, height: item.size });
 
     // #and its glyph is three square dots knocked out in the background colour
@@ -288,7 +290,13 @@ describe("render", () => {
     // #when a frame renders
     render(fake.ctx, game, LIGHT_THEME);
 
-    // #then the glyph is three upright bars (wider than tall would be a dot).
+    // #then the tile is the extraPaddle hue, not the multiBall one
+    const tile = fake.roundRects.find(
+      (call) => call.x === item.x - item.size / 2 && call.y === item.y - item.size / 2,
+    );
+    expect(tile?.fillStyle).toBe(LIGHT_THEME.itemColors?.extraPaddle);
+
+    // #and the glyph is three upright bars (wider than tall would be a dot).
     // The size filter drops the canvas background, which is colours[0] too.
     const marks = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[0] && call.width < item.size);
     expect(marks).toHaveLength(3);
