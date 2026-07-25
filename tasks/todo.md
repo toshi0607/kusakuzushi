@@ -127,7 +127,69 @@ curl -s -A "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" ...同UR
 - ビルド方式は Vite + CRXJS か素の esbuild(DESIGN §6、Phase 3 で決定とされている)
 - 検証は自分の GitHub プロフィールページで実施(DESIGN §7 Phase 3 完了条件)
 
-## セッション4: Chrome 拡張(未着手)
+## セッション4: Chrome 拡張(実装中)
+
+### Constraints(セッション4 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| packages/core は無変更(ゲームバランス不変) | セッション4指示 / DESIGN §3 | `git diff main -- packages/core` が空 |
+| 拡張アダプタは count = level² を投入(セッション1 L4) | セッション1レビュー L4 / セッション4指示 | adapter のユニットテスト(count=1/4/9/16) |
+| 破壊時に実 td の背景を level0 相当へ差し替える | DESIGN §5 | td-paint のユニットテスト + 実ページ実測 |
+| 終了/遷移で原状復帰(DOM は破壊しない) | DESIGN §5 | teardown 後に td の style/属性が初期状態と一致(テスト) |
+| turbo:load でのページ遷移に対応(多重初期化・リーク防止) | DESIGN §5 / セッション4指示 | 二重 mount しないこと・rAF/リスナ解放をテスト |
+| セレクタとグリッド構築を1ファイルに隔離 | DESIGN §5 | grass-dom.ts 以外に `ContributionCalendar` 文字列が出ないこと(grep) |
+| モデルルーティング: scaffold=haiku / 実装=sonnet / ゲート=reviewer(opus) | ~/.claude/rules/behavior.md | 各 Agent 呼び出し |
+| マージは `gh api -X PUT .../merge`、`GH_HOST=github.com` 明示 | セッション1〜3 Notes | 実行コマンド |
+
+### Assumptions(セッション4 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 草 td は data-date / data-level / id=contribution-day-component-{row}-{col} を持つ | VERIFIED | 2026-07-25 実ページ実測(371セル、`data-ix`/`data-date`/`data-level`/`id` を確認) |
+| セルは正方 10px、border-spacing 3px(縦横同一 stride 13px) | VERIFIED | 2026-07-25 getBoundingClientRect 実測: rect0 l=67 w=10 h=10 / rect1 l=80 / 行の t が 13px 刻み |
+| `--color-calendar-graph-day-*-bg` の CSS 変数は :root では空。色は computed style から採る必要がある | VERIFIED | 2026-07-25 実測: 全変数が空文字。td の computedStyle は level0=rgb(239,242,245) 〜 level4=rgb(17,99,41) |
+| core の computeLayout の幾何を実 td 座標に一致させられる(gap=実ギャップ, W=cols*stride+gap, H=2*(7*cellH+9*gap)) | VERIFIED | 実測値で解いて一致確認(下記「幾何の解」)+ ユニットテストで computeLayout の出力と実 rect の一致を検証 |
+| ビルドは素の esbuild で足りる(CRXJS 不要) | VERIFIED | 調査(open-source-librarian, 2026-07-25): 単一 content script・popup/background なし・HMR不要。esbuild は core の exports(src/index.ts 直指し)を追加プラグインなしで解決 |
+| 拡張の未パック読み込みはこのセッションからは自動化できない | UNVERIFIED-ACCEPTED(2026-07-25) | chrome://extensions はブラウザ MCP の操作対象外。代替として **実 github.com ページに実ビルド成果物(dist/content.js)を注入して**エンドツーエンド検証し、手動読み込み手順を下記に残す |
+
+### 幾何の解(実測 10px セル / 3px ギャップ / 53週)
+
+core の `computeLayout` は `brickWidth=(W-gap*(cols+1))/cols`, `brickAreaTop=gap`, `brickAreaHeight=H/2-gap`, `brickHeight=(brickAreaHeight-8*gap)/7` 固定。実 td に重ねるには:
+
+- `gap = strideX - cellW`(実測 3)
+- `canvasWidth = cols*stride + gap`(53*13+3 = 692)
+- `canvasHeight = 2*(7*cellH + 9*gap)`(2*(70+27) = 194)
+- オーバーレイの原点 = (col0,row0 セルの page 座標) - gap
+
+→ ブロック矩形が実 td と1:1で重なる。盤面下半分(97px)がパドル空間になるため、`ballSpeed`/`paddle*`/`ballRadius` は狭い盤面向けに config で上書きする(core は無変更)。
+
+### タスク
+
+- [ ] apps/extension scaffold(→ haiku): package.json / tsconfig / vitest(jsdom) / manifest.json / build.mjs(esbuild) / 実フラグメントのテストフィクスチャ — `pnpm --filter @kusakuzushi/extension build` exit 0
+- [ ] grass-dom.ts: セレクタ + セル読み取り + 幾何計測(純関数に分離)— jsdom + 実 HTML フィクスチャで vitest pass
+- [ ] adapter.ts: cells → ContributionGrid(**count = level²**)+ deriveConfig — ユニットテスト pass(count=1/4/9/16、computeLayout 出力が実 rect と一致)
+- [ ] overlay.ts / renderer.ts: 透過キャンバス(実 td を隠さない)にボール・パドル・パーティクル・HUD を描画
+- [ ] td-paint.ts: ヒットで level を下げ、破壊で level0 色へ。teardown で完全復帰 — ユニットテスト pass
+- [ ] content.ts: 「🎮 崩す」ボタン注入、mount/unmount、turbo:load / turbo:before-render 対応(多重初期化なし)
+- [ ] `pnpm -r test` / `pnpm -r build` exit 0
+- [ ] 実 github.com/toshi0607 で dist/content.js を注入してエンドツーエンド検証(グリッド構築・発射・td の色変化・原状復帰)
+- [ ] フェーズゲート: reviewer(opus)
+- [ ] PR → CI green → API マージ → 完了記録
+
+### 拡張の手動読み込み手順(unpacked)
+
+```bash
+pnpm --filter @kusakuzushi/extension build
+# → apps/extension/dist が生成される
+```
+
+1. Chrome で `chrome://extensions` を開く
+2. 右上「デベロッパー モード」を ON
+3. 「パッケージ化されていない拡張機能を読み込む」→ `apps/extension/dist` を選択
+4. `https://github.com/toshi0607` を開き、草グラフ右上の「🎮 崩す」を押す
+5. マウスでパドル移動、クリック/Space で発射。破壊された日の草が実際に灰色になる
+6. 「やめる」または他ページへ遷移で原状復帰
 
 ## Notes
 

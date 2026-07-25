@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "草崩し (Kusakuzushi)",
+  "version": "0.0.1",
+  "description": "GitHub のプロフィールページの草を、その場でブロック崩しにする",
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
