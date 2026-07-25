@@ -168,6 +168,13 @@ function createGameRuntime(
     }
   };
 
+  // Catching an item is the one event with no other feedback on this board
+  // (the grass only reacts to broken bricks), so mark it with a burst where
+  // it was caught, in the strongest green.
+  game.onItemCollected = (item): void => {
+    overlayRenderer.spawnBurst(item.x, item.y, levelColors.length - 1);
+  };
+
   // Mirrors overlay.ts's own left/top math so the result banner (drawn as
   // a separate DOM element, not on the canvas) lines up with it.
   const overlayLeft = geometry.originX - geometry.gap;
