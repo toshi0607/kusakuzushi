@@ -16,6 +16,13 @@ export type GameConfig = {
   canvasHeight: number;
   /** Gap, in px, drawn between adjacent bricks and around the brick field. */
   brickGapPx: number;
+  /**
+   * Exact brick height in px, for hosts that must land on real DOM cells
+   * (the extension overlays github.com's own `td`s, and measures their
+   * width and height separately — they are not guaranteed to agree).
+   * Unset means "square": the brick's height follows its width.
+   */
+  brickHeightPx?: number;
   paddleWidth: number;
   paddleHeight: number;
   /** Distance from the bottom of the canvas to the paddle. */
@@ -35,8 +42,15 @@ export type GameConfig = {
 
 export const DEFAULT_CONFIG: GameConfig = {
   canvasWidth: 960,
-  canvasHeight: 480,
-  brickGapPx: 2,
+  // 8:3。53 週ぶんの正方セル(一辺 ≈14px)は帯の高さ ≈134px にしかならないので、
+  // 2:1 のままだと盤面の 2/3 が空洞になる。360 は草下端からパドルまでの
+  // ボール往復距離を従来(204px)とほぼ同じ 190px に保つ高さ — 見た目だけを
+  // 直し、ゲーム感は変えない(DESIGN.md §3)。
+  canvasHeight: 360,
+  // github.com のセルは 10px + 3px 間隔 = ストライドの 23% が隙間。ここも
+  // 合わせないと、正方形でも「一枚の緑の板」に見えて日が数えられない。
+  // 4px は 960/53 列で 14.04px セルになり、隙間比 22% で本家と一致する。
+  brickGapPx: 4,
   paddleWidth: 80,
   paddleHeight: 12,
   paddleMarginBottom: 24,
@@ -94,18 +108,30 @@ export type BrickLayout = {
 /**
  * Computes the shared pixel geometry for the brick field and the paddle so
  * that `Game` (collision) and `renderer.ts` (drawing) never disagree about
- * where things are. The brick field is capped at half the canvas height so
- * the paddle always keeps at least as much space below it as the grass
- * occupies above (see DESIGN.md §3).
+ * where things are.
+ *
+ * Bricks are square: a contribution cell is square on github.com, so the
+ * board only reads as a contribution graph when its cells do too — the
+ * brick's side is its width, derived from the canvas width and the column
+ * count (DESIGN.md §3, "草の実寸比").
+ *
+ * The height that half the canvas could afford stays as an upper bound, so
+ * the grass can never grow into the paddle's half no matter what canvas a
+ * host hands us — on a canvas too narrow for square cells to fit, bricks
+ * flatten instead of overflowing.
+ *
+ * `brickHeightPx` overrides both: a host drawing over real DOM cells owns
+ * the true height and must not be second-guessed by this module's ideal.
  */
 export function computeLayout(config: GameConfig, cols: number): BrickLayout {
   const safeCols = Math.max(cols, 1);
   const gap = config.brickGapPx;
 
   const brickAreaTop = gap;
-  const brickAreaHeight = Math.max(config.canvasHeight / 2 - brickAreaTop, 0);
+  const halfCanvasBrickHeight = (config.canvasHeight / 2 - brickAreaTop - gap * (ROWS + 1)) / ROWS;
   const brickWidth = Math.max((config.canvasWidth - gap * (safeCols + 1)) / safeCols, 0);
-  const brickHeight = Math.max((brickAreaHeight - gap * (ROWS + 1)) / ROWS, 0);
+  const brickHeight = Math.max(config.brickHeightPx ?? Math.min(brickWidth, halfCanvasBrickHeight), 0);
+  const brickAreaHeight = brickHeight * ROWS + gap * (ROWS + 1);
   const paddleY = config.canvasHeight - config.paddleMarginBottom - config.paddleHeight;
 
   return { brickWidth, brickHeight, brickAreaTop, brickAreaHeight, paddleY };
@@ -120,7 +146,7 @@ export function computeLayout(config: GameConfig, cols: number): BrickLayout {
 export class Game {
   private readonly _config: GameConfig;
   private readonly cols: number;
-  private readonly layout: BrickLayout;
+  private readonly _layout: BrickLayout;
   private readonly bricks: Brick[];
   private readonly maxSubstepDt: number;
   private paddle: Paddle;
@@ -137,7 +163,7 @@ export class Game {
     this._config = { ...DEFAULT_CONFIG, ...config };
     this._life = this._config.lives;
     this.cols = grid.weeks.length;
-    this.layout = computeLayout(this._config, this.cols);
+    this._layout = computeLayout(this._config, this.cols);
     this.bricks = this.buildBricks(grid);
     this.paddle = this.initialPaddle();
     this.ball = this.ballOnPaddle();
@@ -150,6 +176,15 @@ export class Game {
 
   get state(): GameState {
     return this._state;
+  }
+
+  /**
+   * The pixel geometry this game was built with. Renderers read it instead
+   * of re-deriving the grass band from `canvasHeight` — the band's height
+   * follows the square cells, not a fixed fraction of the canvas.
+   */
+  get layout(): Readonly<BrickLayout> {
+    return this._layout;
   }
 
   get life(): number {
@@ -285,7 +320,7 @@ export class Game {
   private initialPaddle(): Paddle {
     return {
       x: (this._config.canvasWidth - this._config.paddleWidth) / 2,
-      y: this.layout.paddleY,
+      y: this._layout.paddleY,
       width: this._config.paddleWidth,
       height: this._config.paddleHeight,
     };
@@ -315,10 +350,10 @@ export class Game {
           row,
           col,
           rect: {
-            x: gap + col * (this.layout.brickWidth + gap),
-            y: this.layout.brickAreaTop + row * (this.layout.brickHeight + gap),
-            width: this.layout.brickWidth,
-            height: this.layout.brickHeight,
+            x: gap + col * (this._layout.brickWidth + gap),
+            y: this._layout.brickAreaTop + row * (this._layout.brickHeight + gap),
+            width: this._layout.brickWidth,
+            height: this._layout.brickHeight,
           },
           level: cell.level,
           count: cell.count,
@@ -338,8 +373,8 @@ export class Game {
    */
   private computeMaxSubstepDt(): number {
     const dimensions = [this._config.paddleHeight];
-    if (this.layout.brickHeight > 0) {
-      dimensions.push(this.layout.brickHeight);
+    if (this._layout.brickHeight > 0) {
+      dimensions.push(this._layout.brickHeight);
     }
     const minDimension = Math.min(...dimensions);
 

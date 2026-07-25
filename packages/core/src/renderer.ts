@@ -204,9 +204,10 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
   ctx.fill();
 
   if (options?.hud !== false) {
-    // HUD は草の上に重ねない。草の直下(盤面の下半分の先頭)に置くことで、
-    // ブロックを隠さず、背景の無地の上で確実に読める。
-    const hudTop = config.canvasHeight / 2 + 10;
+    // HUD は草の上に重ねない。草の帯の直下に置くことで、ブロックを隠さず、
+    // 背景の無地の上で確実に読める。帯の高さは正方セルから決まる(盤面の
+    // 半分とは限らない)ので、canvasHeight ではなく layout から導出する。
+    const hudTop = game.layout.brickAreaTop + game.layout.brickAreaHeight + 10;
 
     ctx.fillStyle = theme.textColor;
     ctx.font = `16px ${theme.hudFont ?? "sans-serif"}`;
