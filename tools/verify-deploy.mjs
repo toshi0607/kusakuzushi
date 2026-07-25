@@ -117,8 +117,12 @@ async function checkOnce(siteUrl, entryScripts, localDigests) {
   }
 
   for (const [path, expected] of localDigests) {
-    // index.html は `/` として配信されるものを見る(人が実際に踏む経路)
-    const target = new URL(path === "/index.html" ? "." : path.slice(1), siteUrl);
+    // `index.html` はディレクトリの URL として配信されるものを見る(人が実際に踏む経路)。
+    // `/index.html` → `/`、`/privacy/index.html` → `/privacy/`
+    const servedPath = path.endsWith("/index.html")
+      ? path.slice(0, -"index.html".length)
+      : path;
+    const target = new URL(servedPath.slice(1), siteUrl);
     const response = await fetchFresh(target);
     if (!response.ok) {
       return `${path} が HTTP ${response.status}`;

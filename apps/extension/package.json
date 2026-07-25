@@ -1,11 +1,12 @@
 {
   "name": "@kusakuzushi/extension",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc && node build.mjs",
     "dev": "node build.mjs --watch",
+    "package": "pnpm build && node package.mjs",
     "test": "vitest run"
   },
   "dependencies": {

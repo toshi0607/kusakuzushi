@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>プライバシーポリシー | 草崩し</title>
+  <meta name="description" content="草崩し(Chrome 拡張および Web 版)のプライバシーポリシー / Privacy policy for Kusakuzushi.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://kusakuzushi.toshi0607.com/privacy">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F8F2">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C110D">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <!--
+    Vite のビルド対象ではなく public/ の素通し配信なので、トークンは src/style.css から
+    写した自己完結のインライン CSS で持つ。値を変えるときは style.css の :root が正。
+  -->
+  <style>
+    :root {
+      color-scheme: light dark;
+      --soil: #f4f8f2;
+      --field: #ffffff;
+      --ridge: #d8e2d5;
+      --ink: #1c231b;
+      --ink-faint: #5c6b59;
+      --marquee: #ffb224;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --soil: #0c110d;
+        --field: #151c16;
+        --ridge: #28332a;
+        --ink: #e4ede2;
+        --ink-faint: #8da08c;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 16px 64px;
+      background: var(--soil);
+      color: var(--ink);
+      font-family: "IBM Plex Sans JP", system-ui, sans-serif;
+      font-size: 0.9375rem;
+      line-height: 1.8;
+    }
+
+    main {
+      max-width: 46rem;
+      margin: 0 auto;
+      padding: 24px 28px;
+      background: var(--field);
+      border: 1px solid var(--ridge);
+      border-radius: 12px;
+    }
+
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    h2 { font-size: 1.125rem; margin: 32px 0 8px; padding-top: 16px; border-top: 1px solid var(--ridge); }
+    h3 { font-size: 1rem; margin: 20px 0 4px; }
+    p, ul { margin: 8px 0; }
+    ul { padding-left: 1.25rem; }
+    a { color: var(--ink); text-decoration-color: var(--marquee); text-decoration-thickness: 2px; }
+    .meta { color: var(--ink-faint); font-size: 0.8125rem; margin: 0 0 8px; }
+    .lang-note { color: var(--ink-faint); font-size: 0.8125rem; }
+    footer { max-width: 46rem; margin: 16px auto 0; color: var(--ink-faint); font-size: 0.8125rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>プライバシーポリシー</h1>
+    <p class="meta">草崩し (Kusakuzushi) — 最終更新日: 2026年7月26日</p>
+    <p class="lang-note"><a href="#en">English version below</a></p>
+
+    <h2>1. 対象</h2>
+    <p>
+      本ポリシーは、個人開発者 toshi0607 が提供する以下の 2 つを対象とします。
+    </p>
+    <ul>
+      <li><strong>Chrome 拡張「草崩し (Kusakuzushi)」</strong></li>
+      <li><strong>Web 版</strong> <a href="https://kusakuzushi.toshi0607.com/">kusakuzushi.toshi0607.com</a></li>
+    </ul>
+
+    <h2>2. Chrome 拡張が収集する情報</h2>
+    <p><strong>ありません。</strong>本拡張は、いかなる個人情報・利用状況・識別子も収集、保存、送信しません。</p>
+    <p>具体的には、本拡張は次のいずれも行いません。</p>
+    <ul>
+      <li>外部サーバーへの通信(ネットワークリクエストを一切行いません)</li>
+      <li>Cookie・localStorage・chrome.storage などへの保存</li>
+      <li>アクセス解析、広告、トラッキング、フィンガープリンティング</li>
+      <li>閲覧履歴、入力内容、認証情報の読み取り</li>
+      <li>収集した情報の第三者への販売・提供(そもそも収集しません)</li>
+    </ul>
+
+    <h3>拡張が行う処理</h3>
+    <p>
+      本拡張は <code>https://github.com/*</code> 上でのみ動作し、表示中のページに
+      すでに描画されているコントリビューショングラフ(いわゆる「草」)の
+      マス目の色の濃さと日付を、<strong>あなたのブラウザ内でのみ</strong>読み取ってゲームの盤面に変換します。
+      読み取った内容はブラウザの外に出ることはなく、ページを離れるかゲームを終了した時点で破棄されます。
+      ゲーム中に灰色になったマス目の見た目も一時的なもので、GitHub 上のデータは一切変更されません。
+    </p>
+
+    <h3>ホスト権限について</h3>
+    <p>
+      本拡張は GitHub のプロフィールページ上の草グラフに重ねて動作する必要があるため、
+      <code>https://github.com/*</code> へのアクセスを宣言しています。GitHub のユーザー名は
+      任意の文字列を取りうるため、プロフィールページだけを指す一致パターンを書くことができません。
+      この権限は上記のグラフの読み取りとゲーム画面の描画にのみ使用します。
+      GitHub 以外のサイトでは本拡張は一切動作しません。
+    </p>
+
+    <h2>3. Web 版が扱う情報</h2>
+    <p>
+      Web 版では、あなたが入力した <strong>GitHub のユーザー名</strong>を、
+      草グラフのデータを取得するために外部 API
+      (<a href="https://github.com/grubersjoe/github-contributions-api" rel="noopener">github-contributions-api</a>、
+      運営者: Jonathan Gruber)へ送信します。同 API の取り扱いについては当該提供者の方針に従います。
+    </p>
+    <p>
+      入力されたユーザー名やスコアを当方のサーバーに保存することはありません。
+      共有用の画像 (<code>/share/</code>) は、共有 URL に含まれるユーザー名とスコアから
+      その都度生成し、配信のためのキャッシュにのみ一時的に保持します。
+    </p>
+    <p>
+      Web 版はアクセス解析ツール、広告、トラッキング用 Cookie を使用していません。
+      ホスティング事業者 (Cloudflare) が、サービス提供とセキュリティの目的で
+      アクセスログを記録する場合があります。
+    </p>
+
+    <h2>4. 子どもの利用について</h2>
+    <p>本サービスは個人情報を収集しないため、年齢を問わず安全にご利用いただけます。</p>
+
+    <h2>5. 本ポリシーの変更</h2>
+    <p>
+      内容を変更する場合は、本ページを更新し、上部の最終更新日を改めます。
+      収集する情報の種類を増やす変更を行う場合は、変更前に本ページで告知します。
+    </p>
+
+    <h2>6. お問い合わせ</h2>
+    <p>
+      本ポリシーおよび本サービスに関するお問い合わせは
+      <a href="https://github.com/toshi0607" rel="noopener">github.com/toshi0607</a> までお願いします。
+    </p>
+
+    <h2 id="en">Privacy Policy (English)</h2>
+    <p class="meta">Kusakuzushi — Last updated: July 26, 2026</p>
+
+    <h3>1. Scope</h3>
+    <p>
+      This policy covers the <strong>Kusakuzushi Chrome extension</strong> and the
+      <strong>web version</strong> at
+      <a href="https://kusakuzushi.toshi0607.com/">kusakuzushi.toshi0607.com</a>,
+      both published by the individual developer toshi0607.
+    </p>
+
+    <h3>2. Data collected by the Chrome extension</h3>
+    <p><strong>None.</strong> The extension does not collect, store, or transmit any personal
+      information, usage data, or identifiers. It makes no network requests at all, writes
+      nothing to cookies, localStorage, or chrome.storage, and contains no analytics, ads,
+      tracking, or fingerprinting code.</p>
+    <p>
+      The extension runs only on <code>https://github.com/*</code>. It reads the shade and date
+      of the contribution-graph cells that GitHub has already rendered on the page, and converts
+      them into a game board <strong>entirely within your browser</strong>. Nothing leaves your
+      browser, and the data is discarded when you leave the page or stop the game. Cells that turn
+      grey during play are a temporary visual effect only; no data on GitHub is modified.
+    </p>
+    <p>
+      <strong>Host permission:</strong> the extension needs to overlay the contribution graph on
+      GitHub profile pages. Because GitHub usernames can be any string, no match pattern can
+      target profile pages alone, so <code>https://github.com/*</code> is declared. The permission
+      is used solely to read that graph and draw the game. The extension does not run on any
+      other site.
+    </p>
+
+    <h3>3. Data handled by the web version</h3>
+    <p>
+      The web version sends the <strong>GitHub username you enter</strong> to a third-party API
+      (<a href="https://github.com/grubersjoe/github-contributions-api" rel="noopener">github-contributions-api</a>
+      by Jonathan Gruber) in order to fetch the contribution graph. That provider's own policy
+      applies to the request.
+    </p>
+    <p>
+      We do not store entered usernames or scores on our servers. Share images
+      (<code>/share/</code>) are generated on demand from the username and score contained in the
+      share URL, and are held only in a delivery cache.
+    </p>
+    <p>
+      The web version uses no analytics tools, no advertising, and no tracking cookies. Our
+      hosting provider (Cloudflare) may record access logs for service operation and security.
+    </p>
+
+    <h3>4. Children</h3>
+    <p>Because no personal information is collected, the service is safe to use at any age.</p>
+
+    <h3>5. Changes to this policy</h3>
+    <p>
+      If this policy changes, this page is updated and the date above is revised. Any change that
+      would expand the categories of data collected will be announced here before it takes effect.
+    </p>
+
+    <h3>6. Contact</h3>
+    <p>
+      Questions about this policy or the service:
+      <a href="https://github.com/toshi0607" rel="noopener">github.com/toshi0607</a>.
+    </p>
+  </main>
+  <footer>
+    <a href="https://kusakuzushi.toshi0607.com/">← 草崩しに戻る / Back to Kusakuzushi</a>
+  </footer>
+</body>
+</html>

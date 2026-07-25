@@ -8,7 +8,7 @@
 |------------|--------|-----------|
 | core は DOM/fetch 非依存の純粋 TS | DESIGN.md §1 | core/src に fetch/document 参照がないこと(grep) |
 | データ源はアダプタで差し替え可能 | DESIGN.md §2 | core が ContributionGrid 型のみに依存 |
-| リポジトリは private で作成。**将来 public にする**(時期は未定) | セッション1判断 + ユーザー方針 2026-07-26 | gh repo view。公開耐性のある CI 構成はセッション13 で用意済み |
+| リポジトリは private で作成。**将来 public にする**(時期は未定) | セッション1判断 + ユーザー方針 2026-07-26 | gh repo view。公開耐性のある CI 構成はセッション14 で用意済み |
 | モデルルーティング: scaffold=haiku, 実装=sonnet, レビュー=reviewer(opus) | ~/.claude/rules/behavior.md | 各 Agent 呼び出し |
 | 区切りごとにセッション分割(S1:core, S2:web, S3:OGP, S4:拡張) | ユーザー指示 2026-07-24 | 各セッション末尾でコミット+push済みであること |
 | コミットに Co-Authored-By: Claude | システム規約 | git log |
@@ -25,7 +25,7 @@
 
 ## セッションの索引
 
-並行セッションが同じ番号を取ってしまい、**8 と 10 が 2 回ずつ**使われている(番号での相互参照が本文・`lessons.md` に多数あるため、振り直さず索引で引けるようにする)。ファイル内の並び順も時系列とは一致しない。
+並行セッションが同じ番号を取ってしまい、**8 と 10 が 2 回ずつ**使われている(13 も一度衝突したが、こちらは相互参照が増える前に片方を 14 へ振り直した)(番号での相互参照が本文・`lessons.md` に多数あるため、振り直さず索引で引けるようにする)。ファイル内の並び順も時系列とは一致しない。
 
 | 番号 | 主題 | 状態 |
 |---|---|---|
@@ -43,11 +43,12 @@
 | 10(2つ目) | ファビコン | 完了 |
 | 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
 | 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
-| 13 | PR マージで自動デプロイ + パブリック化の準備 | 進行中 |
+| 13 | Chrome ウェブストア公開 | 進行中 |
+| 14 | PR マージで自動デプロイ + パブリック化の準備 | 進行中 |
 
 セッション12 までは**未完了なし**(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
 
-**デプロイの現行手順はセッション13 を見ること。** それ以前のセッションの引き継ぎに書いてある
+**デプロイの現行手順はセッション14 を見ること。** それ以前のセッションの引き継ぎに書いてある
 `npx wrangler pages deploy ...` はもう手順ではない(main へのマージで自動デプロイされる)。
 
 ## セッション1: リポジトリ + core エンジン
@@ -1119,7 +1120,70 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
   測ると FCP 中央値 1013ms で green。**本番の合否判定はローカルではなく CI の `production` ジョブで行うこと**
 - 次の一手(**発動せず**。A-11 で本番 green を実測したため前提が消えた。将来また赤くなったとき用に残す): `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
 
-## セッション13: PR マージで自動デプロイ + パブリック化の準備(2026-07-26)
+## セッション13: Chrome ウェブストア公開(進行中 2026-07-26)
+
+拡張(apps/extension)を Chrome ウェブストアに出す。本体は完成済み(build/test green)なので、
+このセッションの作業は **ストア提出物の作成** と **デベロッパーコンソールへの入力**。
+
+### ユーザー決定(2026-07-26)
+
+| 論点 | 決定 |
+|---|---|
+| 公開範囲 | **テスター限定 (Private)** — まず自分だけで動作確認。後から Unlisted/Public に変更可 |
+| 掲載文の言語 | **日本語 + 英語**(既定 en + ja ロケール) |
+| プライバシーポリシー | **用意する** — apps/web に `/privacy` を追加してデプロイ |
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| デベロッパー登録・$5 決済はユーザーが行う | システム規約(アカウント作成・決済情報入力は禁止) | ユーザー報告 |
+| 「審査に送信」の最終クリックはユーザー | システム規約(公開行為) | ユーザー報告 |
+| 未パック拡張の読み込みはユーザー | `chrome://` はブラウザ自動化の対象外 | ユーザー報告 |
+| 拡張は権限ゼロ・リモートコード無しを維持 | 審査摩擦の最小化 | manifest の permissions が空、dist に外部 URL の import が無いこと |
+| 拡張の挙動は変えない | 今回は公開作業であって機能変更ではない | `pnpm --filter @kusakuzushi/extension test` 49 pass |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
+| 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
+| データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | UNVERIFIED | デプロイ後に curl で実測する |
+
+### Phase A: ユーザー作業(エージェント不可)
+
+- [ ] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い — https://chrome.google.com/webstore/devconsole
+- [ ] A-2. Account タブで連絡先メールを確認済みにする(未確認だと提出できない)
+- [ ] A-3. Private 配布用に「信頼できるテスター」に自分の Google アカウントを追加
+- [ ] A-4. `chrome://extensions` → デベロッパーモード ON → `apps/extension/dist` を読み込む(スクショ撮影の前提)
+- [ ] A-5. 最終「審査に送信」クリック
+
+### Phase B: エージェントが用意する提出物
+
+- [x] B-1. manifest 仕上げ: version 1.0.0 / `homepage_url` / `default_locale` + `_locales/{en,ja}` — `pnpm -r build` exit 0、`pnpm -r test` 225 pass
+- [x] B-2. `_locales` を dist に写す(build.mjs)。ついでに毎回 dist を作り直して古い生成物を残さない
+- [x] B-3. zip パッケージ生成スクリプト `pnpm --filter @kusakuzushi/extension package` — `unzip -l` でルートに manifest.json / content.js / icons/ / _locales/ の 12 entries を実測
+- [x] B-4. 小プロモタイル 440x280 PNG — `apps/extension/store/promo-tile-440x280.png`(440x280 を `file` で実測)。生成元は `apps/web/tools/promo-tile.{html,ts}` + dev エンドポイント `/__save-card?target=promo-tile`
+- [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
+- [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
+- [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
+- [~] B-8. `/privacy` ページ作成済み(`apps/web/public/privacy/index.html`、dev サーバーで表示確認)。**デプロイはユーザー承認待ち** — `curl -sI https://kusakuzushi.toshi0607.com/privacy` が 200 になったら完了
+- [x] B-9. `apps/extension/README.md` に公開手順を追記
+
+### Phase C: 一緒に実施
+
+- [ ] C-1. デベロッパーコンソールへブラウザ操作で入力(zip アップロード・掲載文・画像・プライバシー・配布範囲)
+- [ ] C-2. ユーザーが最終送信 → 審査結果を待つ
+
+### 見送り(スコープ外・要green)
+
+- 拡張 UI 文言(「🎮 崩す」ほか 6 文字列)の i18n。今回は manifest の name/description のみ英語化する。
+  UI まで英語化するかは別途判断(content.ts に `chrome.i18n` が入ると jsdom テストにモックが要る)
+
+## セッション14: PR マージで自動デプロイ + パブリック化の準備(2026-07-26)
 
 依頼: 「PR マージでデプロイされるようにしたい。ゆくゆくはパブリックリポジトリにするので、それも踏まえて」
 
@@ -1137,7 +1201,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 いずれも「配信中の成果物 == 手元の成果物」が機械で言えれば消える手間。あわせて `npx wrangler` の
 浮動バージョン(実行時の latest)も固定する。
 
-### Constraints(セッション13)
+### Constraints(セッション14)
 
 | Constraint | Source | Verify by |
 |---|---|---|
@@ -1149,7 +1213,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | クレデンシャルは Claude が扱わない | 安全ルール | トークン作成と secret 登録はユーザーが実施 |
 | LICENSE / README は今回入れない | ユーザー選択(公開の意思決定が要るため別 PR) | — |
 
-### Assumptions(セッション13)
+### Assumptions(セッション14)
 
 | Assumption | Status | Evidence |
 |---|---|---|
@@ -1157,10 +1221,24 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | `workers/ogp` は `packages/core` に依存しない(core 変更で Worker を出し直す必要が無い) | VERIFIED | `workers/ogp/package.json` の deps は `workers-og` のみ |
 | wrangler 4.114.0 で Worker がバンドルできる | VERIFIED | `wrangler deploy --dry-run` が Total Upload 1974.86 KiB で成功(2026-07-26) |
 | `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
-| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト3種(別アセット / 中身切り詰め / 到達不能ホスト)で exit 1 を実測(下記) |
+| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト4種(別アセット / 中身切り詰め / robots.txt 差し替え / 到達不能ホスト)で exit 1 を実測(下記) |
 | `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
 | API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: トークンはまだ存在せず(作成はユーザー、Claude はクレデンシャルを扱わない)、スコープの十分性はトークンを持たずには確かめられない。緩和策: 不足時の失敗は wrangler の認証エラー(`Authentication error [code: 10000]`)として**デプロイ前に**出るので、現行の本番配信は落ちない。マージ後の初回 `deploy-*` が実際の検証になり、足りなければスコープを足して再実行する |
 | private のままブランチ保護が設定できる(GitHub のプラン依存) | UNVERIFIED-ACCEPTED(2026-07-26) | **この PR の成否に影響しない**(デプロイ経路はブランチ保護に依存していない)。手元の gh トークンに `user` スコープが無く `gh api user` の `plan` が読めないため(実測: `plan: None`)、確定は PUT を投げるしかない = リポジトリ設定の変更なのでユーザー承認が要る。緩和策: 保護が張れなくても自動デプロイは動く。パブリック化のタイミングで必ず設定する(そこでは無料で使える) |
+
+### main とのマージ(2026-07-26)
+
+PR を出した後に main が進んでいたため(PR #30「Chrome ウェブストア公開」)、CI が
+**コンフリクト状態のワークフローを起動できず**、チェックが 1 つも走らない状態になっていた。
+`origin/main` をマージして解消。ぶつかったのは `tasks/todo.md` のみ。
+
+- **セッション番号の衝突**: 並行セッションが先に 13 を使っていたので、こちらを **14** に振り直した
+  (8 / 10 と違って相互参照が増える前だったため、索引で引かせるのではなく振り直せた)
+- main 側が追加した `apps/web/public/privacy/index.html` により dist が 7 → 8 ファイルになった。
+  `verify-deploy.mjs` は `*/index.html` をディレクトリ URL(`/privacy/`)として照合するよう修正
+- `/privacy/` は**既に本番へデプロイ済み**だった(セッション13 の B-8)。実測: 本番 `/privacy/` の
+  sha256 が手元の `dist/privacy/index.html` と一致(`2a8b2baf…`)。ルートの index.html
+  (`ee82bf83…`)とは別物なので、Pages の「存在しないパスに index.html」ではない
 
 ### 変えたもの
 
