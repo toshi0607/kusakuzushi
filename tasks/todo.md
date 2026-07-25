@@ -309,6 +309,87 @@ pnpm --filter @kusakuzushi/extension build
   - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
 - 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
+## セッション8: モバイル操作 — 盤面下のパドルレール(実装中)
+
+ユーザー指摘(2026-07-25): 「スマホだと全然できないので、描画領域下で触れる形でもバーを左右に動かせるようにしてください」
+
+問題の実体: パドル操作は canvas 上の `pointermove` だけ。タッチでは (1) 指を高さ ~170px の盤面に置くのでボールとパドルが指の下に隠れる、(2) `pointerdown` が即 `launch()` なので狙いを定める前に発射される、(3) 指を離すと追従が切れる。結果、スマホでは実質操作不能。
+
+解: 盤面の**すぐ下**に、パドルの可動域を 1:1 で写した専用のタッチレールを置く。レール幅 = canvas の CSS 幅なので、指の x はそのまま「真下にパドルが来る」絶対マッピングになる。押している間は移動だけ、**指を離した瞬間に発射**(狙ってから撃てる)。
+
+### Constraints(セッション8 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| ゲームバランス(core)は変えない | セッション3以降の継続制約 | `git diff main...HEAD -- packages/core` が0行 |
+| 緑はコンテンツ(草)専用。UI 操作系はアンバー | DESIGN-VISUAL §1 | レールのハンドルは `--marquee` |
+| canvas 内部解像度 960x480 は不変 | DESIGN-VISUAL §3 | canvas.width/height 無変更 |
+| デスクトップの見え方は変えない | 最小差分 | `@media (pointer: coarse)` でのみ表示 |
+| 装飾はシグネチャー(アトラクト)以外に足さない | DESIGN-VISUAL §0 | レールは canvas と同じ枠(`--ridge` 1px / 角丸 8px)だけ |
+
+### Assumptions(セッション8 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| レール幅と canvas の CSS 幅が一致する(比例変換で指の真下にパドルが来る) | VERIFIED | 同一 `.play-stack`(flex column)の直下で両方 `width: 100%` — 実測で確認(下記検証記録) |
+| jsdom 25 に `PointerEvent` / `setPointerCapture` は無い | VERIFIED | 2026-07-25 実測(`typeof PointerEvent === "undefined"`、`setPointerCapture is not a function`)。→ ドラッグ追従は暗黙のポインタキャプチャに頼らず window リスナで実装し、テストは `MouseEvent("pointerdown")` で駆動する |
+| `(pointer: coarse)` が「主入力がタッチ」の判定として妥当 | VERIFIED(ただし当初の但し書きは誤り) | Baseline(Media Queries L4)。**`pointer` は*主*入力しか見ない**ので、タッチスクリーン付きノート PC は `pointer: fine` + `any-pointer: coarse` になりレールは出ない。当初「ハイブリッド機ではレールが出るので実害なし」と書いていたが逆で、再レビュー H-A の指摘どおり「レールも無い・盤面もタッチを拒む」死に状態を作っていた。対応: 盤面のタッチ譲渡はレール自身の可視性(幅 > 0)で判定し、レールが出ない端末では従来どおり盤面追従にフォールバックする |
+
+### タスク
+
+- [x] `apps/web/src/paddle-rail.ts`: レールの生成・ポインタ処理・ハンドル位置反映(DOM 依存を1ファイルに閉じる)
+- [x] `apps/web/src/session.ts`: `.play-stack` でレールを盤面の下に組み込み、rAF ループでハンドルを**実パドル位置**(`game.paddleState`)に追従。ラウンド終了時に `setActive(false)`
+- [x] `apps/web/src/style.css`: `.play-stack` / `.paddle-rail` / ハンドル / ヒント / 無効化スタイル
+- [x] タッチ端末では発射ガイドの文言を「下のバーで発射」に(クリックも Space も無い操作を案内しない。当初は「タップで発射」だったが、レビュー M1 で盤面のタップ発射をやめたため実際に効く面を指す文言へ)
+- [x] `apps/web` に jsdom を追加(環境指定は新規テストの docblock `@vitest-environment jsdom` のみ。既存3ファイルの実行環境は node のまま=無変更)し `paddle-rail.test.ts` 18件 + `session.test.ts` 7件
+- [x] `pnpm -r test` 199/199 pass(web 53件)/ `pnpm -r build` exit 0
+- [x] テストが実際に回帰を捕まえることをミューテーションで確認(6種): `if (!active) return;` 削除→1件 fail、発射を pointerup→pointerdown→4件 fail、pointerId 比較の削除→2件 fail、`lostpointercapture` リスナ削除→1件 fail、`railOwnsTouch` から可視判定を削除→1件 fail、盤面のタッチ無視を削除→1件 fail、キーボードのクランプを `[0,W]` に戻す→1件 fail
+- [x] 実機相当の検証でパドルが指の x に一致することを実測(下記「検証記録」)
+- [x] DESIGN-VISUAL.md §3 にタッチ操作の節を追加
+- [x] フェーズゲート: reviewer(opus) — 初回 Request changes(High 1 / Medium 3 / Low 7)→ 全件対応済み。詳細は Review 欄
+- [x] main を取り込み(セッション7 の 2 コミット)、tasks/todo.md の衝突を解消
+- [ ] PR → CI green → マージ → デプロイ → 実機(スマホ)で本番確認
+
+### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
+
+Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Notes 既知)ため、セッション2/4と同じ **rAF キュー化ハーネス**で検証した。今回はさらに `matchMedia("(pointer: coarse)")` を true に差し替えたうえで `import("/src/app.ts")` → `initApp()` でアプリを再起動し、**タッチ端末の分岐そのもの**を動かしている。
+
+| 検証項目 | 実測 |
+|---|---|
+| レール幅 = canvas 幅 | 両方 left=16 / width=343、間隔 8px(Assumption 検証) |
+| 発射ガイドの文言(coarse) | 「タップで発射」 |
+| レール 25% をタッチ | パドル中心 239.5(期待 240)、ハンドル `left: 25%` |
+| 90% へドラッグ | パドル中心 863.5(期待 864)、ハンドル `left: 90%` |
+| レール右端の外までドラッグ | パドル中心 919.5(可動域上限 920 にクランプ)、ハンドル `95.8333%`(ハンドル右端がちょうど 100%) |
+| 押している間 | ガイド表示のまま = 未発射 |
+| 指を離した直後 | ガイドが消える = 発射 |
+| 初回タッチ | `data-touched="true"` が付き、ヒントの computed opacity が 0(トランジション無効時に実測。ハーネスは実描画しないので通常時は 1 のまま止まる) |
+| ライト/ダーク | 375px でスクリーンショット確認。ヒントは 1 行(高さ 11px)に収まる |
+
+- **CSS の `@media (pointer: coarse)` だけは実測できていない**(ペーンにも実 Chrome にもタッチエミュレーションが無く、iOS シミュレータは Xcode 未導入で利用不可)。JS 側の coarse 分岐は上記のとおりスタブで実測済み。実機での最終確認はデプロイ後に手元のスマホで行う
+
+#### レビュー修正後の再検証(同ハーネス、`pointerType` 付きの実 PointerEvent で実測)
+
+| 検証項目 | 実測 |
+|---|---|
+| 発射ガイド(coarse) | 「下のバーで発射」/ レールは `aria-hidden="true"` |
+| 盤面をタッチ(移動+タップ) | パドル 479.5 のまま・ガイド出たまま = **盤面はタッチを一切拾わない** |
+| レール 25% をタッチ(指1) | パドル 239.5、ハンドル 25% |
+| 指2 がレールを押して離す | パドル 239.5 のまま・未発射 = **2本目の指はドラッグを奪わない**(H1) |
+| 指1 を 90% へ | パドル 863.5、ハンドル 90% = 所有権が維持されている |
+| 指1 を離す | 発射 |
+| 盤面をマウスで操作 | パドル 287.5(期待 288)= デスクトップの挙動は無変更 |
+| ゲームオーバー時のレール | `data-inactive="true"` / `pointer-events: none` / `opacity: 0.4`、タッチしてもハンドルが動かない |
+| 375x667(iPhone SE 相当) | `scrollHeight === innerHeight`(縦横ともあふれ無し)、フッター下端 538px |
+| ミューテーション | `ownsPointer` の pointerId 比較を外すと2件 fail(修正前コードで落ちることを確認) |
+
+#### 再レビュー修正後の再検証(同ハーネス)
+
+| 検証項目 | 実測 |
+|---|---|
+| coarse スタブ有り(スマホ相当) | ガイド「下のバーで発射」/ `aria-hidden` は無し / 盤面タッチは無反応・未発射 / レール 25% → 239.5・90% → 863.5 / 2本目の指は無視 / 離すと発射 / マウスは盤面追従 287.5 |
+| **coarse 無し + レール非表示(タッチスクリーン付きノート PC 相当)** | `matchMedia("(pointer: coarse)")` false・`.paddle-rail` は `display: none`・幅 0。この状態で**タッチ**を盤面に落とすとパドル 287.5(期待 288)へ追従し、発射もされる = H-A のフォールバックが実ブラウザで機能 |
+| ミューテーション(計6種) | 上記タスク欄に記載。すべて修正前コードで fail することを確認 |
 
 ## セッション8: トップページの OGP 画像(完了 2026-07-25)
 
@@ -772,3 +853,34 @@ viewBox を 32 → **16 単位**に変え、全図形を整数座標に置いた
   3 runs の LCP が 3.23 / 4.00 / 4.24s とばらつくので**この差は誤差**。改善も退行もしていない
 - 次にやるなら: 自前 CSS のインライン化(残る唯一の render-blocking)と、
   IBM Plex Sans JP の自前ホスト化 or サブセット化(60KB の CSS + 11 ファイルのフォント取得がクロスオリジン)
+### セッション8 フェーズゲート(reviewer/opus, 2026-07-25)
+
+判定: **初回 Request changes → 全件対応済み**。検証: `pnpm -r test` 190/190 pass(web 40 → 44 件)、`pnpm -r build` exit 0、`git diff main -- packages/core` 0行、緑=コンテンツ専用(レールの色は `--marquee` / `--field` / `--ridge` / `--ink-faint` のみ)を確認。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| H1 | High | レールが `dragging` boolean 1本で全ポインタを受けていた。**2本目の指**(盤面を触った指)の `pointerup` が window に上がるとドラッグが終了し、パドルがその指の x へ飛び、ボールが発射され、押したままの親指は以後効かなくなる | 修正: `activePointerId` を記録し、所有者以外の `pointermove`/`pointerup`/`pointercancel` と、ドラッグ中の `pointerdown` を無視。回帰テスト2件(pointerId 比較を外すと fail することを確認)+ 実ブラウザで指1/指2 を実測 |
+| M1 | Medium | 盤面の `pointerdown` 即発射・`pointermove` 追従が残っていたため、レールを数 px 外した指が盤面に落ちて**元のバグを再現できる**。しかもガイド「タップで発射」とレール「離すと発射」が矛盾していた | 修正: 盤面は `pointerType === "touch"` を無視(マウス/ペンは無変更)。ガイドは実際に効く面を指す「下のバーで発射」に。DESIGN-VISUAL §3 に明文化 |
+| M2 | Medium | 「他要素の pointerup で発射しない」テストが `pointerdown` 無しの経路しか通しておらず、危険な「ドラッグ中に他ポインタが来る」経路が未検証だった。`rect.width === 0` と 0.05% スロットルも未検証 | 修正: 上記 H1 の2件に加え、幅0のとき何もしないこと・サブピクセル更新を捨てることのテストを追加(計 44 件) |
+| M3 | Medium | ブランチが main より2コミット遅れ、`tasks/todo.md` がコンフリクトする | 修正: main をマージし、セッション7 → セッション8 の順で解決 |
+| L1 | Low | `rect.width === 0` のとき 0 を返すため、パドルが左端に飛ぶ(「不明」を「左端」と誤訳していた) | 修正: `null` を返して `onMove` を呼ばない |
+| L2 | Low | ハンドルの clamp が `[0, canvasWidth]` で、両端ではハンドルが枠から半分はみ出す位置を許していた(しかもテストがそれを正解として固定していた) | 修正: `[w/2, canvasWidth-w/2]` にクランプ。テストも「右端がちょうど枠に一致」を検証する形へ |
+| L3 | Low | `paddleX` が可動域ではなく `[0, canvasWidth]` 基準で、端をタッチした直後は矢印キーの最初の数十 ms が飲まれる(拡張版セッション4 R-L4 と同じ穴) | 修正: `clampPaddleX` を導入し、盤面パスとレールパスの両方に適用 |
+| L4 | Low | ヒントが「もう一回」のたびに再表示される(DESIGN-VISUAL は「初回タッチで消える」と書いていた) | ラウンドごとの再表示は妥当と判断。挙動は維持 |
+| L5 | Low | デスクトップでもレール DOM と window リスナを作っている | 表示条件の真実を CSS 1 箇所に保つため意図的に維持(早期 return のみのコスト) |
+| L6 | Low | レールに accessible name が無く、AT からも隠していない | 修正: `aria-hidden="true"`(キーボード操作は矢印キーが担うため、狙えないジェスチャを読み上げない) |
+| L7 | Low | DESIGN-VISUAL の「パドルは常に指の真下」は両端 4.17% で成り立たない | 修正(可動域で頭打ちになる旨を追記) |
+
+### セッション8 再フェーズゲート(reviewer/opus, 2026-07-25、修正差分 7c6c63c 込みの全差分に対して)
+
+判定: **Request changes → 全件対応済み**。前回の H1/M1/M2/M3/L1/L2/L6/L7 は Fixed、L3 は Partially fixed と判定された。検証: `pnpm -r test` 199/199 pass(web 53件)、`pnpm -r build` exit 0、`packages/core` 0行差分。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| H-A | High | **修正コミットが作った回帰**。`pointer: coarse` は*主*入力しか見ないので、タッチスクリーン付きノート PC(`pointer: fine` + `any-pointer: coarse`)ではレールが出ない。にもかかわらず盤面は `pointerType === "touch"` を無条件で無視していたため、**レールも無い・盤面も拒む = タッチ操作が完全に死ぬ**。DESIGN.md §3「マウス/タッチ追従」にも違反 | 修正: 盤面のタッチ譲渡を「レールが実際に表示されているか」(`rail.isVisible()` = `getBoundingClientRect().width > 0`)で判定。メディアクエリを唯一の真実にしたので CSS/JS が食い違わない。レールが出ない端末は従来どおり盤面追従にフォールバック。回帰テスト(可視判定を外すと fail)+ DESIGN.md / DESIGN-VISUAL §3 / Assumptions 行を訂正 |
+| M-A | Medium | 今回の中心的な修正(盤面のタッチ無視・`clampPaddleX`・ガイド文言)が全て `session.ts` にあるのに、テストは `paddle-rail.ts` だけを見ていた。`session.ts` にはテストファイルすら無い | 修正: `apps/web/src/session.test.ts` を新設(7件)。拡張版 `game-runtime.test.ts` と同じく ctx / rect / rAF をスタブして実 `Game` を走らせ、ハンドル位置から実パドル位置を読む。タッチ/マウス/レール非表示時のフォールバック/レール操作と発射/ガイド文言/矢印キー/teardown を検証 |
+| L-A | Low | `clampPaddleX` を矢印キーの累算に適用しておらず L3 が半分しか直っていない。壁に当て続けるとカーソルだけ 960 まで歩き、逆方向の最初の ~83ms が死ぬ | 修正: 3箇所すべて(盤面・レール・キーボード)を `clampPaddleX` 経由に統一。回帰テスト追加(クランプを戻すと fail することを確認) |
+| L-B | Low | `activePointerId` が非 null のまま取り残されると、レールが以後まったく反応しなくなる(ウィンドウ外でボタンを離す等で終了イベントが届かない場合) | 修正: `setPointerCapture` + `lostpointercapture` でのリセットを追加(jsdom には無いので optional call)。回帰テスト追加 |
+| L-C | Low | `aria-hidden="true"` が、可視のヒント文と唯一のタッチ操作面ごと AT から消していた。しかもガイドは「下のバーで発射」と、AT からは存在しない要素を指していた | 修正: `aria-hidden` を撤回(前回 L6 の対応を差し戻し)。レールは説明文を持つただの要素として AT に残す方が、ガイドの文言と整合する |
+| L-D | Low | 未コミットの `style.css` 変更がレビュー範囲外にあった | 対応済み(レビュー中に行っていたハンドル垂直中央寄せの実験。実測でヒントとの間隔が 3px まで詰まるため不採用とし、理由コメントのみを 90363d2 でコミット) |
+| L-E | Low | ドキュメントと実装の食い違い5件(DESIGN.md のタッチ記述、todo.md のガイド文言・テスト件数・ハイブリッド機の Assumption 行) | 修正(全件) |
