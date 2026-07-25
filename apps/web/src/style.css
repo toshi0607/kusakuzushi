@@ -88,10 +88,26 @@ body {
   color: var(--ink-faint);
 }
 
+/*
+ * シェルは index.html の静的マークアップで、中身(フォーム / ローディング /
+ * プレイ / リザルト)だけを JS が後から入れる。body は縦中央寄せなので、
+ * 空のステージに中身が入ると見出しとフッターが上下に動いて CLS になる
+ * (実測 0.10。しきい値 0.05)。最初に入るビュー = フォームの高さを先に確保する。
+ *
+ *   盤面 canvas: width は #app と同じ min(1040px, 100vw - 32px)。
+ *                box-sizing: border-box + 1px 枠なので
+ *                高さ = (幅 - 2px) * 3/8 + 2px(内部解像度 960x360 = 8:3)
+ *   + gap 20 + フォーム 43 + gap 20 + ヒント 22 = 105px
+ *
+ * ローディング / プレイ / リザルトはこれより低いので、min-height が効いたまま動かない。
+ * 数値は 2026-07-25 に headless Chrome で実測(560/561/800/1280px で式と一致)。
+ * フォームの markup や .username-form の余白を変えたらここも測り直すこと。
+ */
 .stage {
   width: 100%;
   display: flex;
   justify-content: center;
+  min-height: calc((min(1040px, 100vw - 32px) - 2px) * 0.375 + 2px + 105px);
 }
 
 .view {
@@ -453,6 +469,11 @@ button:disabled {
 }
 
 @media (max-width: 560px) {
+  /* フォームが縦積みになるぶん(43 → 92px)、確保する高さも増える(.stage 参照) */
+  .stage {
+    min-height: calc((min(1040px, 100vw - 32px) - 2px) * 0.375 + 2px + 154px);
+  }
+
   .username-form {
     flex-direction: column;
   }
