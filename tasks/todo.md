@@ -1146,7 +1146,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
 | 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
 | データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
-| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | UNVERIFIED | デプロイ後に curl で実測する |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | VERIFIED(条件付き) | 2026-07-26 実測: `/privacy` は **308** で `/privacy/` へ、`/privacy/` が 200。canonical とストア登録 URL を `/privacy/` に揃えた |
 
 ### Phase A: ユーザー作業(エージェント不可)
 
@@ -1165,12 +1165,20 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
 - [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
 - [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
-- [~] B-8. `/privacy` ページ作成済み(`apps/web/public/privacy/index.html`、dev サーバーで表示確認)。**デプロイはユーザー承認待ち** — `curl -sI https://kusakuzushi.toshi0607.com/privacy` が 200 になったら完了
+- [x] B-8. `/privacy` ページ + デプロイ — PR #30 マージ(30a0dce)→ `wrangler pages deploy`(64f75928)。**実測: `/privacy` は 308 で `/privacy/` に寄り、`/privacy/` が 200 + `<title>プライバシーポリシー | 草崩し</title>`**。ストアに登録する URL はリダイレクトを挟まない `/privacy/` にした(b1342d8)
 - [x] B-9. `apps/extension/README.md` に公開手順を追記
 
 ### Phase C: 一緒に実施
 
 - [ ] C-1. デベロッパーコンソールへブラウザ操作で入力(zip アップロード・掲載文・画像・プライバシー・配布範囲)
+
+### 実施ログ
+
+- 2026-07-26: PR #30(https://github.com/toshi0607/kusakuzushi/pull/30)— CI green(test 36s / Lighthouse dist 1m49s / slow 1m10s、production は PR なので skip)→ マージ 30a0dce
+- 2026-07-26: `wrangler pages deploy`(64f75928)で `/privacy/` を本番公開。HTTP 200 実測
+- dist の manifest 検証: `default_locale: en` に対応する `_locales/en/messages.json` が存在し、
+  `__MSG_extName__` / `__MSG_extDescription__` が両ロケールで解決。名前 37 文字(上限 45)、
+  簡単な説明 en 105 / ja 34 文字(上限 132)
 - [ ] C-2. ユーザーが最終送信 → 審査結果を待つ
 
 ### 見送り(スコープ外・要green)
