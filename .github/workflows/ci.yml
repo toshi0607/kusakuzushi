@@ -24,3 +24,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm -r test
+
+      # Type-checking only happens in the build scripts (tsc), so a test-only
+      # CI would let type errors through.
+      - run: pnpm -r build
