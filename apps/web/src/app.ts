@@ -8,6 +8,7 @@
 import type { ContributionGrid } from "@kusakuzushi/core";
 
 import { UserNotFoundError, fetchGrid, hasBricks } from "./api";
+import { createAttract } from "./attract";
 import { createSession } from "./session";
 import { currentTheme } from "./theme";
 
@@ -54,9 +55,13 @@ function buildShell(root: HTMLElement): HTMLElement {
   return stage;
 }
 
-function buildFormView(initialUsername: string, errorMessage: string | undefined, onSubmit: (username: string) => void): HTMLElement {
+function buildFormView(initialUsername: string, errorMessage: string | undefined, onSubmit: (username: string) => void): { view: HTMLElement; attractHost: HTMLElement } {
   const section = document.createElement("section");
   section.className = "view view-form";
+
+  const attractHost = document.createElement("div");
+  attractHost.className = "attract-host";
+  section.appendChild(attractHost);
 
   const form = document.createElement("form");
   form.className = "username-form";
@@ -98,7 +103,7 @@ function buildFormView(initialUsername: string, errorMessage: string | undefined
     }
   });
 
-  return section;
+  return { view: section, attractHost };
 }
 
 function buildLoadingView(username: string): HTMLElement {
@@ -130,19 +135,22 @@ function buildEmptyView(onBack: () => void): HTMLElement {
 export function initApp(root: HTMLElement): void {
   const stage = buildShell(root);
   let sessionCleanup: (() => void) | null = null;
+  let attractCleanup: (() => void) | null = null;
 
   function teardownSession(): void {
     sessionCleanup?.();
     sessionCleanup = null;
+    attractCleanup?.();
+    attractCleanup = null;
   }
 
   function showForm(initialUsername: string, errorMessage?: string): void {
     teardownSession();
-    stage.replaceChildren(
-      buildFormView(initialUsername, errorMessage, (username) => {
-        void startFlow(username);
-      }),
-    );
+    const { view, attractHost } = buildFormView(initialUsername, errorMessage, (username) => {
+      void startFlow(username);
+    });
+    stage.replaceChildren(view);
+    attractCleanup = createAttract(attractHost, currentTheme);
   }
 
   function showLoading(username: string): void {

@@ -185,6 +185,26 @@ button:disabled {
   width: 100%;
 }
 
+.attract-host {
+  width: 100%;
+}
+
+.demo-canvas {
+  pointer-events: none;
+  cursor: default;
+}
+
+.demo-label {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
 .game-canvas {
   display: block;
   width: 100%;
