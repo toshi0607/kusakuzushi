@@ -1,0 +1,75 @@
+name: Lighthouse
+
+# しきい値と計測対象は lighthouserc.cjs が正。ここは「いつ回すか」だけを決める。
+# ci.yml とは別ワークフローにしてある(Lighthouse の失敗でテスト結果が読めなくならないように)。
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # 毎日 06:00 JST。本番(デプロイ済みの実物)の劣化を拾うため
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+jobs:
+  # PR / main: ビルド成果物をローカル配信して計測する。
+  # 外部要因(回線・DNS・Pages の状態)が入らないので、差分の影響だけが出る。
+  dist:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @kusakuzushi/web build
+
+      # ubuntu-latest ランナーには google-chrome-stable が同梱されており、
+      # lhci(chrome-launcher)が自動で見つける
+      - run: pnpm exec lhci autorun
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-dist
+          path: .lighthouseci/report
+          retention-days: 30
+
+  # schedule / 手動: 本番 URL をそのまま計測する
+  production:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec lhci autorun
+        env:
+          KUSAKUZUSHI_LH_TARGET: production
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-production
+          path: .lighthouseci/report
+          retention-days: 30
