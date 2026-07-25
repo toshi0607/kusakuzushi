@@ -200,9 +200,87 @@ button:disabled {
   color: var(--ink-faint);
 }
 
+/* 盤面とタッチレールは一体。レールは可動域の真下でだけ意味を持つ */
+.play-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .play-area {
   position: relative;
   width: 100%;
+}
+
+/*
+ * タッチ用パドルレール(セッション8)。
+ * マウス/キーボードでは canvas 直操作のほうが速いので、主入力がタッチの
+ * 端末にだけ出す。レール幅は canvas と同じ(親の 100%)なので、指の x が
+ * そのままパドルの x になる。
+ */
+.paddle-rail {
+  display: none;
+  position: relative;
+  height: 56px;
+  border: 1px solid var(--ridge);
+  border-radius: 8px;
+  background: var(--field);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+  .paddle-rail {
+    display: block;
+  }
+}
+
+/* ラウンド終了後は盤面が止まるので、レールも受け付けない */
+.paddle-rail[data-inactive="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/*
+ * パドルの「影」— 幅は paddleWidth/canvasWidth の比率を JS が入れる。
+ * レール内では上寄せ: 影は本体(盤面のパドル)の近くにあるほど読める。
+ * 残りの下半分はヒント用の帯。
+ */
+.paddle-rail-handle {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--marquee);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.paddle-rail-hint {
+  position: absolute;
+  bottom: 7px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+/* 一度触れば説明は役目を終える */
+.paddle-rail[data-touched="true"] .paddle-rail-hint {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .paddle-rail-hint {
+    transition: opacity 160ms ease;
+  }
 }
 
 .attract-host {
