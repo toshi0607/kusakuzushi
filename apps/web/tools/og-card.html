@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>og-card generator — 草崩し</title>
+  <!--
+    OGP 画像(apps/web/public/og.png)を作るための開発専用ページ。
+    Vite の既定ビルド入力は index.html だけなので、このページは dist に入らない。
+    使い方は tools/og-card.ts のヘッダを参照。
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=block&text=%E8%8D%89%E5%B4%A9%E3%81%97">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400&display=block">
+  <style>
+    body { margin: 0; padding: 24px; background: #0c110d; color: #e4ede2; font-family: sans-serif; display: flex; flex-direction: column; gap: 16px; align-items: flex-start; }
+    canvas { border: 1px solid #28332a; }
+    a { color: #ffb224; }
+  </style>
+</head>
+<body>
+  <script type="module" src="/tools/og-card-main.ts"></script>
+</body>
+</html>

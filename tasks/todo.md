@@ -298,7 +298,68 @@ pnpm --filter @kusakuzushi/extension build
   - 検証(実測): 1280px で草下端との間隔 31px / パドルとの間隔 19px、375px で 30px / 18px。light・dark 両テーマでスクリーンショット確認
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/11(CI pass 32s → merge 55741e3)、`wrangler pages deploy`(d6a5e170)、本番 https://kusakuzushi.toshi0607.com/?user=toshi0607 で間隔 31px / 19px を実測
 
-## セッション7: ブロック破壊時のアイテムドロップ(実装中)
+## セッション7: 残機表示の可読性修正(完了 2026-07-25)
+
+ユーザー指摘「右上の濃い部分残機ですか？みえづらすぎる」。原因は 2 つ重なっていた:
+
+1. 残機を草スケールの level4(=コンテンツの色)で描いていた — DESIGN-VISUAL §0「緑は草専用」を HUD だけ破っていた
+2. HUD を草グリッドの**上に重ねて**いたため背景が常に緑だった(ついでにブロックも隠していた)
+
+- [x] HUD 全体を草の直下(`canvasHeight/2 + 10`)の無地帯へ移動。残機は `--marquee` アンバーの「予備のボール」(実ボールと同色・同径)+ `LIFE` ラベル。DESIGN-VISUAL §5 に HUD 位置の行を追加
+  - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
+- [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
+- 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
+
+## セッション8: トップページの OGP 画像(完了 2026-07-25)
+
+### 症状と原因(2026-07-25 実測)
+
+ユーザー報告: Slack に `https://kusakuzushi.toshi0607.com` を貼ってもカード画像が出ない。
+
+- 原因: **トップページ(Pages が返す `apps/web/index.html`)に OGP タグが1つも無い**。Slack が出していたのは `<title>`(草崩し)と `<meta name="description">` だけ。X でも同様に画像は出ない
+- `/share/{user}` は無関係(正常)。Slackbot の UA `Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)` は `crawler.ts` の `"bot"` に一致し、curl 実測でも OGP HTML(og:image + twitter:card)が返り、`og.png` は 200 / image/png / 48,932 bytes
+
+### Constraints(セッション8)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 新しい依存を増やさない(OGP 画像生成に puppeteer 等を入れない) | DESIGN.md §4 / constraints.md | package.json diff が空 |
+| 共有画像は閲覧者テーマに関係なく常に「夜の畑」(ダーク固定) | share.ts の SHARE_COLORS コメント(ブランド判断) | 生成画像の背景が `#0c110d` |
+| ワードマークは demo-grid の実グリフを使う(独自に描き直さない) | lessons.md 2026-07-25(黙った代替グリフ事故) | 生成コードが `buildDemoGrid()` を import している |
+| 生成物(PNG)は再現手順ごとコミットする | unknowns.md 1.3(参照可能であること) | tools/ にジェネレータが存在し手順がヘッダにある |
+| ゲームバランス・core を変更しない | 全セッション共通 | `git diff main -- packages/core` が空 |
+
+### Assumptions(セッション8)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| トップの OGP 欠落が Slack で画像が出ない原因(share は正常) | VERIFIED | 2026-07-25 curl 実測(上記「症状と原因」) |
+| Slackbot は `crawler.ts` の `"bot"` 部分一致で既にクローラー判定される | VERIFIED | 同上(Slackbot UA で /share/ が OGP HTML を返す) |
+| `apps/web/public/` は Vite が dist へコピーし `/og.png` で配信される | VERIFIED | 2026-07-25 `pnpm -r build` 後 `apps/web/dist/og.png`(1200x630, 68,138 bytes)が存在。dev でも `HEAD /og.png` → 200 image/png |
+| Vite dev は `tools/*.html` を任意ページとして配信でき、既定ビルド入力は index.html のみ(tools がバンドルに混ざらない) | VERIFIED | 2026-07-25 dev で `/tools/og-card.html` が描画。build 後 `find dist -name "*og-card*"` が空、JS ハッシュも本番と同一(index-CWyvfmJ6.js) |
+
+### タスク
+
+- [x] `apps/web/tools/og-card.{html,ts}` + `og-card-main.ts` — 1200x630 のトップ用カードを canvas で合成するジェネレータ。`buildDemoGrid()` + core `render()` + share.ts / theme.ts のトークンを再利用し、attract 画面と同じ盤面を描く
+  - 盤面(2:1)は草の下に約 190px の空白帯があるので、単色の帯だけを切り落として上下 2 スライスを詰めて描く。境界は core の `computeLayout` から導出
+  - `SHARE_COLORS` / `DISPLAY_FONT` / `BODY_FONT`(share.ts)と `WEB_DARK_THEME`(theme.ts)を export して再利用 — カード側で色やフォントを再定義しない
+- [x] `apps/web/vite.config.ts` — dev 専用エンドポイント `/__save-og-card` を追加し、ボタン押下で `public/og.png` を直接上書き(ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため)
+- [x] 生成した PNG を `apps/web/public/og.png` としてコミット — 1200x630 / 68,138 bytes。フルサイズで目視確認(DotGothic16 のドット字形が出ていること、ワードマークが KUSAKUZUSHI で崩れていないこと)
+- [x] `apps/web/index.html` に OGP/Twitter メタを追加(og:type/site_name/locale/title/description/url/image/image:type/width/height/alt、twitter:card/title/description/image、canonical)
+  - 実測: dev の DOM から 14 タグすべてを確認、`HEAD /og.png` → 200 image/png、アトラクト canvas も従来どおり描画、console エラー 0
+- [x] `workers/ogp` の share ページにも og:image:type/width/height と og:locale を追加(Slack/Facebook の large card 判定を確実にする)+ 回帰テスト 1 件
+- [x] `pnpm -r test`(174 tests / 4 パッケージ)/ `pnpm -r build` exit 0
+- [x] PR → CI green → マージ → Pages + Worker デプロイ → 本番 curl でメタ確認 — https://github.com/toshi0607/kusakuzushi/pull/15(CI pass 38s → merge d0787fd)、`wrangler pages deploy`(59aa94b0)、`wrangler deploy`(worker version 5d018091)
+  - 本番実測(2026-07-25): `/` は素の curl・Slackbot UA とも同一 3,413 bytes で og:type/site_name/locale/title/description/url/image(+type/width/height/alt)/twitter:card/canonical を返す。`/og.png` は 200 image/png 68,138 bytes(コミットした PNG とサイズ一致)。`/share/{user}` も og:image:type/width/height + og:locale を返す
+  - 未実施: Slack への実貼り確認はユーザー側。**Slack はアンフォールを URL 単位でキャッシュするので、以前貼った URL は同じカードのままになることがある**(新しいクエリ付き URL を貼るか時間を置く)
+
+### セッション8 の設計判断メモ
+
+- **トップは静的 PNG、share は Worker 動的**という役割分担にした。トップ URL は最も貼られるので、表示のたびに satori + Google Fonts に依存させたくない(それらが落ちてもカードは出る)。share カードはスコア依存なので動的でしか作れない
+- 途中で作った盤面の「空白帯カット」は、盤面 2:1 の下半分がほぼ無地であることに依存している。core の `computeLayout` が変わっても追従するよう境界値はそこから導出済み
+- ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため、dev 専用エンドポイント(vite.config.ts)で `public/og.png` を直接書く方式にした。結果として再生成手順が「開いてボタンを押す」だけになった
+
+## セッション9: ブロック破壊時のアイテムドロップ(実装中)
 
 ユーザー要望(2026-07-25): 「たまにブロックを崩したときにアイテムが降ってくるようにしてください」
 - 玉の数が増える
@@ -306,7 +367,7 @@ pnpm --filter @kusakuzushi/extension build
 
 バー増加の挙動は **メインパドルの左右に追加バーが1本ずつ出て3本が一緒に動く**(ユーザー選択 2026-07-25)。
 
-### Constraints(セッション7)
+### Constraints(セッション9)
 
 | Constraint | Source | Verify by |
 |------------|--------|-----------|
@@ -319,7 +380,7 @@ pnpm --filter @kusakuzushi/extension build
 | 緑は草専用・UI/アイテムはアンバー系 | DESIGN-VISUAL §0 | renderer のアイテム色が accentColor 由来 |
 | 追加バーの隙間 < ボール直径(すり抜け防止) | 物理的要請 | gap = ballRadius(直径の半分)固定 + ユニットテスト |
 
-### Assumptions(セッション7)
+### Assumptions(セッション9)
 
 | Assumption | Status | Evidence |
 |------------|--------|----------|
@@ -350,7 +411,7 @@ pnpm --filter @kusakuzushi/extension build
 - [x] extension: 透過レンダラを複数ボール/複数バー/アイテム対応に + deriveConfig でアイテム寸法をスケール — `renderer.test.ts` 新設(3件)+ adapter に寸法テスト。拡張 44 → 48 tests
 - [x] web: attract の autopilot を「一番下のボール」追従に
 - [x] `pnpm -r test`(187 pass: core 46 / ogp 65 / web 28 / extension 48)/ `pnpm -r build` exit 0
-- [x] ブラウザ実機でアイテム取得までプレイ検証 — 下記「セッション7 検証記録」
+- [x] ブラウザ実機でアイテム取得までプレイ検証 — 下記「セッション9 検証記録」
 - [x] DESIGN.md §3 / DESIGN-VISUAL §5 にアイテム仕様を追記
 - [x] 自己レビュー(このセッションはサブエージェント禁止の実行環境のため reviewer エージェントは使わず、差分の通読で代替)。見つけた点: クリア時に落下中アイテムが結果画面へ凍りついたまま残る → `clear` 遷移時に `items` を空にする修正を入れた
 - [x] ユーザー指摘の調整(2026-07-25): アイテムを青に / 玉を「めちゃくちゃ多く」増やせるように — 下記「調整の記録」
@@ -366,7 +427,7 @@ pnpm --filter @kusakuzushi/extension build
 4. **実測(ブラウザ)**: ドロップ率100%の一時ページで玉が 1→2→4→8→16→191→196(上限)と複利で増え、**371ブロックの盤面が `clear` に到達**(スコア 3,717)。青タイルは light/dark 両方でスクリーンショット目視確認(アンバーの玉と明確に別物に見える)
 5. **序盤の加速**(ユーザー指摘「初期もう少し加速できますか」2026-07-25): ドロップ確率を固定 8% から **序盤 22% → 終盤 8% の線形ランプ**に(`earlyItemDropBonus = 0.14`、破壊済み割合で補間)。立ち上がりは玉1個で手が足りず、そこを厚くしないと複利が始まらないため。終盤は玉が増えているので絞る。ユニットテストは「同じ乱数値が序盤は通り終盤は弾かれる」形で検証(フラット確率に戻すと落ちる)。371ブロック盤面の 180 秒シミュレーション(完璧オートパイロット、3シード)では flat 8% が 3回とも 6ブロックだったのに対し、ランプありは 1回が 21ブロック(アイテムを拾って複利が始まった回)
 
-### セッション7 検証記録(2026-07-25 実ブラウザ実測)
+### セッション9 検証記録(2026-07-25 実ブラウザ実測)
 
 `itemDropChance: 1` に固定した一時ページ(`apps/web/item-check.html`、検証後に削除)を Vite dev で開き、core の `Game` + `render()` を同期駆動して実測。
 
