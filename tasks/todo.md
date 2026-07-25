@@ -1320,7 +1320,7 @@ pnpm run deploy:ogp && pnpm run verify:ogp
 - [x] `permissions` / SHA 固定 / `concurrency` / `dependabot.yml`
 - [x] `pnpm -r test`(162件)/ `pnpm -r build` exit 0
 - [ ] ユーザーが Cloudflare API トークンを作成し、`CLOUDFLARE_API_TOKEN` として登録
-- [ ] PR → CI green(`deploy-*` が PR でスキップされることを確認)
+- [x] PR → CI green(`deploy-*` が PR でスキップされることを確認)— https://github.com/toshi0607/kusakuzushi/pull/32 で `test` pass 37s / `Lighthouse dist` pass / `Lighthouse slow` pass、`changes` / `deploy-web` / `deploy-ogp` / `production` はすべて **skipping**(2026-07-26)。**門番条件が効いていることの実測**
 - [ ] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑
 - [ ] ブランチ保護 + Actions のセキュリティ設定(プラン次第。不可ならパブリック化時)
 - [ ] 次に `workers/ogp` だけを触る PR で、`deploy-web` がスキップされることを確認(パス判定の実証)
@@ -1360,6 +1360,23 @@ lighthouse.yml のみ : web=false ogp=false
 
 異常側が意味を持つのは、Pages が**存在しないパスに index.html を 200 で返す**から(S9 の robots.txt)。
 つまり `/share/*` が 200 であることは route の証明にならず、302 であることが証明になる。
+
+### CI 実測(PR 段階、2026-07-26)
+
+```
+test        pass     37s
+dist        pass              (Lighthouse)
+slow        pass              (Lighthouse)
+changes     skipping          github.event_name == 'push' でないため
+deploy-web  skipping          needs: changes がスキップ + if 条件
+deploy-ogp  skipping          同上
+production  skipping          schedule / workflow_dispatch のみ
+```
+
+**PR がコンフリクトしているとチェックが 1 件も走らない。** マージ ref を計算できないと
+GitHub は `pull_request` のワークフローを起動しない。「CI が緑」ではなく「CI が無い」状態は
+一見すると同じに見える(`gh pr checks` は "no checks reported" としか言わない)ので、
+**チェックが 0 件のときは緑ではなくコンフリクトを疑うこと**。
 
 ### 今回やらないこと
 
