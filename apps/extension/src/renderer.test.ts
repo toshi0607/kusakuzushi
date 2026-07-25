@@ -18,7 +18,7 @@ const THEME: OverlayTheme = {
   paddleColor: "#24292f",
   ballColor: "#24292f",
   textColor: "#24292f",
-  itemColor: "#0969da",
+  itemColors: { multiBall: "#0969da", extraPaddle: "#8250df" },
 };
 
 type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
@@ -134,7 +134,9 @@ describe("createOverlayRenderer", () => {
     createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
 
     // #then the tile sits on the item's centre...
-    const tile = fake.fillRects.find((call) => call.fillStyle === THEME.itemColor && call.width === item.size);
+    const tile = fake.fillRects.find(
+      (call) => call.fillStyle === THEME.itemColors[item.kind] && call.width === item.size,
+    );
     expect(tile).toMatchObject({ x: item.x - item.size / 2, y: item.y - item.size / 2, height: item.size });
 
     // #and its three marks are knocked out in the level-0 grass colour

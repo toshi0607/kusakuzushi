@@ -1,6 +1,6 @@
 import { MAX_FRAME_DT } from "./game";
 import type { Brick, Game } from "./game";
-import type { Item } from "./items";
+import type { Item, ItemKind } from "./items";
 
 /**
  * GitHub's 5-step green scale, index 0..4 matching `Cell.level` /
@@ -16,26 +16,39 @@ export type Theme = {
   /** Ball (and future highlight) colour. Falls back to `ballColor`. */
   accentColor?: string;
   /**
-   * Falling item colour. Deliberately not the ball's accent: an item and a
-   * ball are both small amber-ish sprites in flight, and at a glance the
-   * player has to be able to tell "chase this" from "dodge nothing".
+   * Falling item colour, one hue per kind. Deliberately not the ball's
+   * accent: an item and a ball are both small sprites in flight, and at a
+   * glance the player has to be able to tell "chase this" from "dodge
+   * nothing". The two kinds differ from each other too — by the time an
+   * item is close enough to read its glyph it is nearly at the paddle, so
+   * the decision of whether to go for it has to be made on colour alone.
    * Falls back to `accentColor`, then `ballColor`.
    */
-  itemColor?: string;
+  itemColors?: Readonly<Record<ItemKind, string>>;
   /** CSS font-family list for the HUD text. Falls back to `sans-serif`. */
   hudFont?: string;
 };
 
-/** GitHub's own accent blue, per colour scheme — the one hue that is neither grass nor ball. */
-const LIGHT_ITEM_COLOR = "#0969da";
-const DARK_ITEM_COLOR = "#58a6ff";
+/**
+ * GitHub's own accent blue and purple, per colour scheme — two hues that
+ * are neither grass nor ball, and that stay apart from each other at the
+ * ~10px the extension's items are drawn at.
+ */
+const LIGHT_ITEM_COLORS: Readonly<Record<ItemKind, string>> = {
+  multiBall: "#0969da",
+  extraPaddle: "#8250df",
+};
+const DARK_ITEM_COLORS: Readonly<Record<ItemKind, string>> = {
+  multiBall: "#58a6ff",
+  extraPaddle: "#a371f7",
+};
 
 export const LIGHT_THEME: Theme = {
   colors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
   paddleColor: "#24292f",
   ballColor: "#24292f",
   textColor: "#24292f",
-  itemColor: LIGHT_ITEM_COLOR,
+  itemColors: LIGHT_ITEM_COLORS,
 };
 
 export const DARK_THEME: Theme = {
@@ -43,7 +56,7 @@ export const DARK_THEME: Theme = {
   paddleColor: "#c9d1d9",
   ballColor: "#c9d1d9",
   textColor: "#c9d1d9",
-  itemColor: DARK_ITEM_COLOR,
+  itemColors: DARK_ITEM_COLORS,
 };
 
 type Particle = {
@@ -133,7 +146,7 @@ function drawItem(ctx: CanvasRenderingContext2D, item: Item, theme: Theme): void
   const left = item.x - size / 2;
   const top = item.y - size / 2;
 
-  ctx.fillStyle = theme.itemColor ?? theme.accentColor ?? theme.ballColor;
+  ctx.fillStyle = theme.itemColors?.[item.kind] ?? theme.accentColor ?? theme.ballColor;
   fillRoundRect(ctx, left, top, size, size, size * ITEM_CORNER_RADIUS_RATIO);
 
   ctx.fillStyle = theme.colors[0];
