@@ -12,6 +12,10 @@ export type Theme = {
   ballColor: string;
   textColor: string;
   particleColor?: string;
+  /** Ball (and future highlight) colour. Falls back to `ballColor`. */
+  accentColor?: string;
+  /** CSS font-family list for the HUD text. Falls back to `sans-serif`. */
+  hudFont?: string;
 };
 
 export const LIGHT_THEME: Theme = {
@@ -51,6 +55,20 @@ const rendererStates = new WeakMap<Game, RendererState>();
 
 function brickKey(brick: Brick): string {
   return `${brick.row}:${brick.col}`;
+}
+
+/**
+ * `roundRect` is missing from older canvas implementations and from the
+ * plain-object stubs used in tests, so fall back to a sharp rect there.
+ */
+function fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  if (typeof ctx.roundRect === "function") {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, radius);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, width, height);
+  }
 }
 
 function spawnParticles(particles: Particle[], brick: Brick, theme: Theme, level: number): void {
@@ -132,7 +150,9 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
     if (!brick.alive) continue;
     const levelIndex = Math.min(Math.max(brick.level, 1), 4);
     ctx.fillStyle = theme.colors[levelIndex];
-    ctx.fillRect(brick.rect.x, brick.rect.y, brick.rect.width, brick.rect.height);
+    // GitHub の草セルと同じ比率(10px セルに 2px 角丸)で丸める
+    const radius = Math.min(brick.rect.width, brick.rect.height) * 0.2;
+    fillRoundRect(ctx, brick.rect.x, brick.rect.y, brick.rect.width, brick.rect.height, radius);
   }
 
   for (const particle of state.particles) {
@@ -144,17 +164,25 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
 
   const paddle = game.paddleState;
   ctx.fillStyle = theme.paddleColor;
-  ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+  fillRoundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
 
   const ball = game.ballState;
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-  ctx.fillStyle = theme.ballColor;
+  ctx.fillStyle = theme.accentColor ?? theme.ballColor;
   ctx.fill();
 
   ctx.fillStyle = theme.textColor;
-  ctx.font = "16px sans-serif";
+  ctx.font = `16px ${theme.hudFont ?? "sans-serif"}`;
   ctx.textBaseline = "top";
-  ctx.fillText(`Score: ${game.score}`, 8, 8);
-  ctx.fillText(`Life: ${game.life}`, config.canvasWidth - 88, 8);
+  ctx.fillText(`SCORE ${game.score}`, 8, 8);
+
+  // 残機は数字ではなく「草セル」を並べて示す
+  const lifeCell = 10;
+  const lifeGap = 4;
+  ctx.fillStyle = theme.colors[4];
+  for (let i = 0; i < game.life; i++) {
+    const x = config.canvasWidth - 8 - lifeCell - i * (lifeCell + lifeGap);
+    fillRoundRect(ctx, x, 8, lifeCell, lifeCell, 2);
+  }
 }
