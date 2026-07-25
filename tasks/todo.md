@@ -677,3 +677,28 @@ viewBox を 32 → **16 単位**に変え、全図形を整数座標に置いた
 - **OGP Worker の `/share/{user}` HTML への icon 追加**: あの HTML はクローラー専用(人間は 302 でアプリへ飛ぶ)
 - **PNG 生成の npm 依存化**: rsvg-convert / ImageMagick は Homebrew のローカルツールとして使い、
   生成物をコミットする(og.png と同じ方針)。再生成コマンドは `apps/web/tools/apple-touch-icon.svg` のコメントに記載
+
+### PR → マージ → デプロイ
+
+- [x] PR → CI green → マージ — https://github.com/toshi0607/kusakuzushi/pull/21(`test` pass 36s、`Lighthouse / dist` pass 1m10s、`production` は PR では skip される設計どおり → merge 6ebeda1)
+- [x] Cloudflare Pages デプロイ — `wrangler pages deploy dist`(947ab5fc)。**PR #18(アイテムドロップ)がブランチ作成後に main へ入っていたため、この配信にはその機能も含まれる**
+- [x] 本番実測(2026-07-25)
+  - `/favicon.svg` 200 `image/svg+xml` 1507B / `/favicon.ico` 200 `image/vnd.microsoft.icon` 5430B / `/apple-touch-icon.png` 200 `image/png` 1049B
+  - `.ico` が `image/vnd.microsoft.icon` で返る = Pages の「存在しないパスに index.html を 200」の罠を塞げている
+  - Chrome(`--headless --screenshot`)で本番の `/favicon.svg` を開き、エラーページではなくマークが描画されることを確認
+
+### 未解決(このセッションの範囲外・別件)
+
+**`pnpm lh:prod` は本番で赤のまま**(performance 76、FCP 4.1s / LCP 4.0s、しきい値は 1.8s / 2.5s)。
+セッション9 の最後の未チェック項目「デプロイ後に本番で green を確認」の答えは **green にならない**。
+
+- ファビコンの変更が原因ではない: 同一コミットの `pnpm lh`(dist)は 100/100/100/100。
+  本番の network-requests でも `/favicon.svg` は最後(796ms)に 1458B で取得されるだけでクリティカルパスに乗らない
+- セッション9 の対策自体は効いている: `render-blocking-resources` は本番でも 1 件(自前 CSS 2.1KB)まで減っている
+- それでも FCP が 4.1s なのは、lhci の**モバイル・シミュレーション上のスロットリング**が実回線の
+  往復(fonts.googleapis.com → fonts.gstatic.com のクロスオリジン 2 段)に乗るため。
+  実測の wall clock では全リソースが 940ms で終わっている
+- デプロイ前(セッション9 実測)は 78 / FCP 3.8s / LCP 4.1s。今回は 76 / 4.1s / 4.2s で、
+  3 runs の LCP が 3.23 / 4.00 / 4.24s とばらつくので**この差は誤差**。改善も退行もしていない
+- 次にやるなら: 自前 CSS のインライン化(残る唯一の render-blocking)と、
+  IBM Plex Sans JP の自前ホスト化 or サブセット化(60KB の CSS + 11 ファイルのフォント取得がクロスオリジン)
