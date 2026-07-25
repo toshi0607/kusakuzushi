@@ -329,13 +329,24 @@ describe("createGameRuntime (via mount)", () => {
   });
 
   describe("keyboard control", () => {
-    /** The paddle is the last `fillRect` of a frame that draws no particles, so its x is readable off the stubbed context. */
+    /**
+     * The paddle's x, read off the stubbed context.
+     *
+     * Picked as the widest `fillRect` of the frame rather than the last one:
+     * the paddle is at least `MIN_PADDLE_WIDTH_PX` (48) across, while every
+     * other rectangle the overlay draws — particles, items, the HUD plates —
+     * is a few px wide. Keying on draw order instead made this silently read
+     * the HUD once the HUD gained a background plate.
+     */
     function paddleXAfterFrame(ctx: FakeCtx2D, now: number): number {
       ctx.fillRect.mockClear();
       raf.drain(now);
-      const lastCall = ctx.fillRect.mock.calls.at(-1);
-      if (!lastCall) throw new Error("no paddle drawn this frame");
-      return Number(lastCall[0]);
+      const widest = ctx.fillRect.mock.calls.reduce<unknown[] | null>(
+        (best, call) => (best === null || Number(call[2]) > Number(best[2]) ? call : best),
+        null,
+      );
+      if (!widest) throw new Error("no paddle drawn this frame");
+      return Number(widest[0]);
     }
 
     it("an arrow key moves the paddle immediately after the pointer was far outside the board", () => {

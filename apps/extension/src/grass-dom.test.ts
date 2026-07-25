@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import FIXTURE_HTML from "./__fixtures__/contributions.html?raw";
 import type { CellRect, ContributionLevel, GrassCell } from "./grass-dom";
-import { findGrassTable, GRASS_TABLE_SELECTOR, measureGeometry, readGrassCells, readLevelColors } from "./grass-dom";
+import {
+  findGrassTable,
+  GRASS_TABLE_SELECTOR,
+  measureGeometry,
+  readGrassCells,
+  readLevelColors,
+  visibleCells,
+} from "./grass-dom";
 
 /** Builds a synthetic 7-row x `cols`-col rect grid: 10x10 cells, 3px gap, 13px stride. */
 function makeCellGrid(cols: number): CellRect[] {
@@ -112,6 +119,93 @@ describe("measureGeometry", () => {
     const geometry = measureGeometry(rects);
     // #then
     expect(geometry).toBeNull();
+  });
+});
+
+describe("visibleCells", () => {
+  const CELL_SIZE = 10;
+
+  function stubRect(el: HTMLElement, left: number, width: number): void {
+    // jsdom has no layout, so every rect is zeros unless it's spelled out.
+    el.getBoundingClientRect = (): DOMRect =>
+      ({ left, right: left + width, top: 0, bottom: CELL_SIZE, width, height: CELL_SIZE }) as DOMRect;
+  }
+
+  /**
+   * A row of `count` cells inside a container that shows `clientWidth` px of
+   * `scrollWidth` px — GitHub's own `overflow-x: auto` calendar on a narrow
+   * window. `scrollLeft` only shifts where the cells are drawn.
+   */
+  function makeClippedRow(count: number, clientWidth: number, scrollLeft = 0): GrassCell[] {
+    const container = document.createElement("div");
+    container.style.overflowX = "auto";
+    Object.defineProperty(container, "clientWidth", { value: clientWidth, configurable: true });
+    Object.defineProperty(container, "scrollWidth", { value: count * CELL_SIZE, configurable: true });
+    container.getBoundingClientRect = (): DOMRect =>
+      ({ left: 0, right: clientWidth, top: 0, bottom: CELL_SIZE, width: clientWidth, height: CELL_SIZE }) as DOMRect;
+    document.body.appendChild(container);
+
+    return Array.from({ length: count }, (_, index) => {
+      const el = document.createElement("td");
+      el.setAttribute("data-level", "1");
+      container.appendChild(el);
+      stubRect(el, index * CELL_SIZE - scrollLeft, CELL_SIZE);
+      return { date: `2026-01-${String(index + 1).padStart(2, "0")}`, level: 1 as ContributionLevel, el };
+    });
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("drops the cells a clipped container is hiding off the right edge", () => {
+    // #given 10 cells of 10px in a container showing only 60px of them
+    const cells = makeClippedRow(10, 60);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then only the six fully-visible cells survive, and they stay contiguous
+    // and date-ascending so the grid still folds
+    expect(visible.map((c) => c.date)).toEqual([
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-03",
+      "2026-01-04",
+      "2026-01-05",
+      "2026-01-06",
+    ]);
+  });
+
+  it("drops cells scrolled off the left edge too", () => {
+    // #given the same row scrolled right by two cells
+    const cells = makeClippedRow(10, 60, 2 * CELL_SIZE);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then the run starts where the view does
+    expect(visible.map((c) => c.date)).toEqual([
+      "2026-01-03",
+      "2026-01-04",
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+    ]);
+  });
+
+  it("returns every cell when the container is wide enough to clip nothing", () => {
+    // #given a container as wide as its content — the ordinary case
+    const cells = makeClippedRow(10, 10 * CELL_SIZE);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then nothing is dropped (and the same array comes back)
+    expect(visible).toBe(cells);
+  });
+
+  it("returns an empty list unchanged", () => {
+    // #given
+    // #when
+    const visible = visibleCells([], window);
+    // #then
+    expect(visible).toEqual([]);
   });
 });
 

@@ -13,43 +13,55 @@ import { DEFAULT_CONFIG, Game } from "@kusakuzushi/core";
 import { createOverlayRenderer } from "./renderer";
 import type { OverlayTheme } from "./renderer";
 
+const PAGE_BACKGROUND = "#ffffff";
+
 const THEME: OverlayTheme = {
   levelColors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
   paddleColor: "#24292f",
   ballColor: "#24292f",
   textColor: "#24292f",
+  backgroundColor: PAGE_BACKGROUND,
   itemColors: { multiBall: "#0969da", extraPaddle: "#8250df" },
 };
 
-type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
+type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number; alpha: number };
+type TextCall = { text: string; x: number; y: number; fillStyle: string };
 
-type FakeContext = { ctx: CanvasRenderingContext2D; fillRects: FillRectCall[]; arcs: number };
+type FakeContext = {
+  ctx: CanvasRenderingContext2D;
+  fillRects: FillRectCall[];
+  texts: TextCall[];
+  arcs: number;
+};
 
 function makeFakeContext(): FakeContext {
   const fillRects: FillRectCall[] = [];
+  const texts: TextCall[] = [];
   const state = { arcs: 0 };
+  // No `roundRect` here on purpose: the renderer's square fallback is what
+  // these assertions read, and it is the same rectangle either way.
   const stub = {
     fillStyle: "",
     globalAlpha: 1,
     font: "",
     textBaseline: "bottom",
-    shadowColor: "",
-    shadowBlur: 0,
     clearRect(): void {},
     fillRect(x: number, y: number, width: number, height: number): void {
-      fillRects.push({ fillStyle: String(this.fillStyle), x, y, width, height });
+      fillRects.push({ fillStyle: String(this.fillStyle), x, y, width, height, alpha: Number(this.globalAlpha) });
     },
     beginPath(): void {},
     arc(): void {
       state.arcs += 1;
     },
     fill(): void {},
-    fillText(): void {},
+    fillText(text: string, x: number, y: number): void {
+      texts.push({ text, x, y, fillStyle: String(this.fillStyle) });
+    },
     measureText(): { width: number } {
       return { width: 40 };
     },
   };
-  const fake = { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, arcs: 0 };
+  const fake = { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, texts, arcs: 0 };
   Object.defineProperty(fake, "arcs", { get: () => state.arcs });
   return fake;
 }
@@ -142,5 +154,51 @@ describe("createOverlayRenderer", () => {
     // #and its three marks are knocked out in the level-0 grass colour
     const marks = fake.fillRects.filter((call) => call.fillStyle === THEME.levelColors[0]);
     expect(marks).toHaveLength(3);
+  });
+
+  it("backs each HUD label with a plate in the page background colour", () => {
+    // #given a game in play. The overlay canvas is transparent, so without a
+    // plate the HUD is bare text over whatever GitHub renders below the grass
+    // — which is how Score and Life became unreadable on a real profile.
+    const game = playUntil(0, (g) => g.score > 0);
+    const fake = makeFakeContext();
+
+    // #when a frame is drawn
+    createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
+
+    // #then both labels are drawn in the text colour...
+    const labels = fake.texts.filter((call) => call.fillStyle === THEME.textColor);
+    expect(labels.map((call) => call.text)).toEqual([`Score: ${game.score}`, `Life: ${game.life}`]);
+
+    // #and each sits on its own plate in the page background, drawn behind it
+    const plates = fake.fillRects.filter((call) => call.fillStyle === PAGE_BACKGROUND);
+    expect(plates).toHaveLength(2);
+    for (const [index, plate] of plates.entries()) {
+      const label = labels[index];
+      expect(plate.alpha).toBeLessThan(1);
+      expect(plate.x).toBeLessThan(label.x);
+      // 40 is the stubbed `measureText` width
+      expect(plate.x + plate.width).toBeGreaterThan(label.x + 40);
+      expect(plate.y).toBeLessThan(label.y);
+      expect(plate.y + plate.height).toBeGreaterThan(label.y);
+    }
+  });
+
+  it("keeps both HUD labels inside the board", () => {
+    // #given a game in play
+    const game = playUntil(0, (g) => g.score > 0);
+    const fake = makeFakeContext();
+
+    // #when a frame is drawn
+    createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
+
+    // #then no plate spills off either edge or the bottom of the canvas
+    const plates = fake.fillRects.filter((call) => call.fillStyle === PAGE_BACKGROUND);
+    expect(plates).toHaveLength(2);
+    for (const plate of plates) {
+      expect(plate.x).toBeGreaterThanOrEqual(0);
+      expect(plate.x + plate.width).toBeLessThanOrEqual(game.config.canvasWidth);
+      expect(plate.y + plate.height).toBeLessThanOrEqual(game.config.canvasHeight);
+    }
   });
 });

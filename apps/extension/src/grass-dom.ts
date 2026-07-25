@@ -74,6 +74,60 @@ export function readGrassCells(table: HTMLElement): GrassCell[] {
   return cells;
 }
 
+/** Sub-pixel slack when deciding whether a cell falls inside the clipping box. */
+const VISIBILITY_TOLERANCE_PX = 0.5;
+
+/**
+ * The nearest ancestor that is actually cutting `el` off horizontally, or
+ * `null` when nothing is. `scrollWidth > clientWidth` is the test that
+ * matters: an `overflow-x: auto` box wide enough for its content clips
+ * nothing.
+ */
+function findHorizontalClipper(el: HTMLElement, view: Window): HTMLElement | null {
+  if (typeof view.getComputedStyle !== "function") return null;
+
+  for (let node = el.parentElement; node && node !== el.ownerDocument.body; node = node.parentElement) {
+    const { overflowX } = view.getComputedStyle(node);
+    const clips = overflowX === "auto" || overflowX === "scroll" || overflowX === "hidden";
+    if (clips && node.scrollWidth > node.clientWidth) return node;
+  }
+
+  return null;
+}
+
+/**
+ * Drops the cells that a horizontally-clipped container is hiding.
+ *
+ * GitHub gives the calendar `overflow-x: auto`, so on a narrow viewport the
+ * outer weeks are cut off. Those `td`s still report real page coordinates,
+ * so without this the board extends past the grass anyone can see and the
+ * ball flies off into blank page, destroying bricks nobody can watch break
+ * (measured on a 1122px viewport: 113px of the graph clipped, 50 cells
+ * outside the box).
+ *
+ * Columns run left-to-right in date order, so the kept cells are always a
+ * contiguous run and still fold into a valid grid. Returns `cells`
+ * unchanged when nothing is clipped, which is the common case.
+ */
+export function visibleCells(cells: GrassCell[], view: Window): GrassCell[] {
+  const first = cells[0];
+  if (!first) return cells;
+
+  const clipper = findHorizontalClipper(first.el, view);
+  if (!clipper) return cells;
+
+  const box = clipper.getBoundingClientRect();
+  // `clientWidth` excludes the scrollbar, so this is the edge of what the
+  // reader can actually see rather than the border box's edge.
+  const left = box.left - VISIBILITY_TOLERANCE_PX;
+  const right = box.left + clipper.clientWidth + VISIBILITY_TOLERANCE_PX;
+
+  return cells.filter((cell) => {
+    const rect = cell.el.getBoundingClientRect();
+    return rect.left >= left && rect.right <= right;
+  });
+}
+
 /** Rejects colours that would paint nothing: unset, or fully transparent. */
 function isPaintable(color: string | null | undefined): color is string {
   if (!color) return false;

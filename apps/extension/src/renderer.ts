@@ -15,6 +15,8 @@ export type OverlayTheme = {
   paddleColor: string;
   ballColor: string;
   textColor: string;
+  /** The page's own background, used as the plate behind the HUD text. */
+  backgroundColor: string;
   /**
    * Falling items, one hue per kind — neither the grass nor the ball, and
    * distinct from each other so the two power-ups are told apart by colour
@@ -59,10 +61,15 @@ const ITEM_BAR_HEIGHT_RATIO = 0.3;
 const ITEM_BAR_TOP_RATIO = 0.35;
 const ITEM_BAR_LEFT_RATIOS: readonly number[] = [0.13, 0.41, 0.69];
 
-const HUD_FONT = "11px -apple-system, sans-serif";
+const HUD_FONT_SIZE_PX = 12;
+const HUD_FONT = `600 ${HUD_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
 const HUD_MARGIN_PX = 4;
-const HUD_SHADOW_COLOR = "rgba(0, 0, 0, 0.6)";
-const HUD_SHADOW_BLUR_PX = 3;
+/** Padding around the HUD text, inside its plate. */
+const HUD_PLATE_PADDING_X_PX = 5;
+const HUD_PLATE_PADDING_Y_PX = 3;
+/** Slightly see-through so the plate reads as part of the overlay, not a page element. */
+const HUD_PLATE_ALPHA = 0.85;
+const HUD_PLATE_RADIUS_PX = 3;
 
 function clampLevelIndex(level: number): number {
   return Math.min(Math.max(level, 1), 4);
@@ -165,24 +172,58 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     }
   }
 
+  /**
+   * One HUD label on a plate in the page's own background colour.
+   *
+   * The overlay canvas is transparent, so the label sits directly on
+   * whatever GitHub renders below the grass. Text alone lost that contest:
+   * a drop shadow only helps light text on dark, and half the readers have
+   * the opposite. The plate makes legibility independent of what's beneath.
+   */
+  function drawHudLabel(ctx: CanvasRenderingContext2D, text: string, x: number, baseline: number): void {
+    const metrics = ctx.measureText(text);
+    // jsdom's TextMetrics has neither ascent nor descent; the nominal font
+    // size is a good enough box there, and this is only ever cosmetic.
+    const ascent = metrics.actualBoundingBoxAscent || HUD_FONT_SIZE_PX;
+    const descent = metrics.actualBoundingBoxDescent || 0;
+
+    const plateX = x - HUD_PLATE_PADDING_X_PX;
+    const plateY = baseline - ascent - HUD_PLATE_PADDING_Y_PX;
+    const plateWidth = metrics.width + HUD_PLATE_PADDING_X_PX * 2;
+    const plateHeight = ascent + descent + HUD_PLATE_PADDING_Y_PX * 2;
+
+    ctx.globalAlpha = HUD_PLATE_ALPHA;
+    ctx.fillStyle = theme.backgroundColor;
+    // `roundRect` is Chrome 99+ and the extension targets chrome120, so the
+    // rounded plate is what ships; the square fallback is for hosts (and
+    // the tests' canvas stubs) that only implement the 2D basics.
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(plateX, plateY, plateWidth, plateHeight, HUD_PLATE_RADIUS_PX);
+      ctx.fill();
+    } else {
+      ctx.fillRect(plateX, plateY, plateWidth, plateHeight);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = theme.textColor;
+    ctx.fillText(text, x, baseline);
+  }
+
   /** Score bottom-left, life bottom-right — the paddle's half of the board, which real grass never occupies. */
   function drawHud(ctx: CanvasRenderingContext2D, game: Game): void {
     const height = game.config.canvasHeight;
     const width = game.config.canvasWidth;
+    const baseline = height - HUD_MARGIN_PX - HUD_PLATE_PADDING_Y_PX;
 
     ctx.font = HUD_FONT;
     ctx.textBaseline = "bottom";
-    ctx.fillStyle = theme.textColor;
-    ctx.shadowColor = HUD_SHADOW_COLOR;
-    ctx.shadowBlur = HUD_SHADOW_BLUR_PX;
 
-    ctx.fillText(`Score: ${game.score}`, HUD_MARGIN_PX, height - HUD_MARGIN_PX);
+    drawHudLabel(ctx, `Score: ${game.score}`, HUD_MARGIN_PX + HUD_PLATE_PADDING_X_PX, baseline);
 
     const lifeText = `Life: ${game.life}`;
     const lifeWidth = ctx.measureText(lifeText).width;
-    ctx.fillText(lifeText, width - lifeWidth - HUD_MARGIN_PX, height - HUD_MARGIN_PX);
-
-    ctx.shadowBlur = 0;
+    drawHudLabel(ctx, lifeText, width - lifeWidth - HUD_MARGIN_PX - HUD_PLATE_PADDING_X_PX, baseline);
   }
 
   function draw(ctx: CanvasRenderingContext2D, game: Game, dtSec: number): void {

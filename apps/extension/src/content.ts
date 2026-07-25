@@ -11,7 +11,14 @@ import { DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@ku
 
 import { deriveConfig, toExtensionGrid } from "./adapter";
 import type { GrassCell, GrassGeometry } from "./grass-dom";
-import { findGraphContainer, findGrassTable, measureGeometry, readGrassCells, readLevelColors } from "./grass-dom";
+import {
+  findGraphContainer,
+  findGrassTable,
+  measureGeometry,
+  readGrassCells,
+  readLevelColors,
+  visibleCells,
+} from "./grass-dom";
 import type { Overlay } from "./overlay";
 import { createOverlay } from "./overlay";
 import type { OverlayTheme } from "./renderer";
@@ -141,6 +148,9 @@ function createGameRuntime(
     paddleColor: foreground,
     ballColor: foreground,
     textColor: foreground,
+    // Level 0 is the emptiest the grass ever looks, so it is the closest
+    // stand-in for the page background when the body's own is transparent.
+    backgroundColor: pageColors?.background ?? levelColors[0],
     // The page's own colours are all we sample for the paddle/ball, but an
     // item has to stand apart from both the grass and the ball, so it keeps
     // core's blue/purple (GitHub's accents, in the variant that matches).
@@ -416,7 +426,9 @@ export function mount(doc: Document, view: Window): Session | null {
     clearMessage();
 
     const username = usernameFromPath(view.location.pathname);
-    const grassCells = readGrassCells(table);
+    // Only the grass the reader can actually see becomes a board — see
+    // `visibleCells`. On a wide enough window this is every cell.
+    const grassCells = visibleCells(readGrassCells(table), view);
     const grid = toExtensionGrid(username, grassCells);
 
     if (!hasLiveBricks(grid)) {
