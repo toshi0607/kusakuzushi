@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "草崩し (Kusakuzushi)",
-  "version": "0.0.1",
-  "description": "GitHub のプロフィールページの草を、その場でブロック崩しにする",
+  "default_locale": "en",
+  "name": "__MSG_extName__",
+  "version": "1.0.0",
+  "description": "__MSG_extDescription__",
+  "homepage_url": "https://kusakuzushi.toshi0607.com",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
