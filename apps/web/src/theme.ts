@@ -1,7 +1,8 @@
 /**
  * Picks core's `LIGHT_THEME` / `DARK_THEME` from the OS colour-scheme
- * preference. Callers query per frame, so an OS theme flip takes effect
- * without a listener.
+ * preference. Running rAF loops query per frame; loops that stop
+ * (result screen, reduced-motion attract) must repaint via `watchTheme`
+ * or the canvas keeps the stale theme while the page CSS flips.
  */
 
 import type { Theme } from "@kusakuzushi/core";
@@ -18,4 +19,12 @@ const WEB_DARK_THEME: Theme = { ...DARK_THEME, accentColor: ACCENT_COLOR, hudFon
 
 export function currentTheme(): Theme {
   return window.matchMedia(DARK_MEDIA_QUERY).matches ? WEB_DARK_THEME : WEB_LIGHT_THEME;
+}
+
+/** Invokes `onChange` with the new theme whenever the OS preference flips. Returns an unsubscribe function. */
+export function watchTheme(onChange: (theme: Theme) => void): () => void {
+  const mediaQuery = window.matchMedia(DARK_MEDIA_QUERY);
+  const listener = (): void => onChange(mediaQuery.matches ? WEB_DARK_THEME : WEB_LIGHT_THEME);
+  mediaQuery.addEventListener("change", listener);
+  return () => mediaQuery.removeEventListener("change", listener);
 }
