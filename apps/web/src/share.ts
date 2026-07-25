@@ -2,15 +2,20 @@
 
 const SITE_URL = "https://kusakuzushi.toshi0607.com";
 
-/** The canonical share URL for `username`'s result (also used as `?user=` deep link). */
-export function buildShareUrl(username: string): string {
-  return `${SITE_URL}/?user=${encodeURIComponent(username)}`;
+/**
+ * The canonical share URL for `username`'s result. Served by the OGP Worker
+ * (`workers/ogp`): crawlers get OGP-tagged HTML whose image reflects the
+ * score/percentage carried in `s`/`p`, humans get redirected to the app.
+ */
+export function buildShareUrl(username: string, percentage: number, score: number): string {
+  const params = new URLSearchParams({ s: String(score), p: String(percentage) });
+  return `${SITE_URL}/share/${encodeURIComponent(username)}?${params.toString()}`;
 }
 
 /** Builds an `x.com/intent/post` URL announcing `username`'s harvest result. */
 export function buildIntentUrl(username: string, totalContributions: number, percentage: number, score: number): string {
   const text = `${username} の草 ${totalContributions.toLocaleString("en-US")} contributions を ${percentage}% 刈り取った🌱 スコア ${score.toLocaleString("en-US")} #草崩し`;
-  const params = new URLSearchParams({ text, url: buildShareUrl(username) });
+  const params = new URLSearchParams({ text, url: buildShareUrl(username, percentage, score) });
   return `https://x.com/intent/post?${params.toString()}`;
 }
 
