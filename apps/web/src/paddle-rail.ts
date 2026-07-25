@@ -6,8 +6,12 @@
  * canvas itself buries the ball and the paddle under the thumb — and a tap
  * there launches immediately, before the player can aim. The rail moves the
  * touch surface out of the picture: it is exactly as wide as the canvas, so
- * the paddle always lands under the finger, and the ball leaves the paddle
- * only when the finger lifts.
+ * the paddle lands under the finger (bar the last half-paddle at each end,
+ * where the track runs out), and the ball leaves the paddle only when the
+ * finger lifts.
+ *
+ * The stylesheet alone decides whether the rail is shown; `isVisible` is how
+ * the board finds out, so the two can never disagree about who owns touch.
  */
 
 export type PaddleRailHandlers = {
