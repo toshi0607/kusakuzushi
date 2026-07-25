@@ -41,6 +41,8 @@ type Particle = {
 
 type RendererState = {
   destroyedKeys: Set<string>;
+  /** Level each brick last had while alive — the colour its particles keep. */
+  lastAliveLevels: Map<string, number>;
   particles: Particle[];
   lastTimeMs: number;
 };
@@ -51,10 +53,10 @@ function brickKey(brick: Brick): string {
   return `${brick.row}:${brick.col}`;
 }
 
-function spawnParticles(particles: Particle[], brick: Brick, theme: Theme): void {
+function spawnParticles(particles: Particle[], brick: Brick, theme: Theme, level: number): void {
   const cx = brick.rect.x + brick.rect.width / 2;
   const cy = brick.rect.y + brick.rect.height / 2;
-  const color = theme.particleColor ?? theme.colors[Math.min(Math.max(brick.level, 1), 4)];
+  const color = theme.particleColor ?? theme.colors[Math.min(Math.max(level, 1), 4)];
   const count = 6;
 
   for (let i = 0; i < count; i++) {
@@ -88,7 +90,7 @@ function updateParticles(particles: Particle[], dt: number): void {
 function getState(game: Game): RendererState {
   let state = rendererStates.get(game);
   if (!state) {
-    state = { destroyedKeys: new Set(), particles: [], lastTimeMs: Date.now() };
+    state = { destroyedKeys: new Set(), lastAliveLevels: new Map(), particles: [], lastTimeMs: Date.now() };
     rendererStates.set(game, state);
   }
   return state;
@@ -113,9 +115,11 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
 
   for (const brick of game.liveBricks) {
     const key = brickKey(brick);
-    if (!brick.alive && !state.destroyedKeys.has(key)) {
+    if (brick.alive) {
+      state.lastAliveLevels.set(key, brick.level);
+    } else if (!state.destroyedKeys.has(key)) {
       state.destroyedKeys.add(key);
-      spawnParticles(state.particles, brick, theme);
+      spawnParticles(state.particles, brick, theme, state.lastAliveLevels.get(key) ?? brick.level);
     }
   }
   updateParticles(state.particles, dt);

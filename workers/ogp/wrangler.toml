@@ -1,0 +1,7 @@
+name = "kusakuzushi-ogp"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+routes = [
+  { pattern = "kusakuzushi.toshi0607.com/share/*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" }
+]
