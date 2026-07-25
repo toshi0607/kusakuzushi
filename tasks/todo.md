@@ -23,6 +23,29 @@
 | node v26 / pnpm 10.30 / gh(toshi0607@github.com, repo scope) 利用可 | VERIFIED | 2026-07-24 コマンド実測 |
 | jogruber API のレート制限は個人利用で問題ない | UNVERIFIED-ACCEPTED(2026-07-24 ユーザー報告済み) | 実測: レート制限ヘッダーなし・公表値なしで外形検証は不可能。ただし x-cache: HIT でCDNキャッシュ確認済み(同一ユーザーへの連打は origin に届かない)。緩和策: fetchGrid アダプタ分離済み+障害時は自前 Worker プロキシへ差し替え(DESIGN.md §2)。Phase 2 で自前化を再判断 |
 
+## セッションの索引
+
+並行セッションが同じ番号を取ってしまい、**8 と 10 が 2 回ずつ**使われている(番号での相互参照が本文・`lessons.md` に多数あるため、振り直さず索引で引けるようにする)。ファイル内の並び順も時系列とは一致しない。
+
+| 番号 | 主題 | 状態 |
+|---|---|---|
+| 1 | リポジトリ + core エンジン | 完了 |
+| 2 | Web アプリ MVP | 完了 |
+| 3 | OGP Worker + 演出 | 完了 |
+| 4 | Chrome 拡張 | 完了 |
+| 5 | Web 版ビジュアルデザイン改善 | 完了 |
+| 6 | 発射ガイドの重なり修正 | 完了 |
+| 7 | 残機表示の可読性修正 | 完了 |
+| 8(1つ目) | モバイル操作 — 盤面下のパドルレール | 実装・デプロイ完了。**実機(スマホ)確認のみユーザー待ち** |
+| 8(2つ目) | トップページの OGP 画像 | 完了 |
+| 9 | Lighthouse によるパフォーマンス改善 + 継続計測 | 完了 |
+| 10(1つ目) | ブロック破壊時のアイテムドロップ | 完了 |
+| 10(2つ目) | ファビコン | 完了 |
+| 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
+| 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
+
+未完了はこの 1 件だけ: セッション8(パドルレール)の実機確認。
+
 ## セッション1: リポジトリ + core エンジン
 
 - [x] 環境確認(node/pnpm/gh) — 実測済み
@@ -127,7 +150,7 @@ curl -s -A "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" ...同UR
 - ビルド方式は Vite + CRXJS か素の esbuild(DESIGN §6、Phase 3 で決定とされている)
 - 検証は自分の GitHub プロフィールページで実施(DESIGN §7 Phase 3 完了条件)
 
-## セッション4: Chrome 拡張(実装中)
+## セッション4: Chrome 拡張(完了 2026-07-25)
 
 ### Constraints(セッション4 追加分)
 
@@ -234,7 +257,7 @@ pnpm --filter @kusakuzushi/extension build
 5. マウスでパドル移動、クリック/Space で発射。破壊された日の草が実際に灰色になる
 6. 「やめる」または他ページへ遷移で原状復帰
 
-## セッション5: Web 版ビジュアルデザイン改善(計画済み・実装未着手)
+## セッション5: Web 版ビジュアルデザイン改善(完了 2026-07-25)
 
 設計: ../DESIGN-VISUAL.md が正(コンセプト「夜の畑のアーケード」、トークン、タイポ、レイアウト、モーション、コピーの全仕様)。ここは実行計画。
 
@@ -309,7 +332,7 @@ pnpm --filter @kusakuzushi/extension build
   - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
 - 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
-## セッション8: モバイル操作 — 盤面下のパドルレール(実装中)
+## セッション8: モバイル操作 — 盤面下のパドルレール(実装・デプロイ完了 2026-07-25 / 実機確認のみユーザー待ち)
 
 ユーザー指摘(2026-07-25): 「スマホだと全然できないので、描画領域下で触れる形でもバーを左右に動かせるようにしてください」
 
@@ -352,7 +375,7 @@ pnpm --filter @kusakuzushi/extension build
   - 本番確認(2026-07-25 実測): `https://kusakuzushi.toshi0607.com/assets/index-pr2ZC311.js` と `index-Cu7t7aJQ.css` が dist と shasum 一致。CSS に `@media (pointer: coarse)` の `paddle-rail{display:block}`、JS に「下のバーで発射」「触れた位置にパドルが動き、離すと発射」が入っていることを確認。デスクトップ UA では `paddle-rail` の computed display が `none`、ガイドは「クリック / Space で発射」= デスクトップ無変更も実測
   - ※デプロイ直後の1回目の curl は両アセットとも 5,476 バイトの別物が返った(数十秒後には正しい 28,152 バイトを返し shasum も一致)。セッション6 の切り分け手順どおり shasum 比較で判定すること
 - [x] main 取り込み時の確認 — 盤面が 960x480 → 960x360(正方ブロック化)になった影響でレールの説明文の高さ表記を更新。パドル幅 80 は不変なのでハンドル比率 8.33% も不変。アイテム「バーが増える」は `paddle.width` を変えず左右に別バーを生やす実装(items.ts / game.ts:450)なのでハンドル寸法にも影響しない。マージ後に実ブラウザで再実測(canvas 960x360 → CSS 343x130、レール幅一致、8px 間隔、レール 25% → パドル 239.5、盤面タッチ無視、離すと発射)
-- [ ] 実機(スマホ)で本番確認 — `@media (pointer: coarse)` は手元にタッチエミュレーション環境が無いため未実測。https://kusakuzushi.toshi0607.com/?user=toshi0607 をスマホで開いて確認する
+- [ ] 実機(スマホ)で本番確認 — `@media (pointer: coarse)` は手元にタッチエミュレーション環境が無いため未実測。**ユーザーが実機で開く以外に消化手段がない項目**(エージェント側では永久に閉じられない)。https://kusakuzushi.toshi0607.com/?user=toshi0607 をスマホで開いて確認する
 
 ### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
 
@@ -443,7 +466,7 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 - **トップは静的 PNG、share は Worker 動的**という役割分担にした。トップ URL は最も貼られるので、表示のたびに satori + Google Fonts に依存させたくない(それらが落ちてもカードは出る)。share カードはスコア依存なので動的でしか作れない
 - 途中で作った盤面の「空白帯カット」は、盤面 2:1 の下半分がほぼ無地であることに依存している。core の `computeLayout` が変わっても追従するよう境界値はそこから導出済み
 - ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため、dev 専用エンドポイント(vite.config.ts)で `public/og.png` を直接書く方式にした。結果として再生成手順が「開いてボタンを押す」だけになった
-## セッション9: Lighthouse によるパフォーマンス改善 + 継続計測(実装中)
+## セッション9: Lighthouse によるパフォーマンス改善 + 継続計測(完了 2026-07-25)
 
 対象は apps/web(公開ページ)のみ。拡張は計測対象外(ページ所有者が GitHub)。
 
@@ -500,7 +523,7 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
   - 検証(ネガティブテスト): index.html から `media="print" onload=...` を外して `pnpm lh` → **exit 1**(`render-blocking-resources` 3 > 1、LCP 3.1s > 2.5s)。ゲートが実際に落ちることを確認してから元に戻した
 - [x] 改善後の再計測とベースライン比較を本ファイルに記録(下記)
 - [x] PR → CI green — https://github.com/toshi0607/kusakuzushi/pull/17。`test` pass 46s、`Lighthouse / dist` pass 47s(ランナーで Chrome 起動 → 3 runs → assertion 全通過)、`Lighthouse / production` は PR では skip される設計どおり
-- [ ] マージ → `wrangler pages deploy` → 本番で `pnpm lh:prod` を再実行して green を確認(**ユーザー判断待ち**)
+- [x] マージ → `wrangler pages deploy` → 本番で `pnpm lh:prod` を再実行して green を確認 — PR #17 マージ(40dadd2、2026-07-25 07:58)。本番 green の確認自体はセッション12 が引き取り、デプロイ(`0663da25`)後に `Lighthouse` ワークフローを workflow_dispatch で実行(run 30161863485)して `production` ジョブ **success**(中央値 perf 99 / FCP 1013ms / LCP 2005ms / render-blocking 0)。詳細はセッション12 の A-11
 
 ### 結果(dist / mobile / 3 runs)
 
@@ -528,7 +551,7 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 - **`uses-long-cache-ttl`**: 本番で引っかかるのは Cloudflare Insights のビーコンと fonts.gstatic.com の
   フォント(どちらも第三者・TTL 24h)で、自前の資産は対象外。assert は warn 止まりにしてある
 
-## セッション10: ブロック破壊時のアイテムドロップ(実装中)
+## セッション10: ブロック破壊時のアイテムドロップ(完了 2026-07-25)
 
 ユーザー要望(2026-07-25): 「たまにブロックを崩したときにアイテムが降ってくるようにしてください」
 - 玉の数が増える
@@ -584,7 +607,7 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 - [x] DESIGN.md §3 / DESIGN-VISUAL §5 にアイテム仕様を追記
 - [x] 自己レビュー(このセッションはサブエージェント禁止の実行環境のため reviewer エージェントは使わず、差分の通読で代替)。見つけた点: クリア時に落下中アイテムが結果画面へ凍りついたまま残る → `clear` 遷移時に `items` を空にする修正を入れた
 - [x] ユーザー指摘の調整(2026-07-25): アイテムを青に / 玉を「めちゃくちゃ多く」増やせるように — 下記「調整の記録」
-- [ ] PR → CI green → マージ(ユーザー確認後)
+- [x] PR → CI green → マージ — https://github.com/toshi0607/kusakuzushi/pull/18(`test` pass 40s / `Lighthouse / dist` pass 1m25s → merge 7b16daf、2026-07-25 08:04)。その後の調整(アイテム色・3分裂)は [#26](https://github.com/toshi0607/kusakuzushi/pull/26)(merge 199659d)で別途反映済み
 
 ### 調整の記録(ユーザー指摘 2026-07-25)
 
@@ -780,7 +803,7 @@ canvasHeight を 360 にした理由: 480 のままだと草が上端の細い�
 | R-L4 | Low | M2(クランプ)と L1(入力欄)にテストが無い | 修正(パドル位置をスタブ ctx の fillRect から読む形で検証)。**この過程でクランプ範囲の誤りを発見** — カーソルを `[0, canvasWidth]` ではなくパドル中心の可動域 `[w/2, canvasWidth-w/2]` に合わせないと、狭い盤面で最初の1〜2回の矢印入力が飲まれる |
 | R-L5 | Low | リファクタで置き去りになったコメント・README・todo.md の件数 | 修正 |
 
-## セッション10: ファビコン(意匠の作り直しと、抜けている面の追加)
+## セッション10: ファビコン(意匠の作り直しと、抜けている面の追加)(完了 2026-07-25)
 
 依頼は「ファビコンつけてください」。着手時点で `apps/web/public/favicon.svg` は既に存在したが、
 セッション9で **console の 404 を消すためだけに** 置いたもので、意匠の検討は通っていなかった。
@@ -1090,4 +1113,4 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - **伝播後も、ローカル回線からの `pnpm lh:prod` はばらつく。** 全 run が新バンドル・blocking 0 でも
   FCP は 1153 / 3767 / 2729ms と揺れ、中央値がしきい値を超えた。同時刻に CI(GitHub ランナー)から
   測ると FCP 中央値 1013ms で green。**本番の合否判定はローカルではなく CI の `production` ジョブで行うこと**
-- [ ] 本番が緑にならなかった場合の次の一手: `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
+- 次の一手(**発動せず**。A-11 で本番 green を実測したため前提が消えた。将来また赤くなったとき用に残す): `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
