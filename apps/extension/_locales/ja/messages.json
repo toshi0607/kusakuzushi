@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "草崩し (Kusakuzushi)",
+    "description": "Extension name shown in the Chrome Web Store and chrome://extensions."
+  },
+  "extDescription": {
+    "message": "GitHub のプロフィールページの草を、その場でブロック崩しにする",
+    "description": "Store short description. Must stay under 132 characters."
+  }
+}
