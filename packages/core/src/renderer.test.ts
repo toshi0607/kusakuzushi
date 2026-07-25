@@ -14,10 +14,25 @@ function makeGrid(rowLevels: Array<0 | 1 | 2 | 3 | 4>): ContributionGrid {
 }
 
 type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
+type RoundRectCall = { fillStyle: string; x: number; y: number; width: number; height: number; radius: number };
+type FillTextCall = { font: string; text: string };
 
-/** A canvas-2d stub that records every fillRect with the fillStyle active at call time. */
-function makeFakeContext(): { ctx: CanvasRenderingContext2D; fillRects: FillRectCall[] } {
+type FakeContext = {
+  ctx: CanvasRenderingContext2D;
+  fillRects: FillRectCall[];
+  roundRects: RoundRectCall[];
+  fillTexts: FillTextCall[];
+};
+
+/**
+ * A canvas-2d stub that records drawing calls with the style active at
+ * call time. `withRoundRect` opts into the modern `roundRect` API so both
+ * the rounded path and the sharp fallback can be exercised.
+ */
+function makeFakeContext(withRoundRect = false): FakeContext {
   const fillRects: FillRectCall[] = [];
+  const roundRects: RoundRectCall[] = [];
+  const fillTexts: FillTextCall[] = [];
   const stub = {
     fillStyle: "",
     globalAlpha: 1,
@@ -30,9 +45,18 @@ function makeFakeContext(): { ctx: CanvasRenderingContext2D; fillRects: FillRect
     beginPath(): void {},
     arc(): void {},
     fill(): void {},
-    fillText(): void {},
+    fillText(text: string): void {
+      fillTexts.push({ font: String(this.font), text });
+    },
   };
-  return { ctx: stub as unknown as CanvasRenderingContext2D, fillRects };
+  if (withRoundRect) {
+    Object.assign(stub, {
+      roundRect(x: number, y: number, width: number, height: number, radius: number): void {
+        roundRects.push({ fillStyle: String(stub.fillStyle), x, y, width, height, radius });
+      },
+    });
+  }
+  return { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, roundRects, fillTexts };
 }
 
 describe("render", () => {
@@ -53,5 +77,99 @@ describe("render", () => {
     const styles = second.fillRects.map((call) => call.fillStyle);
     expect(styles).toContain(LIGHT_THEME.colors[3]);
     expect(styles).not.toContain(LIGHT_THEME.colors[1]);
+  });
+
+  it("draws one level-4 grass cell per remaining life instead of a text counter", () => {
+    // #given a fresh game (3 lives) with a single low-level brick
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
+    const fake = makeFakeContext();
+
+    // #when a frame renders
+    render(fake.ctx, game, LIGHT_THEME);
+
+    // #then three 10px cells in the strongest green appear, and no "Life" text
+    const lifeCells = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[4] && call.width === 10 && call.height === 10);
+    expect(lifeCells).toHaveLength(3);
+    expect(fake.fillTexts.map((call) => call.text).join(" ")).not.toContain("Life");
+  });
+
+  it("uses theme.hudFont for the HUD text when provided", () => {
+    // #given a theme carrying a pixel-font stack
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
+    const fake = makeFakeContext();
+
+    // #when a frame renders with that theme
+    render(fake.ctx, game, { ...LIGHT_THEME, hudFont: '"DotGothic16", sans-serif' });
+
+    // #then the score text is drawn with the pixel font
+    const scoreCall = fake.fillTexts.find((call) => call.text.startsWith("SCORE"));
+    expect(scoreCall?.font).toBe('16px "DotGothic16", sans-serif');
+  });
+
+  it("rounds brick corners at 20% of the cell size when roundRect is available", () => {
+    // #given a context that supports the modern roundRect API
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 2]));
+    const fake = makeFakeContext(true);
+
+    // #when a frame renders
+    render(fake.ctx, game, LIGHT_THEME);
+
+    // #then the brick is drawn as a rounded rect with radius = min(w, h) * 0.2
+    const brickCall = fake.roundRects.find((call) => call.fillStyle === LIGHT_THEME.colors[2]);
+    expect(brickCall).toBeDefined();
+    const expected = Math.min(brickCall!.width, brickCall!.height) * 0.2;
+    expect(brickCall!.radius).toBeCloseTo(expected);
+  });
+
+  it("hides bricks at reveal 0 and draws them full-size at reveal 1", () => {
+    // #given a game with one brick
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 2]));
+
+    // #when rendering at reveal 0
+    const hidden = makeFakeContext();
+    render(hidden.ctx, game, LIGHT_THEME, { reveal: 0 });
+
+    // #then no brick rect is drawn
+    expect(hidden.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[2])).toHaveLength(0);
+
+    // #when rendering at reveal 1 (and with options omitted)
+    const shown = makeFakeContext();
+    render(shown.ctx, game, LIGHT_THEME, { reveal: 1 });
+    const plain = makeFakeContext();
+    render(plain.ctx, game, LIGHT_THEME);
+
+    // #then the brick appears at its exact rect in both
+    const brick = game.liveBricks[0];
+    for (const fake of [shown, plain]) {
+      const call = fake.fillRects.find((c) => c.fillStyle === LIGHT_THEME.colors[2]);
+      expect(call).toMatchObject({ x: brick.rect.x, y: brick.rect.y, width: brick.rect.width, height: brick.rect.height });
+    }
+  });
+
+  it("skips the HUD when options.hud is false", () => {
+    // #given a fresh game
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
+    const fake = makeFakeContext();
+
+    // #when rendering with hud: false
+    render(fake.ctx, game, LIGHT_THEME, { hud: false });
+
+    // #then neither the score text nor the life cells are drawn
+    expect(fake.fillTexts).toHaveLength(0);
+    const lifeCells = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[4] && call.width === 10);
+    expect(lifeCells).toHaveLength(0);
+  });
+
+  it("keeps drawing bricks as sharp rects when roundRect is missing", () => {
+    // #given a context without roundRect (older canvas / test stubs)
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 2]));
+    const fake = makeFakeContext();
+
+    // #when a frame renders
+    render(fake.ctx, game, LIGHT_THEME);
+
+    // #then the brick still appears via the fillRect fallback
+    const brickCall = fake.fillRects.find((call) => call.fillStyle === LIGHT_THEME.colors[2]);
+    expect(brickCall).toBeDefined();
   });
 });

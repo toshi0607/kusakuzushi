@@ -9,5 +9,5 @@ export { clamp, moveBall, reflectOffWalls, reflectOffPaddle, detectBrickCollisio
 export type { GameState, GameConfig, Brick, BrickLayout } from "./game";
 export { Game, DEFAULT_CONFIG, MAX_FRAME_DT, computeLayout } from "./game";
 
-export type { Theme } from "./renderer";
+export type { Theme, RenderOptions } from "./renderer";
 export { render, LIGHT_THEME, DARK_THEME } from "./renderer";
