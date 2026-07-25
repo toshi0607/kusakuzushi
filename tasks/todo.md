@@ -532,3 +532,67 @@ pnpm --filter @kusakuzushi/extension build
 | R-L3 | Low | 既存ボタンを再利用すると前のセッションのクリックハンドラが残り、1クリックで2ゲーム起動し得る | 修正(再利用せず作り直す)+ 回帰テスト |
 | R-L4 | Low | M2(クランプ)と L1(入力欄)にテストが無い | 修正(パドル位置をスタブ ctx の fillRect から読む形で検証)。**この過程でクランプ範囲の誤りを発見** — カーソルを `[0, canvasWidth]` ではなくパドル中心の可動域 `[w/2, canvasWidth-w/2]` に合わせないと、狭い盤面で最初の1〜2回の矢印入力が飲まれる |
 | R-L5 | Low | リファクタで置き去りになったコメント・README・todo.md の件数 | 修正 |
+
+## セッション10: ファビコン(意匠の作り直しと、抜けている面の追加)
+
+依頼は「ファビコンつけてください」。着手時点で `apps/web/public/favicon.svg` は既に存在したが、
+セッション9で **console の 404 を消すためだけに** 置いたもので、意匠の検討は通っていなかった。
+調査の結果、その SVG は**そもそもブラウザで描画されていなかった**(下記 A-1)。
+
+### Constraints
+
+| 制約 | 出典 | 検証方法 |
+|------|------|----------|
+| 緑は草(コンテンツ)専用。UI/操作系のアクセントはアンバー1色 | DESIGN-VISUAL §0 最重要ルール | favicon.svg の fill 値 |
+| ページ側トークン(soil / marquee)から色を採る | DESIGN-VISUAL §1 | 同上 |
+| Lighthouse 4カテゴリ 100 を維持(セッション9の成果) | tasks/todo.md セッション9 | `pnpm lh` が exit 0 |
+| 新規 npm 依存を増やさない | rules/constraints.md | package.json の差分 0 |
+| 拡張はページに独自デザインを持ち込まない | DESIGN-VISUAL 冒頭 | content script / DOM 生成コードの差分 0(manifest の `icons` のみ) |
+| ゲーム挙動を変えない | 依頼はアイコンのみ | packages/core の差分 0、既存テスト全 pass |
+
+### Assumptions
+
+| 仮定 | Status | 根拠 |
+|------|--------|------|
+| A-1: main の `favicon.svg` は XML として不正で、ブラウザが描画に失敗する | VERIFIED | コメント内に `--marquee` の二重ハイフン(XML 仕様でコメント内 `--` は禁止)。**Chrome 実測**: `--headless --screenshot` で開くと画像ではなく `This page contains the following errors: error on line 4 at column 12: Comment must not contain '--' (double-hyphen)` のエラーページが出る。libxml2(rsvg-convert)と expat(python minidom)も fatal error で拒否 |
+| A-2: iOS はホーム画面に SVG favicon を使えず apple-touch-icon.png が要る | UNVERIFIED-ACCEPTED (2026-07-25) | 実機 iOS が手元に無く実測できない。ただし PNG を置くこと自体に副作用が無く(未対応環境は無視するだけ)、置かない場合の劣化(ホーム画面がページのスクショになる)の方が大きいので受容 |
+| A-3: Cloudflare Pages は存在しないパスに index.html を 200 で返す | VERIFIED | セッション9の robots.txt で実測済み(SEO 92 / robots-txt 49 errors の原因)。よって `/favicon.ico` も実体を置かないと HTML が返る |
+| A-4: `.ico` を併記しても対応ブラウザは SVG を選び、余分な取得は起きない | VERIFIED | Lighthouse の network-requests に `/favicon.svg` 200 の 1 件のみ。`.ico` は取得されていない |
+| A-5: manifest の `icons` が参照するファイルが dist に無いと Chrome が拡張の読み込みを拒否する | VERIFIED | build.mjs で dist へコピーするようにし、`ls apps/extension/dist/icons` で 4 ファイル生成を確認 |
+
+### 意匠
+
+viewBox を 32 → **16 単位**に変え、全図形を整数座標に置いた。DESIGN-VISUAL 冒頭の
+「草グラフは本物のピクセルグリッド」を favicon にも通す = 16px 表示で 1 図形が整数ピクセルに落ちる。
+
+- 地は `--soil` `#0C110D`(夜の畑)。**旧案は地が緑(`#216e39`)で「緑は草だけ」の規則に反していた**
+- 上段に草ブロック 3 つ。左から `#30a14e` → `#40c463` → `#9be9a8` で、level = HP が減った状態を表す
+- ボールは 3x3 の正方形。ゲーム本体は円だが、16px では半径 1.5px の円が十字のにじみになり読めない
+  (実測: 変種比較 `vA` で確認)。元祖 Breakout のボールも正方形なので題材から外れない
+- パドルはピル形(core の renderer と同じ `radius = height / 2`)。アンバーで下端に置くと 16px でも
+  ブロックと混同されず「ブロック崩し」だと読める
+- 旧案(2x2 の草 + 円のボール)は 16px では緑の四角に見えるだけでゲーム性が読めなかった
+
+### タスク
+
+- [x] `apps/web/public/favicon.svg` を再設計(XML 不正も同時に解消)
+  - 検証: `python3 -c "import xml.dom.minidom as m; m.parse(...)"` が pass。16/32/64/180px にラスタライズして目視
+- [x] `apps/web/public/favicon.ico`(16+32 マルチサイズ)を追加 — Pages が `/favicon.ico` に HTML を返すのを防ぐ
+  - 検証: `identify` で `ICO 16x16` / `ICO 32x32` の 2 面を確認
+- [x] `apps/web/public/apple-touch-icon.png`(180x180)を追加。生成元は `apps/web/tools/apple-touch-icon.svg`
+  (iOS が自前で角丸マスクをかけるため、角丸なしの全面塗り + 2 単位の余白)
+- [x] `apps/web/index.html` に `.ico` / `.svg` / `apple-touch-icon` の 3 本を記述
+- [x] Chrome 拡張にアイコンを追加(`apps/extension/icons/icon-{16,32,48,128}.png` + manifest の `icons`)。
+  これまで `icons` が無く、拡張一覧では既定のパズルピースが出ていた
+  - 検証: `pnpm build` 後 `apps/extension/dist/icons/` に 4 ファイル、`dist/manifest.json` が同じパスを指す
+- [x] `apps/extension/build.mjs` が `icons/` を dist へコピーするよう修正
+- [x] `pnpm -r test` 全 pass(core 含め 4 パッケージ)
+- [x] `pnpm lh` が exit 0。Performance / Accessibility / Best Practices / SEO = **100 / 100 / 100 / 100**(退行なし)
+
+### 見送った
+
+- **site.webmanifest**: 依頼はファビコン。ホーム画面追加時のアイコンは apple-touch-icon で足り、
+  manifest を足すとアプリ名・theme_color・display の管理箇所が増えるだけなので入れない
+- **OGP Worker の `/share/{user}` HTML への icon 追加**: あの HTML はクローラー専用(人間は 302 でアプリへ飛ぶ)
+- **PNG 生成の npm 依存化**: rsvg-convert / ImageMagick は Homebrew のローカルツールとして使い、
+  生成物をコミットする(og.png と同じ方針)。再生成コマンドは `apps/web/tools/apple-touch-icon.svg` のコメントに記載
