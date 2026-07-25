@@ -604,6 +604,7 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 2. **アイテム色の分離**: `Theme.itemColor`(単色)を **`Theme.itemColors: Record<ItemKind, string>`** に置き換え、玉増加=青(light `#0969da` / dark `#58a6ff`)、バー増加=紫(light `#8250df` / dark `#a371f7`)。拡張の `OverlayTheme.itemColor` も同様に `itemColors` へ。記号(3点/3本)が読める距離まで落ちてきた頃にはもうパドル直前で、追うかどうかを色だけで判断できる必要があるため
 3. **実測(ブラウザ)**: dev サーバ上の一時ページで light/dark × 2種を描画し、タイル中心のピクセルを `getImageData` で読み取り `#0969da` / `#8250df` / `#58a6ff` / `#a371f7` を確認。スクリーンショットでも青と紫が別物に見えることを目視確認(一時ページは検証後に削除)
 4. **テスト**: 全ワークスペース green(core 54 / extension 49 / web 56 / ogp 66)、`pnpm -r build` exit 0
+5. **PR → マージ → デプロイ**(2026-07-25): https://github.com/toshi0607/kusakuzushi/pull/26(`test` pass 38s / `Lighthouse dist` pass 1m7s / `slow` pass 1m13s → merge 199659d)。`wrangler pages deploy dist --project-name kusakuzushi --branch main`(cbcdad1e)。本番検証: `https://kusakuzushi.toshi0607.com/assets/index-SQEC_6xV.js` の shasum が手元の dist と一致(40f6e85e…)、配信 JS に `multiBallSplitFactor:3` と紫 `#8250df` / `#a371f7` を確認、本番画面のスクリーンショットも正常
 
 ### セッション10 検証記録(2026-07-25 実ブラウザ実測)
 
