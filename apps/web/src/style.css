@@ -249,7 +249,13 @@ button:disabled {
   pointer-events: none;
 }
 
+/*
+ * 草(ブロック)は盤面の上半分を占める(core computeLayout: brickAreaHeight
+ * = canvasHeight/2 - gap)。ガイドを盤面全体の中央に置くと、ちょうどその
+ * 下端に重なるので、下半分=パドル空間の中央に寄せる。
+ */
 .guide-overlay {
+  top: 50%;
   color: var(--ink);
   font-family: var(--font-display);
   font-size: 1.1rem;
