@@ -204,18 +204,37 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
   ctx.fill();
 
   if (options?.hud !== false) {
+    // HUD は草の上に重ねない。草の直下(盤面の下半分の先頭)に置くことで、
+    // ブロックを隠さず、背景の無地の上で確実に読める。
+    const hudTop = config.canvasHeight / 2 + 10;
+
     ctx.fillStyle = theme.textColor;
     ctx.font = `16px ${theme.hudFont ?? "sans-serif"}`;
     ctx.textBaseline = "top";
-    ctx.fillText(`SCORE ${game.score}`, 8, 8);
+    ctx.fillText(`SCORE ${game.score}`, 8, hudTop);
 
-    // 残機は数字ではなく「草セル」を並べて示す
-    const lifeCell = 10;
-    const lifeGap = 4;
-    ctx.fillStyle = theme.colors[4];
-    for (let i = 0; i < game.life; i++) {
-      const x = config.canvasWidth - 8 - lifeCell - i * (lifeCell + lifeGap);
-      fillRoundRect(ctx, x, 8, lifeCell, lifeCell, 2);
+    // 残機は「予備のボール」。実際のボールと同じ色・同じ大きさで並べる
+    // (草と同じ緑で描くと草に埋もれて見えない、という指摘への対応)。
+    // 左の SCORE と対になるよう LIFE ラベルを添えて、初見でも意味が分かるようにする。
+    if (game.life > 0) {
+      const spareRadius = config.ballRadius;
+      const spareGap = 8;
+      const spareRight = config.canvasWidth - 8;
+      const spareCenterY = hudTop + 8;
+
+      ctx.fillStyle = theme.accentColor ?? theme.ballColor;
+      for (let i = 0; i < game.life; i++) {
+        const cx = spareRight - spareRadius - i * (spareRadius * 2 + spareGap);
+        ctx.beginPath();
+        ctx.arc(cx, spareCenterY, spareRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const spareBlockWidth = game.life * spareRadius * 2 + (game.life - 1) * spareGap;
+      ctx.fillStyle = theme.textColor;
+      ctx.textAlign = "right";
+      ctx.fillText("LIFE", spareRight - spareBlockWidth - 10, hudTop);
+      ctx.textAlign = "left";
     }
   }
 }
