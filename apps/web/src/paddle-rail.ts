@@ -45,6 +45,10 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
 
   const element = document.createElement("div");
   element.className = "paddle-rail";
+  // A touch-only surface with no keyboard path: arrow keys already steer the
+  // paddle, so announcing a gesture a screen-reader user cannot aim would
+  // only add noise.
+  element.setAttribute("aria-hidden", "true");
 
   const handle = document.createElement("div");
   handle.className = "paddle-rail-handle";
@@ -56,25 +60,40 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
   hint.textContent = "触れた位置にパドルが動き、離すと発射";
   element.appendChild(hint);
 
-  let dragging = false;
+  // The id of the finger that owns the rail, or null when nobody is
+  // steering. A plain boolean would let a *second* finger — the one the
+  // player rests on the board — end the first finger's drag, launch the
+  // ball and leave the thumb still pressed but steering nothing.
+  let activePointerId: number | null = null;
   let active = true;
   let lastHandlePercent = -1;
 
-  function canvasXFromClientX(clientX: number): number {
+  /** Null when the rail has no width to map onto (hidden or detached). */
+  function canvasXFromClientX(clientX: number): number | null {
     const rect = element.getBoundingClientRect();
-    if (rect.width === 0) return 0;
+    if (rect.width === 0) return null;
     return clamp(((clientX - rect.left) / rect.width) * canvasWidth, 0, canvasWidth);
   }
 
+  function steer(clientX: number): void {
+    const canvasX = canvasXFromClientX(clientX);
+    if (canvasX === null) return;
+    onMove(canvasX);
+  }
+
+  function ownsPointer(event: PointerEvent): boolean {
+    return activePointerId !== null && event.pointerId === activePointerId;
+  }
+
   function handlePointerDown(event: PointerEvent): void {
-    if (!active) return;
+    if (!active || activePointerId !== null) return;
     // Keeps the browser from turning the drag into a page scroll or a
     // text selection on touch (`touch-action: none` covers scrolling, but
     // not the long-press selection gesture).
     event.preventDefault();
-    dragging = true;
+    activePointerId = event.pointerId;
     element.dataset.touched = "true";
-    onMove(canvasXFromClientX(event.clientX));
+    steer(event.clientX);
   }
 
   // Drag tracking lives on `window`, not on the rail: a finger or cursor that
@@ -82,19 +101,20 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
   // implicit capture, but mouse pointers do not — and `setPointerCapture` is
   // absent in jsdom, so window listeners keep one code path for both.
   function handlePointerMove(event: PointerEvent): void {
-    if (!dragging) return;
-    onMove(canvasXFromClientX(event.clientX));
+    if (!ownsPointer(event)) return;
+    steer(event.clientX);
   }
 
   function handlePointerUp(event: PointerEvent): void {
-    if (!dragging) return;
-    dragging = false;
-    onMove(canvasXFromClientX(event.clientX));
+    if (!ownsPointer(event)) return;
+    activePointerId = null;
+    steer(event.clientX);
     onLaunch();
   }
 
-  function handlePointerCancel(): void {
-    dragging = false;
+  function handlePointerCancel(event: PointerEvent): void {
+    if (!ownsPointer(event)) return;
+    activePointerId = null;
   }
 
   element.addEventListener("pointerdown", handlePointerDown);
@@ -105,7 +125,11 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
   return {
     element,
     setPaddleCenter(canvasX: number): void {
-      const percent = (clamp(canvasX, 0, canvasWidth) / canvasWidth) * 100;
+      // The paddle's centre can only live inside the track, and the handle
+      // is centred on it — clamping to [0, canvasWidth] instead would hang
+      // half the handle outside the rail.
+      const half = paddleWidth / 2;
+      const percent = (clamp(canvasX, half, canvasWidth - half) / canvasWidth) * 100;
       // The rail is repainted every frame; skip sub-pixel churn.
       if (Math.abs(percent - lastHandlePercent) < 0.05) return;
       lastHandlePercent = percent;
@@ -114,7 +138,7 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
     setActive(next: boolean): void {
       if (next === active) return;
       active = next;
-      dragging = false;
+      activePointerId = null;
       if (next) {
         delete element.dataset.inactive;
       } else {

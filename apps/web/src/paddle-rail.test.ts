@@ -30,8 +30,11 @@ function mountRail() {
   return { rail, onMove, onLaunch };
 }
 
-function pointer(type: string, clientX: number): MouseEvent {
-  return new MouseEvent(type, { clientX, bubbles: true, cancelable: true });
+/** jsdom has no PointerEvent, so `pointerId` is grafted onto a MouseEvent. */
+function pointer(type: string, clientX: number, pointerId = 1): MouseEvent {
+  const event = new MouseEvent(type, { clientX, bubbles: true, cancelable: true });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  return event;
 }
 
 describe("createPaddleRail", () => {
@@ -102,6 +105,53 @@ describe("createPaddleRail", () => {
     expect(onLaunch).not.toHaveBeenCalled();
   });
 
+  it("ignores a second finger while one is already steering", () => {
+    // #given — the thumb holds the rail, aiming
+    const { rail, onMove, onLaunch } = mountRail();
+    rail.element.dispatchEvent(pointer("pointerdown", 120, 1));
+    onMove.mockClear();
+
+    // #when — the other hand touches the board and lifts again
+    rail.element.dispatchEvent(pointer("pointerdown", 400, 2));
+    window.dispatchEvent(pointer("pointermove", 400, 2));
+    window.dispatchEvent(pointer("pointerup", 400, 2));
+
+    // #then — the thumb keeps the rail, and nothing was launched for it
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onLaunch).not.toHaveBeenCalled();
+
+    // #when
+    window.dispatchEvent(pointer("pointermove", 360, 1));
+
+    // #then
+    expect(onMove).toHaveBeenCalledWith(720);
+  });
+
+  it("ignores a cancel that belongs to another pointer", () => {
+    // #given
+    const { rail, onMove } = mountRail();
+    rail.element.dispatchEvent(pointer("pointerdown", 120, 1));
+
+    // #when
+    window.dispatchEvent(pointer("pointercancel", 400, 2));
+    window.dispatchEvent(pointer("pointermove", 360, 1));
+
+    // #then
+    expect(onMove).toHaveBeenLastCalledWith(720);
+  });
+
+  it("ignores pointers while the rail has no width to map onto", () => {
+    // #given — hidden by the media query, or detached
+    const { rail, onMove } = mountRail();
+    rail.element.getBoundingClientRect = () => ({ width: 0, left: 0 }) as DOMRect;
+
+    // #when
+    rail.element.dispatchEvent(pointer("pointerdown", 120));
+
+    // #then — no move at all, rather than a jump to the left wall
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it("stops steering when the browser cancels the pointer", () => {
     // #given
     const { rail, onMove, onLaunch } = mountRail();
@@ -130,7 +180,7 @@ describe("createPaddleRail", () => {
     expect(handle?.style.left).toBe("25%");
   });
 
-  it("clamps the handle to the rail when handed an out-of-track centre", () => {
+  it("keeps the handle inside the rail when handed an out-of-track centre", () => {
     // #given
     const { rail } = mountRail();
     const handle = rail.element.querySelector<HTMLElement>(".paddle-rail-handle");
@@ -138,8 +188,30 @@ describe("createPaddleRail", () => {
     // #when
     rail.setPaddleCenter(CANVAS_WIDTH * 2);
 
+    // #then — the handle is centred on this point and 8.33% wide, so its
+    // right edge lands exactly on the rail's right edge
+    const half = ((PADDLE_WIDTH / CANVAS_WIDTH) * 100) / 2;
+    expect(Number.parseFloat(handle?.style.left ?? "")).toBeCloseTo(100 - half, 6);
+  });
+
+  it("skips repaints that would not move the handle a visible amount", () => {
+    // #given
+    const { rail } = mountRail();
+    const handle = rail.element.querySelector<HTMLElement>(".paddle-rail-handle");
+    rail.setPaddleCenter(480);
+    const settled = handle?.style.left;
+
+    // #when — sub-pixel drift, as the frame loop feeds it every frame
+    rail.setPaddleCenter(480.1);
+
     // #then
-    expect(handle?.style.left).toBe("100%");
+    expect(handle?.style.left).toBe(settled);
+
+    // #when
+    rail.setPaddleCenter(500);
+
+    // #then
+    expect(handle?.style.left).not.toBe(settled);
   });
 
   it("stops responding while inactive and picks up again when reactivated", () => {
