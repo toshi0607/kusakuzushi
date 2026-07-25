@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" role="img" aria-label="草崩し">
+  <!--
+    apple-touch-icon.png / 拡張アイコンの生成元。public/favicon.svg と同じマークだが、
+    iOS はホーム画面で角丸マスクを自分でかけるため、こちらは
+    角丸なしの全面塗り + 上下左右 2 単位の余白(= マスクで角が欠けても図形が削れない)にしてある。
+
+    再生成(rsvg-convert / ImageMagick は Homebrew。CI では使わない。生成物はコミット済み):
+      rsvg-convert -w 180 -h 180 apps/web/tools/apple-touch-icon.svg -o apps/web/public/apple-touch-icon.png
+      rsvg-convert -w 32 -h 32 apps/web/public/favicon.svg -o /tmp/f32.png
+      rsvg-convert -w 16 -h 16 apps/web/public/favicon.svg -o /tmp/f16.png
+      magick /tmp/f16.png /tmp/f32.png apps/web/public/favicon.ico
+  -->
+  <rect width="20" height="20" fill="#0C110D"/>
+  <g transform="translate(2 2)">
+    <rect x="1" y="2" width="4" height="4" fill="#30a14e"/>
+    <rect x="6" y="2" width="4" height="4" fill="#40c463"/>
+    <rect x="11" y="2" width="4" height="4" fill="#9be9a8"/>
+    <rect x="11" y="8" width="3" height="3" fill="#FFB224"/>
+    <rect x="4" y="12" width="8" height="2" rx="1" fill="#FFB224"/>
+  </g>
+</svg>
