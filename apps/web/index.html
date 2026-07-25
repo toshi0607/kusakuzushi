@@ -61,7 +61,26 @@
   </noscript>
 </head>
 <body>
-  <div id="app"></div>
+  <!--
+    ページシェル(見出し・ステージ枠・フッター)は静的 HTML で持つ。
+
+    ここを JS で組み立てていた間、`#app` は空だったので First Contentful Paint は
+    「HTML → CSS → module JS → JS 実行」の後ろに落ちていた。LCP 要素の
+    p.subtitle も同じ鎖の先にあった。localhost 配信ではその往復がどれもほぼ 0ms
+    なので `pnpm lh` では 100 点のまま見えず、実オリジンでだけ FCP/LCP が伸びる。
+
+    ステージの中身(フォーム / ローディング / プレイ / リザルト)は従来どおり
+    app.ts が入れる。**この markup を変えたら app.ts の findStage / セレクタと
+    style.css の .stage min-height(下の高さ確保)も一緒に見直すこと。**
+  -->
+  <div id="app">
+    <header class="site-header">
+      <h1>草崩し</h1>
+      <p class="subtitle">GitHub の草を、ブロック崩しで刈り取ろう</p>
+    </header>
+    <main class="stage"></main>
+    <footer class="site-footer">made by <a href="https://github.com/toshi0607" target="_blank" rel="noopener noreferrer">toshi0607</a> ・ Chrome拡張(準備中)</footer>
+  </div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

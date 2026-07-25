@@ -6,6 +6,7 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "lh": "pnpm --filter @kusakuzushi/web build && lhci autorun",
+    "lh:slow": "pnpm --filter @kusakuzushi/web build && KUSAKUZUSHI_LH_TARGET=slow lhci autorun",
     "lh:prod": "KUSAKUZUSHI_LH_TARGET=production lhci autorun"
   },
   "devDependencies": {
