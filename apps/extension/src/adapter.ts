@@ -32,6 +32,15 @@ const MIN_PADDLE_MARGIN_BOTTOM_PX = 6;
 /** Ball crosses the whole board height in 1/0.8 = 1.25s — tuned for the ~194px real board. */
 const BALL_SPEED_HEIGHT_RATIO = 0.8;
 
+/**
+ * A dropped item is one grass cell across, so it reads as a cell falling
+ * out of the graph. core's 14px default would be larger than the 10px cells
+ * it drops from on this board.
+ */
+const MIN_ITEM_SIZE_PX = 6;
+/** Same share of the board per second as core's default (120px on a 480px board). */
+const ITEM_FALL_SPEED_HEIGHT_RATIO = 0.25;
+
 /** `level` squared, so a brick's score value scales with how "green" the day was. Negative levels clamp to 0. */
 export function levelToCount(level: number): number {
   return level > 0 ? level * level : 0;
@@ -87,5 +96,7 @@ export function deriveConfig(geometry: GrassGeometry): Partial<GameConfig> {
     paddleHeight: Math.max(MIN_PADDLE_HEIGHT_PX, cellHeight * PADDLE_HEIGHT_RATIO),
     paddleMarginBottom: Math.max(MIN_PADDLE_MARGIN_BOTTOM_PX, cellHeight * PADDLE_MARGIN_BOTTOM_RATIO),
     ballSpeed: canvasHeight * BALL_SPEED_HEIGHT_RATIO,
+    itemSize: Math.max(MIN_ITEM_SIZE_PX, cellHeight),
+    itemFallSpeed: canvasHeight * ITEM_FALL_SPEED_HEIGHT_RATIO,
   };
 }

@@ -443,6 +443,87 @@ pnpm --filter @kusakuzushi/extension build
 - **`uses-long-cache-ttl`**: 本番で引っかかるのは Cloudflare Insights のビーコンと fonts.gstatic.com の
   フォント(どちらも第三者・TTL 24h)で、自前の資産は対象外。assert は warn 止まりにしてある
 
+## セッション10: ブロック破壊時のアイテムドロップ(実装中)
+
+ユーザー要望(2026-07-25): 「たまにブロックを崩したときにアイテムが降ってくるようにしてください」
+- 玉の数が増える
+- バーの数が一時的に増える
+
+バー増加の挙動は **メインパドルの左右に追加バーが1本ずつ出て3本が一緒に動く**(ユーザー選択 2026-07-25)。
+
+### Constraints(セッション10)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| **今回に限りゲームバランス変更は許可**(過去セッションの「バランス不変」制約はユーザー要望で上書き) | ユーザー指示 2026-07-25 | この行の存在 |
+| core は DOM/fetch 非依存を維持 | DESIGN.md §1 | core/src に document/fetch/performance 参照がないこと(grep) |
+| 乱数はテストから差し替え可能にする(決定的テスト) | ~/.claude/rules/testing.md | ユニットテストが Math.random に依存しないこと |
+| 既存の公開 API を壊さない(`ballState` / `paddleState` は残す) | 拡張・web・attract が参照(grep 実測) | 既存テストが無改変で pass(BASE_CONFIG の型追随を除く) |
+| 拡張の透過レンダラにも玉/バー/アイテムを反映(core だけ変えると不可視の玉ができる) | DESIGN §5 の核 | 拡張のレンダラテスト |
+| Theme の変更は optional フィールドのみ | DESIGN-VISUAL §5 / セッション5 制約 | 拡張が Theme 型を無改変で使えること |
+| 緑は草専用・UI/アイテムはアンバー系 | DESIGN-VISUAL §0 | renderer のアイテム色が accentColor 由来 |
+| 追加バーの隙間 < ボール直径(すり抜け防止) | 物理的要請 | gap = ballRadius(直径の半分)固定 + ユニットテスト |
+
+### Assumptions(セッション10)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| `GameConfig` は core のテストで完全なリテラルとして書かれており、必須フィールド追加で型エラーになる | VERIFIED | packages/core/src/game.test.ts:32-44(BASE_CONFIG) |
+| 拡張は `{...DEFAULT_CONFIG, ...deriveConfig(geometry)}` で config を作るのでフィールド追加は自動で埋まる | VERIFIED | apps/extension/src/content.ts:124 |
+| 拡張は core の `render()` を使わず独自の透過レンダラを持つ | VERIFIED | apps/extension/src/renderer.ts 冒頭コメント + Notes 2026-07-25 (S4) |
+| `ballState` / `paddleState` の参照箇所は core renderer / 拡張 renderer / attract の autopilot のみ | VERIFIED | grep 実測(2026-07-25): renderer.ts:196,200 / extension renderer.ts:99,105 / attract.ts:79 |
+| 拡張の盤面は 692x194 と小さく、アイテムサイズ/落下速度は deriveConfig で縮める必要がある | VERIFIED | adapter.ts の canvasHeight=2*(7*10+9*3)=194 実測(セッション4「幾何の解」) |
+
+### 仕様(実装値)
+
+| 項目 | 値 | 置き場所 |
+|------|-----|---------|
+| ドロップ確率 | **序盤 22% → 終盤 8%**(破壊済み割合で線形補間) | `itemDropChance` + `earlyItemDropBonus` |
+| 種類の抽選 | 50/50 | `Game.maybeDropItem` |
+| 落下速度 / サイズ | 120 px/s / 14px 角(拡張版は盤面に合わせ 10px・48.5px/s) | config + `deriveConfig` |
+| 玉増加 | **飛んでいる玉を全部2倍に分裂**(±22° の扇)。取るたび複利で 1→2→4→8…、上限200個 | `multiBallSplitFactor` / `maxBalls` |
+| アイテムの色 | 青(light `#0969da` / dark `#58a6ff`)。玉のアンバー・草の緑と別 | `Theme.itemColor` / `OverlayTheme.itemColor` |
+| バー増加 | 左右に幅50%のバー、12秒。隙間 = ボール半径(直径の半分 → すり抜け不可) | `extraPaddleDurationSec` / `extraPaddleWidthRatio` |
+| ライフ | 玉が全部落ちて初めて1減。落球で落下アイテムと追加バーはリセット | `Game.handleBallLost` |
+
+### タスク
+
+- [x] core: `items.ts`(Item 型 + 純関数: 落下・矩形化・キャッチ判定)
+- [x] core: `game.ts` を複数ボール/複数パドル/アイテム対応に(config 追加、`ballStates`/`paddleStates`/`itemStates`、`onItemCollected`)
+- [x] core: `renderer.ts` で全ボール・全バー・アイテムを描画(アイテムは種類が見た目で判る)
+- [x] core: ユニットテスト(ドロップ有無・multiBall・extraPaddle 期限切れ・全球ロストで初めてライフ減・すり抜け防止・落球リセット)— core 36 → 46 tests
+- [x] extension: 透過レンダラを複数ボール/複数バー/アイテム対応に + deriveConfig でアイテム寸法をスケール — `renderer.test.ts` 新設(3件)+ adapter に寸法テスト。拡張 44 → 48 tests
+- [x] web: attract の autopilot を「一番下のボール」追従に
+- [x] `pnpm -r test`(187 pass: core 46 / ogp 65 / web 28 / extension 48)/ `pnpm -r build` exit 0
+- [x] ブラウザ実機でアイテム取得までプレイ検証 — 下記「セッション10 検証記録」
+- [x] DESIGN.md §3 / DESIGN-VISUAL §5 にアイテム仕様を追記
+- [x] 自己レビュー(このセッションはサブエージェント禁止の実行環境のため reviewer エージェントは使わず、差分の通読で代替)。見つけた点: クリア時に落下中アイテムが結果画面へ凍りついたまま残る → `clear` 遷移時に `items` を空にする修正を入れた
+- [x] ユーザー指摘の調整(2026-07-25): アイテムを青に / 玉を「めちゃくちゃ多く」増やせるように — 下記「調整の記録」
+- [ ] PR → CI green → マージ(ユーザー確認後)
+
+### 調整の記録(ユーザー指摘 2026-07-25)
+
+指摘: 「アイテムの色を青とか別の色に」「玉の数はめちゃくちゃ多くまで増やせる(草が多いとぜんぜん終わりに到達できない)」
+
+1. **色**: `Theme.itemColor` を light `#0969da` / dark `#58a6ff` で埋め、拡張の `OverlayTheme` にも `itemColor` を追加。玉のアンバーと同色だと「追う物」と「ただの玉」が見分けにくかったため
+2. **玉の増え方**: `multiBallSpawnCount`(固定+2)を **`multiBallSplitFactor`(飛んでいる玉を全部 N 倍)** に置き換え、`maxBalls` 5 → 200。固定加算では取っても線形にしか増えず、371 ブロックの盤面では刈り切れないという指摘そのものが直らないため、複利で増える形にした
+3. **上限200の根拠(実測)**: 371 ブロック盤面での `update()` は 1玉 0.02ms / 25玉 0.29ms / 121玉 0.49ms(16.7ms 予算)。ブラウザ実測でも 191〜196 玉で `update` 0.35〜0.39ms・`render` 0.6〜2.4ms。上限はバランス調整用ではなく暴走時のバックストップ
+4. **実測(ブラウザ)**: ドロップ率100%の一時ページで玉が 1→2→4→8→16→191→196(上限)と複利で増え、**371ブロックの盤面が `clear` に到達**(スコア 3,717)。青タイルは light/dark 両方でスクリーンショット目視確認(アンバーの玉と明確に別物に見える)
+5. **序盤の加速**(ユーザー指摘「初期もう少し加速できますか」2026-07-25): ドロップ確率を固定 8% から **序盤 22% → 終盤 8% の線形ランプ**に(`earlyItemDropBonus = 0.14`、破壊済み割合で補間)。立ち上がりは玉1個で手が足りず、そこを厚くしないと複利が始まらないため。終盤は玉が増えているので絞る。ユニットテストは「同じ乱数値が序盤は通り終盤は弾かれる」形で検証(フラット確率に戻すと落ちる)。371ブロック盤面の 180 秒シミュレーション(完璧オートパイロット、3シード)では flat 8% が 3回とも 6ブロックだったのに対し、ランプありは 1回が 21ブロック(アイテムを拾って複利が始まった回)
+
+### セッション10 検証記録(2026-07-25 実ブラウザ実測)
+
+`itemDropChance: 1` に固定した一時ページ(`apps/web/item-check.html`、検証後に削除)を Vite dev で開き、core の `Game` + `render()` を同期駆動して実測。
+
+| 検証項目 | 実測結果 |
+|----------|----------|
+| ドロップ | 120フレームで `items: ["multiBall"]` が出現(ブロック中心から落下) |
+| 玉増加 | 取得で `balls: 1 → 3`、以降も取り続けて `balls: 5` で頭打ち(`maxBalls`) |
+| バー増加 | 取得で `bars: 1 → 3`。座標実測 main `x=350 w=80` / 左 `x=304 w=40` / 右 `x=436 w=40`、全て `y=444` — 隙間はちょうどボール半径 6px |
+| 効果時間 | 取得直後 `extraPaddleRemaining = 11.98`(12秒から減衰) |
+| 描画 | スクリーンショット目視: アンバーのタイルに「3本バー」「3点」の記号、玉3個とバー3本が同時に描画される |
+| 実アプリ | `/` から `@toshi0607`(3,012 contributions)でセッション開始 → rAF ハーネスで 1200 フレーム駆動してループ生存・盤面描画を確認 |
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
