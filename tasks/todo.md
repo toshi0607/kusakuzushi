@@ -298,6 +298,17 @@ pnpm --filter @kusakuzushi/extension build
   - 検証(実測): 1280px で草下端との間隔 31px / パドルとの間隔 19px、375px で 30px / 18px。light・dark 両テーマでスクリーンショット確認
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/11(CI pass 32s → merge 55741e3)、`wrangler pages deploy`(d6a5e170)、本番 https://kusakuzushi.toshi0607.com/?user=toshi0607 で間隔 31px / 19px を実測
 
+## セッション7: 残機表示の可読性修正(完了 2026-07-25)
+
+ユーザー指摘「右上の濃い部分残機ですか？みえづらすぎる」。原因は 2 つ重なっていた:
+
+1. 残機を草スケールの level4(=コンテンツの色)で描いていた — DESIGN-VISUAL §0「緑は草専用」を HUD だけ破っていた
+2. HUD を草グリッドの**上に重ねて**いたため背景が常に緑だった(ついでにブロックも隠していた)
+
+- [x] HUD 全体を草の直下(`canvasHeight/2 + 10`)の無地帯へ移動。残機は `--marquee` アンバーの「予備のボール」(実ボールと同色・同径)+ `LIFE` ラベル。DESIGN-VISUAL §5 に HUD 位置の行を追加
+  - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
+- [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
+- 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
 ## セッション8: モバイル操作 — 盤面下のパドルレール(実装中)
 
 ユーザー指摘(2026-07-25): 「スマホだと全然できないので、描画領域下で触れる形でもバーを左右に動かせるようにしてください」
@@ -331,11 +342,13 @@ pnpm --filter @kusakuzushi/extension build
 - [x] `apps/web/src/style.css`: `.play-stack` / `.paddle-rail` / ハンドル / ヒント / 無効化スタイル
 - [x] タッチ端末では発射ガイドの文言を「タップで発射」に(クリック / Space は存在しない操作)
 - [x] `apps/web` に jsdom を追加(環境指定は新規テストの docblock `@vitest-environment jsdom` のみ。既存3ファイルの実行環境は node のまま=無変更)し `paddle-rail.test.ts` 12件
-- [x] `pnpm -r test` 186/186 pass(web 40件)/ `pnpm -r build` exit 0
+- [x] `pnpm -r test` 190/190 pass(web 44件)/ `pnpm -r build` exit 0
 - [x] テストが実際に回帰を捕まえることをミューテーションで確認 — `if (!active) return;` を削ると1件 fail、発射を pointerup → pointerdown に変えると4件 fail
 - [x] 実機相当の検証でパドルが指の x に一致することを実測(下記「検証記録」)
 - [x] DESIGN-VISUAL.md §3 にタッチ操作の節を追加
-- [ ] フェーズゲート: reviewer(opus) → PR → CI green → マージ → デプロイ → 本番確認
+- [x] フェーズゲート: reviewer(opus) — 初回 Request changes(High 1 / Medium 3 / Low 7)→ 全件対応済み。詳細は Review 欄
+- [x] main を取り込み(セッション7 の 2 コミット)、tasks/todo.md の衝突を解消
+- [ ] PR → CI green → マージ → デプロイ → 実機(スマホ)で本番確認
 
 ### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
 
@@ -354,6 +367,21 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 | ライト/ダーク | 375px でスクリーンショット確認。ヒントは 1 行(高さ 11px)に収まる |
 
 - **CSS の `@media (pointer: coarse)` だけは実測できていない**(ペーンにも実 Chrome にもタッチエミュレーションが無く、iOS シミュレータは Xcode 未導入で利用不可)。JS 側の coarse 分岐は上記のとおりスタブで実測済み。実機での最終確認はデプロイ後に手元のスマホで行う
+
+#### レビュー修正後の再検証(同ハーネス、`pointerType` 付きの実 PointerEvent で実測)
+
+| 検証項目 | 実測 |
+|---|---|
+| 発射ガイド(coarse) | 「下のバーで発射」/ レールは `aria-hidden="true"` |
+| 盤面をタッチ(移動+タップ) | パドル 479.5 のまま・ガイド出たまま = **盤面はタッチを一切拾わない** |
+| レール 25% をタッチ(指1) | パドル 239.5、ハンドル 25% |
+| 指2 がレールを押して離す | パドル 239.5 のまま・未発射 = **2本目の指はドラッグを奪わない**(H1) |
+| 指1 を 90% へ | パドル 863.5、ハンドル 90% = 所有権が維持されている |
+| 指1 を離す | 発射 |
+| 盤面をマウスで操作 | パドル 287.5(期待 288)= デスクトップの挙動は無変更 |
+| ゲームオーバー時のレール | `data-inactive="true"` / `pointer-events: none` / `opacity: 0.4`、タッチしてもハンドルが動かない |
+| 375x667(iPhone SE 相当) | `scrollHeight === innerHeight`(縦横ともあふれ無し)、フッター下端 538px |
+| ミューテーション | `ownsPointer` の pointerId 比較を外すと2件 fail(修正前コードで落ちることを確認) |
 
 ## Notes
 
@@ -440,3 +468,21 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 | R-L3 | Low | 既存ボタンを再利用すると前のセッションのクリックハンドラが残り、1クリックで2ゲーム起動し得る | 修正(再利用せず作り直す)+ 回帰テスト |
 | R-L4 | Low | M2(クランプ)と L1(入力欄)にテストが無い | 修正(パドル位置をスタブ ctx の fillRect から読む形で検証)。**この過程でクランプ範囲の誤りを発見** — カーソルを `[0, canvasWidth]` ではなくパドル中心の可動域 `[w/2, canvasWidth-w/2]` に合わせないと、狭い盤面で最初の1〜2回の矢印入力が飲まれる |
 | R-L5 | Low | リファクタで置き去りになったコメント・README・todo.md の件数 | 修正 |
+
+### セッション8 フェーズゲート(reviewer/opus, 2026-07-25)
+
+判定: **初回 Request changes → 全件対応済み**。検証: `pnpm -r test` 190/190 pass(web 40 → 44 件)、`pnpm -r build` exit 0、`git diff main -- packages/core` 0行、緑=コンテンツ専用(レールの色は `--marquee` / `--field` / `--ridge` / `--ink-faint` のみ)を確認。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| H1 | High | レールが `dragging` boolean 1本で全ポインタを受けていた。**2本目の指**(盤面を触った指)の `pointerup` が window に上がるとドラッグが終了し、パドルがその指の x へ飛び、ボールが発射され、押したままの親指は以後効かなくなる | 修正: `activePointerId` を記録し、所有者以外の `pointermove`/`pointerup`/`pointercancel` と、ドラッグ中の `pointerdown` を無視。回帰テスト2件(pointerId 比較を外すと fail することを確認)+ 実ブラウザで指1/指2 を実測 |
+| M1 | Medium | 盤面の `pointerdown` 即発射・`pointermove` 追従が残っていたため、レールを数 px 外した指が盤面に落ちて**元のバグを再現できる**。しかもガイド「タップで発射」とレール「離すと発射」が矛盾していた | 修正: 盤面は `pointerType === "touch"` を無視(マウス/ペンは無変更)。ガイドは実際に効く面を指す「下のバーで発射」に。DESIGN-VISUAL §3 に明文化 |
+| M2 | Medium | 「他要素の pointerup で発射しない」テストが `pointerdown` 無しの経路しか通しておらず、危険な「ドラッグ中に他ポインタが来る」経路が未検証だった。`rect.width === 0` と 0.05% スロットルも未検証 | 修正: 上記 H1 の2件に加え、幅0のとき何もしないこと・サブピクセル更新を捨てることのテストを追加(計 44 件) |
+| M3 | Medium | ブランチが main より2コミット遅れ、`tasks/todo.md` がコンフリクトする | 修正: main をマージし、セッション7 → セッション8 の順で解決 |
+| L1 | Low | `rect.width === 0` のとき 0 を返すため、パドルが左端に飛ぶ(「不明」を「左端」と誤訳していた) | 修正: `null` を返して `onMove` を呼ばない |
+| L2 | Low | ハンドルの clamp が `[0, canvasWidth]` で、両端ではハンドルが枠から半分はみ出す位置を許していた(しかもテストがそれを正解として固定していた) | 修正: `[w/2, canvasWidth-w/2]` にクランプ。テストも「右端がちょうど枠に一致」を検証する形へ |
+| L3 | Low | `paddleX` が可動域ではなく `[0, canvasWidth]` 基準で、端をタッチした直後は矢印キーの最初の数十 ms が飲まれる(拡張版セッション4 R-L4 と同じ穴) | 修正: `clampPaddleX` を導入し、盤面パスとレールパスの両方に適用 |
+| L4 | Low | ヒントが「もう一回」のたびに再表示される(DESIGN-VISUAL は「初回タッチで消える」と書いていた) | ラウンドごとの再表示は妥当と判断。挙動は維持 |
+| L5 | Low | デスクトップでもレール DOM と window リスナを作っている | 表示条件の真実を CSS 1 箇所に保つため意図的に維持(早期 return のみのコスト) |
+| L6 | Low | レールに accessible name が無く、AT からも隠していない | 修正: `aria-hidden="true"`(キーボード操作は矢印キーが担うため、狙えないジェスチャを読み上げない) |
+| L7 | Low | DESIGN-VISUAL の「パドルは常に指の真下」は両端 4.17% で成り立たない | 修正(可動域で頭打ちになる旨を追記) |
