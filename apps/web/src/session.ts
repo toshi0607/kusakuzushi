@@ -56,13 +56,14 @@ export function createSession(
   canvas.className = "game-canvas";
   wrapper.appendChild(canvas);
 
-  // Touch devices have neither a click nor a Space key — name the gesture
-  // they actually have. The rail carries its own label for its own gesture.
+  // Touch devices have neither a click nor a Space key, and the board
+  // ignores touches — so point at the one surface that does answer them.
+  // The rail carries its own label for the gesture itself.
   const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
 
   const guide = document.createElement("div");
   guide.className = "overlay guide-overlay";
-  guide.textContent = coarsePointer ? "タップで発射" : "クリック / Space で発射";
+  guide.textContent = coarsePointer ? "下のバーで発射" : "クリック / Space で発射";
   guide.hidden = true;
   wrapper.appendChild(guide);
 
@@ -86,18 +87,34 @@ export function createSession(
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealStartMs = performance.now();
 
+  /**
+   * Holds `paddleX` inside the paddle centre's own range rather than
+   * [0, canvasWidth]. `paddleX` is the cursor the arrow keys move from, so
+   * a value the paddle can never reach would swallow the first key presses.
+   */
+  function clampPaddleX(x: number): number {
+    const half = game.paddleState.width / 2;
+    return Math.min(Math.max(x, half), DEFAULT_CONFIG.canvasWidth - half);
+  }
+
   function canvasXFromClientX(clientX: number): number {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
-    return (clientX - rect.left) * scaleX;
+    return clampPaddleX((clientX - rect.left) * scaleX);
   }
 
+  // The board is not a touch surface: a finger there hides the ball, and a
+  // tap that misses the rail by a few pixels would fire the ball before the
+  // player has aimed. Touch input belongs to the rail alone — mouse and pen
+  // keep steering the board directly.
   function handlePointerMove(event: PointerEvent): void {
+    if (event.pointerType === "touch") return;
     paddleX = canvasXFromClientX(event.clientX);
     game.movePaddle(paddleX);
   }
 
-  function handlePointerDown(): void {
+  function handlePointerDown(event: PointerEvent): void {
+    if (event.pointerType === "touch") return;
     game.launch();
   }
 
@@ -131,7 +148,7 @@ export function createSession(
     canvasWidth: DEFAULT_CONFIG.canvasWidth,
     paddleWidth: game.paddleState.width,
     onMove: (canvasX) => {
-      paddleX = canvasX;
+      paddleX = clampPaddleX(canvasX);
       game.movePaddle(canvasX);
     },
     onLaunch: () => {
