@@ -43,7 +43,17 @@ function parseArgs(argv) {
     if (value === undefined) {
       throw new Error(`missing value for ${argv[i]}`);
     }
-    options[key] = typeof DEFAULTS[key] === "number" ? Number(value) : value;
+    if (typeof DEFAULTS[key] === "number") {
+      const parsed = Number(value);
+      // NaN を通すと `attempt <= NaN` が常に false になり、1 度も検証せずに
+      // 「N 回試して駄目だった」と嘘の理由で落ちる
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`${argv[i]} には正の数を渡すこと(受け取った値: ${value})`);
+      }
+      options[key] = parsed;
+    } else {
+      options[key] = value;
+    }
   }
   return options;
 }
@@ -71,8 +81,10 @@ async function checkOnce(shareUrl, imageUrl) {
     return `クローラー UA が HTTP ${crawler.status}`;
   }
   const html = await crawler.text();
-  if (!html.includes('property="og:image"')) {
-    return "クローラー UA のレスポンスに og:image が無い";
+  // `property="og:image"` だけで見ると `og:image:width`(ogp-page.ts)にも部分一致してしまい、
+  // 画像本体のタグが消えても気づけない。content 属性まで含めて見る
+  if (!html.includes('property="og:image" content="')) {
+    return "クローラー UA のレスポンスに og:image タグが無い";
   }
 
   const image = await fetchAs(imageUrl, CRAWLER_USER_AGENT);
@@ -96,7 +108,14 @@ async function main() {
   console.log(`verify-worker: ${shareUrl}`);
 
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
-    const reason = await checkOnce(shareUrl, imageUrl);
+    let reason;
+    try {
+      reason = await checkOnce(shareUrl, imageUrl);
+    } catch (error) {
+      // 伝播待ちの最中は DNS/TLS/ECONNRESET が単発で起きる。ここで例外を投げると
+      // リトライが 1 度も回らずに赤くなる(= デプロイは済んでいるのに人間が呼ばれる)
+      reason = `取得に失敗: ${error?.cause?.code ?? error?.cause?.message ?? error?.message ?? error}`;
+    }
     if (reason === null) {
       console.log(`✅ /share/* が Worker に届いている(${attempt} 回目で成功)`);
       console.log("   人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png");
@@ -112,4 +131,8 @@ async function main() {
   process.exit(1);
 }
 
-await main();
+// 引数エラーなどをスタックトレースではなく 1 行で出す(CI のログで読めるように)
+await main().catch((error) => {
+  console.error(`❌ ${error?.message ?? error}`);
+  process.exit(1);
+});
