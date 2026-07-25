@@ -7,16 +7,28 @@
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F8F2">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0C110D">
   <title>草崩し</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!--
+    フォント CSS は media="print" で読み込み、onload で all に戻す(= レンダーブロッキングにしない)。
+    素の <link rel="stylesheet"> だと fonts.googleapis.com への往復が First Paint を止め、
+    実測で LCP の 85% が Render Delay になっていた(tasks/todo.md セッション8)。
+    どちらのフォントも display=swap なので、本文はフォールバックで即座に描画され後から差し替わる。
+
     DotGothic16 は表示ロール(タイトル/CTA/見出し/HUD/数字)の固定グリフのみを
     text= でサブセット取得する(全glyphだと数百KB、subsetは数KB)。
     ここに無い文字を DotGothic で描くと Plex にフォールバックするので、
     表示ロールの文言を変えるときはこの text= も更新すること。
+    data-font="display" は main.ts が「この CSS が来てから」canvas HUD 用に
+    フォントをロードするための目印(@font-face 未登録で fonts.load しても何も起きない)。
   -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap&text=%E8%8D%89%E5%B4%A9%E3%81%97%E5%88%88%E3%82%8B%E5%AE%8C%E5%85%A8%E5%8F%96%E3%82%8A%EF%BC%81%E3%82%B2%E3%83%BC%E3%83%A0%E3%82%AA%E3%83%90%E7%94%BB%E5%83%8F%E3%82%92%E4%BF%9D%E5%AD%98%E3%82%82%E3%81%86%E4%B8%80%E5%9B%9EX%E3%81%A7%E5%85%B1%E6%9C%89%E3%82%AF%E3%83%AA%E3%83%83%E7%99%BA%E5%B0%84%E3%82%B9%E3%82%B3%E3%82%A2%E7%8E%87SpaceDEMOPLAYCRIF0123456789%25%2C%3A%2F.%20">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;600&display=swap">
+  <link rel="stylesheet" data-font="display" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap&text=%E8%8D%89%E5%B4%A9%E3%81%97%E5%88%88%E3%82%8B%E5%AE%8C%E5%85%A8%E5%8F%96%E3%82%8A%EF%BC%81%E3%82%B2%E3%83%BC%E3%83%A0%E3%82%AA%E3%83%90%E7%94%BB%E5%83%8F%E3%82%92%E4%BF%9D%E5%AD%98%E3%82%82%E3%81%86%E4%B8%80%E5%9B%9EX%E3%81%A7%E5%85%B1%E6%9C%89%E3%82%AF%E3%83%AA%E3%83%83%E7%99%BA%E5%B0%84%E3%82%B9%E3%82%B3%E3%82%A2%E7%8E%87SpaceDEMOPLAYCRIF0123456789%25%2C%3A%2F.%20">
+  <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;600&display=swap">
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap&text=%E8%8D%89%E5%B4%A9%E3%81%97%E5%88%88%E3%82%8B%E5%AE%8C%E5%85%A8%E5%8F%96%E3%82%8A%EF%BC%81%E3%82%B2%E3%83%BC%E3%83%A0%E3%82%AA%E3%83%90%E7%94%BB%E5%83%8F%E3%82%92%E4%BF%9D%E5%AD%98%E3%82%82%E3%81%86%E4%B8%80%E5%9B%9EX%E3%81%A7%E5%85%B1%E6%9C%89%E3%82%AF%E3%83%AA%E3%83%83%E7%99%BA%E5%B0%84%E3%82%B9%E3%82%B3%E3%82%A2%E7%8E%87SpaceDEMOPLAYCRIF0123456789%25%2C%3A%2F.%20">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;600&display=swap">
+  </noscript>
 </head>
 <body>
   <div id="app"></div>
