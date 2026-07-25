@@ -963,7 +963,7 @@ localhost 配信ではこの鎖の各往復がほぼ 0ms なので `pnpm lh` は
 | A-8: このサンドボックスの Chrome は fonts.googleapis.com へ到達できない | VERIFIED | ラボの network-requests で当該 2 件が statusCode -1。curl は到達できるが Chrome は ERR_CONNECTION_RESET |
 | A-9: CI(ubuntu-latest)では `slow` ターゲットも dist と同様に走る | UNVERIFIED-ACCEPTED(2026-07-25) | dist ジョブが同じランナーの Chrome で動いている実績(セッション9)。`slow` は配信元が lhci 内蔵サーバから `tools/lh-slow-server.mjs` に変わるだけで Chrome の要件は同じ。**この PR の CI が初回検証** |
 | A-10: `slow` のしきい値(共通の 1800/2500)は CI 上でも通る | UNVERIFIED-ACCEPTED(2026-07-25) | ローカルラボはフォントを取得できないぶん楽観的な数字になる。CI ではフォント取得が帯域を食うので悪化しうる。**この PR の CI で校正する** |
-| A-11: 本番デプロイ後に `pnpm lh:prod` が緑になる | UNVERIFIED-ACCEPTED(2026-07-25) | 本番を計測できないため断定不可。ラボでは同じ変更で FCP/LCP がしきい値内に入る(下記)。マージ+デプロイ後に `Lighthouse` ワークフローを workflow_dispatch で回して確認すること |
+| A-11: 本番デプロイ後に `pnpm lh:prod` が緑になる | **VERIFIED**(2026-07-25、デプロイ後) | デプロイ(`0663da25`)後に `Lighthouse` ワークフローを workflow_dispatch で実行(run 30161863485)→ `production` ジョブ **success**。中央値 perf 99 / FCP 1013ms / LCP 2005ms / CLS 0.0064 / render-blocking 0 件 |
 
 ### 打ち手の比較(依頼の 1/2/3 + 実測から出てきた 4)
 
@@ -1066,5 +1066,18 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] `shell.test.ts`(最初の描画が JS を待たないことの不変条件テスト)。ネガティブテスト済み
 - [x] `pnpm -r test` 全 pass(web 28 → 31 件)/ `pnpm -r build` exit 0
 - [x] CI: `test` / `Lighthouse / dist` / `Lighthouse / slow` すべて green、`production` は PR で skip
-- [ ] マージ → `wrangler pages deploy` → `Lighthouse` ワークフローを workflow_dispatch で回して本番を再計測(**人間の作業。このセッションはデプロイ権限なし**)
+- [x] マージ → `wrangler pages deploy` → `Lighthouse` ワークフローを workflow_dispatch で回して本番を再計測
+  - マージ e7aab07 → デプロイ `0663da25` → workflow run 30161863485 の `production` ジョブ **success**
+  - 中央値 perf **99** / FCP **1013ms** / LCP **2005ms** / TBT 0 / CLS 0.0064 / render-blocking **0 件**(3 runs: FCP [2175, 1013, 994])
+  - セッション9 が残し、セッション10 で「green にならない」と記録した宿題は、これで **解消**(当時 perf 76 / FCP 4.1s)
+
+### デプロイ時に踏んだこと(次回のため)
+
+- **デプロイ直後の `pnpm lh:prod` は当てにならない。** 3 runs が旧ビルドと新ビルドを混ぜて引く。
+  判別は成果物のハッシュ名: run 1 が `index-BpMi0tfA.js`(新・CSS インライン・HTML 5616B)で perf 100 / FCP 1188ms、
+  run 2 が `index-pr2ZC311.js` + `index-Cu7t7aJQ.css`(旧・HTML 3116B)で perf 76 / FCP 3857ms だった。
+  `curl` で HTML を数回引いて全部が新ハッシュを指すのを確認してから測ること
+- **伝播後も、ローカル回線からの `pnpm lh:prod` はばらつく。** 全 run が新バンドル・blocking 0 でも
+  FCP は 1153 / 3767 / 2729ms と揺れ、中央値がしきい値を超えた。同時刻に CI(GitHub ランナー)から
+  測ると FCP 中央値 1013ms で green。**本番の合否判定はローカルではなく CI の `production` ジョブで行うこと**
 - [ ] 本番が緑にならなかった場合の次の一手: `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
