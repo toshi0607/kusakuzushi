@@ -6,6 +6,13 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@kusakuzushi/web", "dev"],
       "port": 5173
+    },
+    {
+      "name": "web-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@kusakuzushi/web", "exec", "vite", "preview"],
+      "port": 4173,
+      "autoPort": true
     }
   ]
 }
