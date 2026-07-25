@@ -213,8 +213,8 @@ describe("render", () => {
     // #when a frame renders
     render(fake.ctx, game, LIGHT_THEME);
 
-    // #then the tile sits on the item's centre in the accent colour...
-    const tile = fake.roundRects.find((call) => call.fillStyle === LIGHT_THEME.ballColor && call.width === item.size);
+    // #then the tile sits on the item's centre in the item colour...
+    const tile = fake.roundRects.find((call) => call.fillStyle === LIGHT_THEME.itemColor && call.width === item.size);
     expect(tile).toMatchObject({ x: item.x - item.size / 2, y: item.y - item.size / 2, height: item.size });
 
     // #and its glyph is three square dots knocked out in the background colour
@@ -252,7 +252,7 @@ describe("render", () => {
     expect(bars.every((call) => call.y === withBars.paddleState.y)).toBe(true);
 
     // #given three balls in play instead
-    const withBalls = playUntil(0, (g) => g.ballStates.length === 3);
+    const withBalls = playUntil(0, (g) => g.ballStates.length > 1);
     const ballFrame = makeFakeContext(true);
     let arcs = 0;
     Object.assign(ballFrame.ctx, {
@@ -264,8 +264,9 @@ describe("render", () => {
     // #when a frame renders
     render(ballFrame.ctx, withBalls, LIGHT_THEME);
 
-    // #then all three are drawn, not just the primary one
-    expect(arcs).toBe(3);
+    // #then every ball is drawn, not just the primary one
+    expect(arcs).toBe(withBalls.ballStates.length);
+    expect(arcs).toBeGreaterThan(1);
   });
 
   it("keeps drawing bricks as sharp rects when roundRect is missing", () => {

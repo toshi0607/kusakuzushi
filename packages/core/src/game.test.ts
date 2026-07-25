@@ -321,7 +321,7 @@ describe("Game", () => {
       expect(game.itemStates).toHaveLength(0);
     });
 
-    it("splits the ball into three when a multiBall item is caught", () => {
+    it("splits the ball in play when a multiBall item is caught", () => {
       // #given a dropped multiBall item falling towards the paddle
       const game = makeItemGame(scriptedRandom([0, 0, 0.99]));
       const collected: string[] = [];
@@ -330,19 +330,40 @@ describe("Game", () => {
       };
       // #when the paddle catches it
       stepUntil(game, () => collected.length > 0);
-      // #then the ball became 1 + multiBallSpawnCount, and the item is gone
-      expect(game.ballStates).toHaveLength(1 + DEFAULT_CONFIG.multiBallSpawnCount);
+      // #then the one ball became `multiBallSplitFactor`, and the item is gone
+      expect(game.ballStates).toHaveLength(DEFAULT_CONFIG.multiBallSplitFactor);
       expect(game.itemStates).toHaveLength(0);
       expect(collected).toEqual(["multiBall"]);
     });
 
+    it("compounds: every later catch splits every ball again, so the count grows past any fixed handful", () => {
+      // #given a full-width paddle (no ball can ever be lost) on a board
+      // where every destroyed brick drops a multiBall item
+      const game = new Game(makeTargetAndDecoyGrid(), {
+        ...BASE_CONFIG,
+        itemDropChance: 1,
+        itemFallSpeed: 100,
+        random: () => 0,
+      });
+      const ballsAfterEachCatch: number[] = [];
+      game.onItemCollected = () => ballsAfterEachCatch.push(game.ballStates.length);
+
+      // #when three items are caught
+      game.launch();
+      stepUntil(game, () => ballsAfterEachCatch.length >= 3, 0.01, 20000);
+
+      // #then the count doubles each time — a flat "+2 per item" would read 3, 5, 7
+      expect(ballsAfterEachCatch.slice(0, 3)).toEqual([2, 4, 8]);
+    });
+
     it("only costs a life once the last of the split balls has fallen", () => {
-      // #given three balls in play after a multiBall catch
+      // #given more than one ball in play after a multiBall catch
       const game = makeItemGame(scriptedRandom([0, 0, 0.99]));
-      stepUntil(game, () => game.ballStates.length === 3);
+      stepUntil(game, () => game.ballStates.length > 1);
+      const spawned = game.ballStates.length;
       // #when the paddle abandons them entirely
       game.movePaddle(1000);
-      stepUntil(game, () => game.ballStates.length < 3, 0.01, 20000);
+      stepUntil(game, () => game.ballStates.length < spawned, 0.01, 20000);
       // #then losing a ball while others are alive costs nothing
       expect(game.life).toBe(3);
       expect(game.state).toBe("playing");
@@ -352,6 +373,26 @@ describe("Game", () => {
       // #then exactly one life was lost for the whole set
       expect(game.life).toBe(2);
       expect(game.ballStates).toHaveLength(1);
+    });
+
+    it("stops splitting at maxBalls instead of growing without bound", () => {
+      // #given a full-width paddle, endless multiBall drops, and a low cap
+      const game = new Game(makeTargetAndDecoyGrid(), {
+        ...BASE_CONFIG,
+        itemDropChance: 1,
+        itemFallSpeed: 100,
+        maxBalls: 5,
+        random: () => 0,
+      });
+      let catches = 0;
+      game.onItemCollected = () => {
+        catches += 1;
+      };
+      // #when far more items are caught than the cap allows
+      game.launch();
+      stepUntil(game, () => catches >= 6, 0.01, 20000);
+      // #then the ball count is held at the cap
+      expect(game.ballStates).toHaveLength(5);
     });
 
     it("grows a side bar on each side of the paddle when an extraPaddle item is caught, and drops them when it expires", () => {

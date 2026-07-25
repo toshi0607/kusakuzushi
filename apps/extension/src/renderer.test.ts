@@ -16,8 +16,9 @@ import type { OverlayTheme } from "./renderer";
 const THEME: OverlayTheme = {
   levelColors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
   paddleColor: "#24292f",
-  ballColor: "#0969da",
+  ballColor: "#24292f",
   textColor: "#24292f",
+  itemColor: "#0969da",
 };
 
 type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
@@ -97,15 +98,16 @@ function playUntil(kindRoll: number, predicate: (game: Game) => boolean): Game {
 
 describe("createOverlayRenderer", () => {
   it("draws every ball, not just the primary one, after a multiBall catch", () => {
-    // #given three balls in play
-    const game = playUntil(0, (g) => g.ballStates.length === 3);
+    // #given more than one ball in play
+    const game = playUntil(0, (g) => g.ballStates.length > 1);
     const fake = makeFakeContext();
 
     // #when a frame is drawn
     createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
 
-    // #then all three are drawn
-    expect(fake.arcs).toBe(3);
+    // #then every ball is drawn
+    expect(fake.arcs).toBe(game.ballStates.length);
+    expect(fake.arcs).toBeGreaterThan(1);
   });
 
   it("draws the extraPaddle side bars alongside the main paddle", () => {
@@ -132,7 +134,7 @@ describe("createOverlayRenderer", () => {
     createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
 
     // #then the tile sits on the item's centre...
-    const tile = fake.fillRects.find((call) => call.fillStyle === THEME.ballColor && call.width === item.size);
+    const tile = fake.fillRects.find((call) => call.fillStyle === THEME.itemColor && call.width === item.size);
     expect(tile).toMatchObject({ x: item.x - item.size / 2, y: item.y - item.size / 2, height: item.size });
 
     // #and its three marks are knocked out in the level-0 grass colour

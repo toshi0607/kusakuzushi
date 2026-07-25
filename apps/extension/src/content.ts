@@ -141,6 +141,10 @@ function createGameRuntime(
     paddleColor: foreground,
     ballColor: foreground,
     textColor: foreground,
+    // The page's own colours are all we sample for the paddle/ball, but an
+    // item has to stand apart from both the grass and the ball, so it keeps
+    // core's blue (GitHub's accent, in the light/dark variant that matches).
+    itemColor: themeBase.itemColor ?? foreground,
   };
 
   const painter: TdPainter = createTdPainter(levelColors);

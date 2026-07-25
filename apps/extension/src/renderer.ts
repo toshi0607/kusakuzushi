@@ -15,6 +15,8 @@ export type OverlayTheme = {
   paddleColor: string;
   ballColor: string;
   textColor: string;
+  /** Falling items, in a hue that is neither the grass nor the ball. */
+  itemColor: string;
 };
 
 type Particle = {
@@ -137,7 +139,7 @@ export function createOverlayRenderer(theme: OverlayTheme): {
       const left = item.x - size / 2;
       const top = item.y - size / 2;
 
-      ctx.fillStyle = theme.ballColor;
+      ctx.fillStyle = theme.itemColor;
       ctx.fillRect(left, top, size, size);
 
       ctx.fillStyle = theme.levelColors[0];

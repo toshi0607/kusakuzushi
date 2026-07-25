@@ -15,17 +15,27 @@ export type Theme = {
   particleColor?: string;
   /** Ball (and future highlight) colour. Falls back to `ballColor`. */
   accentColor?: string;
-  /** Falling item colour. Falls back to `accentColor`, then `ballColor`. */
+  /**
+   * Falling item colour. Deliberately not the ball's accent: an item and a
+   * ball are both small amber-ish sprites in flight, and at a glance the
+   * player has to be able to tell "chase this" from "dodge nothing".
+   * Falls back to `accentColor`, then `ballColor`.
+   */
   itemColor?: string;
   /** CSS font-family list for the HUD text. Falls back to `sans-serif`. */
   hudFont?: string;
 };
+
+/** GitHub's own accent blue, per colour scheme — the one hue that is neither grass nor ball. */
+const LIGHT_ITEM_COLOR = "#0969da";
+const DARK_ITEM_COLOR = "#58a6ff";
 
 export const LIGHT_THEME: Theme = {
   colors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
   paddleColor: "#24292f",
   ballColor: "#24292f",
   textColor: "#24292f",
+  itemColor: LIGHT_ITEM_COLOR,
 };
 
 export const DARK_THEME: Theme = {
@@ -33,6 +43,7 @@ export const DARK_THEME: Theme = {
   paddleColor: "#c9d1d9",
   ballColor: "#c9d1d9",
   textColor: "#c9d1d9",
+  itemColor: DARK_ITEM_COLOR,
 };
 
 type Particle = {
