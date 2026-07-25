@@ -429,8 +429,8 @@ describe("Game", () => {
       game.launch();
       stepUntil(game, () => ballsAfterEachCatch.length >= 3, 0.01, 20000);
 
-      // #then the count doubles each time — a flat "+2 per item" would read 3, 5, 7
-      expect(ballsAfterEachCatch.slice(0, 3)).toEqual([2, 4, 8]);
+      // #then the count triples each time — a flat "+2 per item" would read 3, 5, 7
+      expect(ballsAfterEachCatch.slice(0, 3)).toEqual([3, 9, 27]);
     });
 
     it("only costs a life once the last of the split balls has fallen", () => {

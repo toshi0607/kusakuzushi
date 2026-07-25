@@ -8,15 +8,19 @@
  * canvas.
  */
 
-import type { Game } from "@kusakuzushi/core";
+import type { Game, ItemKind } from "@kusakuzushi/core";
 
 export type OverlayTheme = {
   levelColors: readonly string[];
   paddleColor: string;
   ballColor: string;
   textColor: string;
-  /** Falling items, in a hue that is neither the grass nor the ball. */
-  itemColor: string;
+  /**
+   * Falling items, one hue per kind — neither the grass nor the ball, and
+   * distinct from each other so the two power-ups are told apart by colour
+   * before their glyphs are readable.
+   */
+  itemColors: Readonly<Record<ItemKind, string>>;
 };
 
 type Particle = {
@@ -139,7 +143,7 @@ export function createOverlayRenderer(theme: OverlayTheme): {
       const left = item.x - size / 2;
       const top = item.y - size / 2;
 
-      ctx.fillStyle = theme.itemColor;
+      ctx.fillStyle = theme.itemColors[item.kind];
       ctx.fillRect(left, top, size, size);
 
       ctx.fillStyle = theme.levelColors[0];
