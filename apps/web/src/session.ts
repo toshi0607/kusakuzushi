@@ -103,18 +103,28 @@ export function createSession(
     return clampPaddleX((clientX - rect.left) * scaleX);
   }
 
-  // The board is not a touch surface: a finger there hides the ball, and a
-  // tap that misses the rail by a few pixels would fire the ball before the
-  // player has aimed. Touch input belongs to the rail alone — mouse and pen
-  // keep steering the board directly.
+  /**
+   * True when the rail is on screen and should own touch instead of the
+   * board: a finger on the board hides the ball, and a tap that misses the
+   * rail by a few pixels would fire before the player has aimed.
+   *
+   * Asking the rail — rather than re-testing `(pointer: coarse)` here — is
+   * what keeps the two in step. A touchscreen laptop reports `pointer: fine`,
+   * so the stylesheet leaves the rail hidden; if this said "touch" instead,
+   * that machine would have no touch surface at all.
+   */
+  function railOwnsTouch(event: PointerEvent): boolean {
+    return event.pointerType === "touch" && rail.isVisible();
+  }
+
   function handlePointerMove(event: PointerEvent): void {
-    if (event.pointerType === "touch") return;
+    if (railOwnsTouch(event)) return;
     paddleX = canvasXFromClientX(event.clientX);
     game.movePaddle(paddleX);
   }
 
   function handlePointerDown(event: PointerEvent): void {
-    if (event.pointerType === "touch") return;
+    if (railOwnsTouch(event)) return;
     game.launch();
   }
 
@@ -149,7 +159,7 @@ export function createSession(
     paddleWidth: game.paddleState.width,
     onMove: (canvasX) => {
       paddleX = clampPaddleX(canvasX);
-      game.movePaddle(canvasX);
+      game.movePaddle(paddleX);
     },
     onLaunch: () => {
       game.launch();
@@ -163,7 +173,7 @@ export function createSession(
     if (heldKeys.has("ArrowLeft")) delta -= KEY_MOVE_SPEED_PX_PER_SEC * dt;
     if (heldKeys.has("ArrowRight")) delta += KEY_MOVE_SPEED_PX_PER_SEC * dt;
     if (delta === 0) return;
-    paddleX = Math.min(Math.max(paddleX + delta, 0), DEFAULT_CONFIG.canvasWidth);
+    paddleX = clampPaddleX(paddleX + delta);
     game.movePaddle(paddleX);
   }
 
