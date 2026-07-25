@@ -292,6 +292,12 @@ pnpm --filter @kusakuzushi/extension build
 | L6 | Low | .harvest-cell-filled の緑が固定値でテーマ非追従 | --grass-strong トークン(core colors[4] の写し、light/dark 反転)に置換 |
 | L7 | Low | フォントロードの空 catch(constraints.md 違反) | 意図的無視である旨のコメントを付与 |
 
+## セッション6: 発射ガイドの重なり修正(完了 2026-07-25)
+
+- [x] ガイド「クリック / Space で発射」が草の最下行に重なる問題を修正 — 草は盤面上半分(core `computeLayout` の `brickAreaHeight = canvasHeight/2 - gap`)を占めるのに対しオーバーレイが盤面全体の中央寄せだったため。`.guide-overlay { top: 50% }` で下半分(パドル空間)の中央へ。DESIGN-VISUAL §3 に配置ルールを明文化
+  - 検証(実測): 1280px で草下端との間隔 31px / パドルとの間隔 19px、375px で 30px / 18px。light・dark 両テーマでスクリーンショット確認
+- [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/11(CI pass 32s → merge 55741e3)、`wrangler pages deploy`(d6a5e170)、本番 https://kusakuzushi.toshi0607.com/?user=toshi0607 で間隔 31px / 19px を実測
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
@@ -303,6 +309,7 @@ pnpm --filter @kusakuzushi/extension build
 - 2026-07-25 (S4): オーバーレイは DESIGN §5 の `position: fixed` ではなく `absolute` + page 座標にした。fixed だとページスクロールした瞬間に草からズレる。逸脱の理由は overlay.ts にコメントで残してある
 - 2026-07-25 (S4): 草 td には contribution 数そのものは無いが、`aria-labelledby` が指す tooltip 要素には「N contributions on ...」というテキストがある。今回は申し送りどおり count=level² を採用(決定的で DOM 依存が少ない)。将来スコアの精度を上げたければ tooltip 経由で実数を取る余地がある
 - 2026-07-25 (S4): 実ページ検証用の rAF ハーネスは **id をキーにした Map** で実装すること。単純な配列キューにして `cancelAnimationFrame` で全消しすると、GitHub 自身のコードが自分の rAF をキャンセルした瞬間にゲームループまで消えて「原因不明でループが止まる」現象になる(実際に1回踏んだ)
+- 2026-07-25 (S6): デプロイ後の本番確認で画面が真っ白になり production 障害に見えたが、**原因はブラウザペーン側の HTTP キャッシュに残った切り詰めレスポンス**だった(ネットワークログに `net::ERR_CONNECTION_CLOSED` あり)。判別方法: ページ内で `fetch(url)` と `fetch(url, {cache:"reload"})` の長さを比較 — キャッシュ 1,535 文字 / 実体 21,622 文字で確定した。origin 側は curl で dist と byte 一致、同一成果物が pages.dev と localhost では正常描画。切り詰めた JS はパースが通ってしまうと **console エラーを出さずに何もしない**ため「JS が実行されていない」ようにしか見えない。真っ白のときは (1) curl で HTML/JS を dist と shasum 比較、(2) pages.dev で同一成果物を確認、(3) ページ内 fetch のキャッシュ有無比較、の順で切り分ける
 - 2026-07-25: Claude Code の Browser ペーンは visibilityState=hidden のため rAF・setTimeout が完全停止する。ライブプレイ検証は「requestAnimationFrame をキュー化して javascript_exec 内で同期的に drain する」ハーネスで実施(1フレーム=100ms の合成タイムスタンプ)。加えて viewport が一時的に 0px に崩壊する事象あり — resize_window(desktop) で復旧。getBoundingClientRect が 2px を返したらこれを疑う
 
 ## Review
