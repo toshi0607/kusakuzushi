@@ -118,6 +118,18 @@ describe("deriveConfig + computeLayout geometry alignment", () => {
       expect(brick.rect.y).toBe(3 + brick.row * 14);
     }
   });
+
+  it("scales dropped items down to this board instead of keeping core's default board", () => {
+    // #given the real-world measured geometry
+    // #when
+    const config = deriveConfig(SYNTHETIC_GEOMETRY);
+    // #then an item is one grass cell across (core's 14px default would be
+    // larger than the 10px cells it falls out of) and falls at the same
+    // share of the board per second as core's default
+    expect(config.itemSize).toBe(10);
+    expect(config.itemSize).toBeLessThan(DEFAULT_CONFIG.itemSize);
+    expect(config.itemFallSpeed).toBeCloseTo(194 * 0.25);
+  });
 });
 
 describe("regression: count=level^2 is required for scoring (session 1 review L4)", () => {

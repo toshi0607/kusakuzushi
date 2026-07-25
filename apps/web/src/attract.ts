@@ -74,9 +74,18 @@ export function createAttract(container: HTMLElement, getTheme: () => Theme): ()
     launchAtMs = now + REVEAL_DURATION_MS + LAUNCH_DELAY_MS;
   }
 
+  /** アイテムで玉が増えたときは、いちばん下(=先に落ちる)の玉を追う。 */
+  function trackedBallX(): number {
+    let lowest = game.ballStates[0];
+    for (const ball of game.ballStates) {
+      if (ball.y > lowest.y) lowest = ball;
+    }
+    return lowest.x;
+  }
+
   function autopilot(now: number, dt: number): void {
     const wobble = Math.sin(now / WOBBLE_PERIOD_MS) * WOBBLE_AMPLITUDE_PX;
-    const target = game.ballState.x + wobble;
+    const target = trackedBallX() + wobble;
     const maxStep = AUTOPILOT_SPEED_PX_PER_SEC * dt;
     const delta = Math.min(Math.max(target - paddleX, -maxStep), maxStep);
     paddleX += delta;
