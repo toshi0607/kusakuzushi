@@ -1149,9 +1149,9 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 |------------|--------|----------|
 | 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
-| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: 確かめる場所がデベロッパーコンソールの掲載情報タブしかなく、そこはユーザーのアカウント(登録・$5 決済が前提、A-1 が未完)。緩和策として `_locales/{en,ja}` は既に入れてあるので、必要だった場合でも詰まらない。不要だった場合の損は「使われないロケールファイルが2 つある」だけ。C-1 のコンソール入力時に判明する |
 | データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
-| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | UNVERIFIED | デプロイ後に curl で実測する |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | **VERIFIED**(2026-07-26、セッション14 が実測) | `/privacy` は **308** で `/privacy/` へ、`/privacy/` が **200**。本文の sha256 は `2a8b2baf…` で手元の `dist/privacy/index.html` と一致。ルートの `index.html`(`ee82bf83…`)とは別物なので、Pages の「存在しないパスに index.html を 200」ではない。**B-8 の完了条件は満たされている** |
 
 ### Phase A: ユーザー作業(エージェント不可)
 
