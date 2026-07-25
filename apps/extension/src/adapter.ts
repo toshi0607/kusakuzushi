@@ -84,13 +84,20 @@ export function deriveConfig(geometry: GrassGeometry): Partial<GameConfig> {
   // brickAreaTop=gap, brickAreaHeight=7*brickHeight+8*gap (computeLayout's
   // own math), so H/2 = brickAreaTop + brickAreaHeight = 7*cellHeight +
   // 9*gap — the "+2" below is that extra brickAreaTop gap plus the
-  // outer-edge gap computeLayout adds beyond the 7 inter-row gaps.
+  // outer-edge gap computeLayout adds beyond the 7 inter-row gaps. This
+  // keeps the grass in the top half; the row stride itself comes from
+  // `brickHeightPx` below.
   const canvasHeight = 2 * (ROWS_PER_WEEK * cellHeight + (ROWS_PER_WEEK + 2) * gap);
 
   return {
     canvasWidth,
     canvasHeight,
     brickGapPx: gap,
+    // core's default brick is square (its side = its width). Here the real
+    // `td`s are the truth: `measureGeometry` reads width and height
+    // independently, so pin the height rather than let a width/height
+    // disagreement drift the overlay further down with every row.
+    brickHeightPx: cellHeight,
     ballRadius: Math.max(MIN_BALL_RADIUS_PX, cellHeight * BALL_RADIUS_HEIGHT_RATIO),
     paddleWidth: Math.max(MIN_PADDLE_WIDTH_PX, (cellWidth + gap) * PADDLE_WIDTH_STRIDE_MULTIPLIER),
     paddleHeight: Math.max(MIN_PADDLE_HEIGHT_PX, cellHeight * PADDLE_HEIGHT_RATIO),
