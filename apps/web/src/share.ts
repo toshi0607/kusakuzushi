@@ -82,7 +82,9 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   ctx.fillStyle = SHARE_COLORS.soil;
   ctx.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
 
-  const boardWidth = 880;
+  // 盤面は 8:3。880 幅だとカード下部に 130px の空白が残るので、左右 60px の
+  // 余白まで広げて縦の重心を戻す(1080 x 405 + 見出し行で 630 をほぼ使い切る)。
+  const boardWidth = 1080;
   const boardHeight = Math.round((boardWidth * source.height) / source.width);
   const boardX = (SHARE_WIDTH - boardWidth) / 2;
   const boardY = 44;

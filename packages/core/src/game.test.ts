@@ -54,6 +54,55 @@ function stepUntil(game: Game, predicate: () => boolean, dt = 0.01, maxSteps = 5
   }
 }
 
+/** A full 53-week year on the default canvas — what the web app renders. */
+function makeFullYearGrid(): ContributionGrid {
+  const weeks: Cell[][] = Array.from({ length: 53 }, (_, col) =>
+    Array.from({ length: 7 }, (_, row) => ({ date: `2024-w${col}-${row}`, count: 1, level: 1 as const })),
+  );
+  return { username: "octocat", weeks, total: 53 * 7 };
+}
+
+describe("brick geometry", () => {
+  it("lays out square bricks, like the contribution cells they stand for", () => {
+    // #given a full year on the default canvas
+    const game = new Game(makeFullYearGrid());
+
+    // #then every brick is as tall as it is wide
+    expect(game.layout.brickHeight).toBeCloseTo(game.layout.brickWidth, 10);
+    for (const brick of game.liveBricks) {
+      expect(brick.rect.height).toBeCloseTo(brick.rect.width, 10);
+    }
+  });
+
+  it("keeps the whole grass band clear of the paddle", () => {
+    // #given the same full year
+    const game = new Game(makeFullYearGrid());
+
+    // #then the band ends well above the paddle, leaving the play space
+    // the ball needs (DESIGN.md §3: grass on top, paddle space below)
+    const grassBottom = game.layout.brickAreaTop + game.layout.brickAreaHeight;
+    expect(grassBottom).toBeLessThan(game.layout.paddleY);
+    const lowestBrick = Math.max(...game.liveBricks.map((brick) => brick.rect.y + brick.rect.height));
+    expect(lowestBrick).toBeLessThanOrEqual(grassBottom);
+  });
+
+  it("flattens bricks rather than letting them grow into the paddle's half on a short canvas", () => {
+    // #given a canvas so wide and short that square cells would not fit
+    // above the paddle (a host could hand core any size)
+    const game = new Game(makeGrid([1, 1, 1, 1, 1, 1, 1]), {
+      ...BASE_CONFIG,
+      canvasWidth: 1000,
+      canvasHeight: 100,
+    });
+
+    // #then the bricks flatten instead, and the band stays in the top half
+    expect(game.layout.brickHeight).toBeLessThan(game.layout.brickWidth);
+    expect(game.layout.brickAreaTop + game.layout.brickAreaHeight).toBeLessThanOrEqual(
+      game.config.canvasHeight / 2,
+    );
+  });
+});
+
 describe("Game", () => {
   it("starts in the ready state and only begins moving after launch()", () => {
     // #given
