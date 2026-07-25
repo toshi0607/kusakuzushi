@@ -76,16 +76,32 @@ function buildSyntheticGrass(live: { row: number; col: number }): SyntheticGrass
     tbody.appendChild(tr);
   }
 
-  document.body.appendChild(table);
+  // Wrapped, like GitHub's own markup: the wrapper is what board-space.ts
+  // grows to make room for the paddle half of the board.
+  const wrapper = document.createElement("div");
+  wrapper.id = CALENDAR_WRAPPER_ID;
+  wrapper.appendChild(table);
+  document.body.appendChild(wrapper);
   return { tds, liveDate };
 }
 
 /** Real per-`td` geometry: 10x10 cells, 3px gap (stride 13), origin (67, 100) — matches the measured production values. */
+/** The calendar wrapper's and overlay's bottoms, so board-space.ts has a real overhang to reserve. */
+const CALENDAR_WRAPPER_ID = "calendar-wrapper";
+const WRAPPER_BOTTOM = 400;
+const OVERLAY_BOTTOM = 500;
+export const EXPECTED_RESERVED_PX = OVERLAY_BOTTOM - WRAPPER_BOTTOM;
+
 function stubGeometry(): void {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const flat = (bottom: number): DOMRect =>
+      ({ left: 0, top: 0, width: 0, height: bottom, right: 0, bottom, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    if (this.tagName === "CANVAS") return flat(OVERLAY_BOTTOM);
+    if (this.id === CALENDAR_WRAPPER_ID) return flat(WRAPPER_BOTTOM);
+
     const match = /^contribution-day-component-(\d+)-(\d+)$/.exec(this.id);
     if (!match) {
-      return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      return flat(0);
     }
     const row = Number(match[1]);
     const col = Number(match[2]);
@@ -253,6 +269,27 @@ describe("createGameRuntime (via mount)", () => {
         expect(td.getAttribute("style")).toBe("width: 10px");
       }
     });
+  });
+
+  it("makes room below the calendar for the paddle half of the board, and gives it back on stop()", () => {
+    // #given a running game whose overlay hangs below the calendar. Without
+    // the reservation the paddle, the HUD and the guide are all drawn over
+    // GitHub's own legend and organisation chips.
+    stubCanvasContext();
+    buildSyntheticGrass({ row: 4, col: 3 });
+    session = mount(document, window);
+    launchButton().click();
+
+    const wrapper = document.getElementById(CALENDAR_WRAPPER_ID);
+    if (!wrapper) throw new Error("calendar wrapper missing");
+    // #then the page below is pushed down by exactly the overhang
+    expect(wrapper.style.marginBottom).toBe(`${EXPECTED_RESERVED_PX}px`);
+
+    // #when the session ends
+    session?.stop();
+    session = null;
+    // #then the wrapper is byte-identical to how it was found
+    expect(wrapper.getAttribute("style")).toBeNull();
   });
 
   describe("teardown", () => {

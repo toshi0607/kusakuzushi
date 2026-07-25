@@ -71,6 +71,17 @@ const HUD_PLATE_PADDING_Y_PX = 3;
 const HUD_PLATE_ALPHA = 0.85;
 const HUD_PLATE_RADIUS_PX = 3;
 
+/**
+ * Shown while the ball is still parked on the paddle, mirroring the web
+ * version's guide overlay so both halves of the game read the same. Placed
+ * in the empty band between the grass and the paddle — over the grass it
+ * would hide the very bricks it is telling you to aim at.
+ */
+const GUIDE_TEXT = "クリック / Space で発射";
+const GUIDE_FONT_SIZE_PX = 13;
+const GUIDE_FONT = `600 ${GUIDE_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
+const GUIDE_Y_RATIO = 0.74;
+
 function clampLevelIndex(level: number): number {
   return Math.min(Math.max(level, 1), 4);
 }
@@ -226,6 +237,21 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     drawHudLabel(ctx, lifeText, width - lifeWidth - HUD_MARGIN_PX - HUD_PLATE_PADDING_X_PX, baseline);
   }
 
+  /** Only while the ball is waiting to be launched — the same states the web version shows its guide in. */
+  function drawGuide(ctx: CanvasRenderingContext2D, game: Game): void {
+    if (game.state !== "ready" && game.state !== "ballLost") return;
+
+    ctx.font = GUIDE_FONT;
+    ctx.textBaseline = "bottom";
+    const width = ctx.measureText(GUIDE_TEXT).width;
+    drawHudLabel(
+      ctx,
+      GUIDE_TEXT,
+      (game.config.canvasWidth - width) / 2,
+      game.config.canvasHeight * GUIDE_Y_RATIO,
+    );
+  }
+
   function draw(ctx: CanvasRenderingContext2D, game: Game, dtSec: number): void {
     updateParticles(dtSec);
 
@@ -238,6 +264,7 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     drawPaddles(ctx, game);
     drawBalls(ctx, game);
     drawHud(ctx, game);
+    drawGuide(ctx, game);
   }
 
   return { spawnBurst, draw };

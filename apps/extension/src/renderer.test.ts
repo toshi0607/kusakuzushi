@@ -184,6 +184,31 @@ describe("createOverlayRenderer", () => {
     }
   });
 
+  it("shows the launch guide only while the ball is waiting to be launched", () => {
+    // #given a board that has not been launched yet
+    const grid = { username: "octocat", weeks: [[{ date: "2024-01-01", count: 10, level: 4 as const }]], total: 10 };
+    const ready = new Game(grid, ITEM_CONFIG);
+    const readyFrame = makeFakeContext();
+
+    // #when a frame is drawn in the ready state
+    createOverlayRenderer(THEME).draw(readyFrame.ctx, ready, 0.016);
+
+    // #then the guide is on screen, in the empty band below the grass
+    const guide = readyFrame.texts.find((call) => call.text.includes("Space"));
+    expect(guide?.text).toBe("クリック / Space で発射");
+    expect(guide?.y).toBeGreaterThan(ITEM_CONFIG.canvasHeight / 2);
+
+    // #and once the ball is in flight it is gone — it would only sit in
+    // front of the board the player is now aiming at
+    const playing = new Game(grid, ITEM_CONFIG);
+    playing.launch();
+    playing.update(0.016);
+    expect(playing.state).toBe("playing");
+    const playingFrame = makeFakeContext();
+    createOverlayRenderer(THEME).draw(playingFrame.ctx, playing, 0.016);
+    expect(playingFrame.texts.some((call) => call.text.includes("Space"))).toBe(false);
+  });
+
   it("keeps both HUD labels inside the board", () => {
     // #given a game in play
     const game = playUntil(0, (g) => g.score > 0);

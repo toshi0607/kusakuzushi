@@ -10,6 +10,7 @@ import type { ContributionGrid, GameConfig, GameState } from "@kusakuzushi/core"
 import { DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@kusakuzushi/core";
 
 import { deriveConfig, toExtensionGrid } from "./adapter";
+import { reserveBoardSpace } from "./board-space";
 import type { GrassCell, GrassGeometry } from "./grass-dom";
 import {
   findGraphContainer,
@@ -152,6 +153,8 @@ function createGameRuntime(
   grid: ContributionGrid,
   grassCells: readonly GrassCell[],
   geometry: GrassGeometry,
+  /** What the page must make room below — see board-space.ts. */
+  spacingAnchor: HTMLElement,
   onFinished: (restart: boolean) => void,
 ): GameRuntime | null {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...deriveConfig(geometry) };
@@ -162,6 +165,7 @@ function createGameRuntime(
   // doesn't reliably carry the narrowing of `maybeOverlay` itself into
   // nested closures) — same pattern apps/web/src/session.ts uses for `ctx`.
   const overlay: Overlay = maybeOverlay;
+  const boardSpace = reserveBoardSpace(spacingAnchor, overlay.canvas, view);
 
   const game = new Game(grid, config);
 
@@ -386,6 +390,7 @@ function createGameRuntime(
     overlay.canvas.removeEventListener("click", handleCanvasClick);
     overlay.canvas.removeEventListener("touchmove", handleTouchMove);
     overlay.destroy();
+    boardSpace.release();
     painter.restoreAll();
     removeBanner();
   }
@@ -487,7 +492,11 @@ export function mount(doc: Document, view: Window): Session | null {
 
     // A retry re-enters `startGame` *after* teardown has restored every
     // repainted `td`, so the second round starts from the untouched grass.
-    const created = createGameRuntime(doc, view, grid, grassCells, geometry, (restart) => {
+    // The calendar's own wrapper: everything GitHub renders after it (the
+    // legend, then the organisation chips) is what has to move down.
+    const spacingAnchor = table.parentElement ?? table;
+
+    const created = createGameRuntime(doc, view, grid, grassCells, geometry, spacingAnchor, (restart) => {
       endGame();
       if (restart) startGame();
     });
