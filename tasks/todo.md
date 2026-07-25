@@ -298,6 +298,18 @@ pnpm --filter @kusakuzushi/extension build
   - 検証(実測): 1280px で草下端との間隔 31px / パドルとの間隔 19px、375px で 30px / 18px。light・dark 両テーマでスクリーンショット確認
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/11(CI pass 32s → merge 55741e3)、`wrangler pages deploy`(d6a5e170)、本番 https://kusakuzushi.toshi0607.com/?user=toshi0607 で間隔 31px / 19px を実測
 
+## セッション7: 残機表示の可読性修正(完了 2026-07-25)
+
+ユーザー指摘「右上の濃い部分残機ですか？みえづらすぎる」。原因は 2 つ重なっていた:
+
+1. 残機を草スケールの level4(=コンテンツの色)で描いていた — DESIGN-VISUAL §0「緑は草専用」を HUD だけ破っていた
+2. HUD を草グリッドの**上に重ねて**いたため背景が常に緑だった(ついでにブロックも隠していた)
+
+- [x] HUD 全体を草の直下(`canvasHeight/2 + 10`)の無地帯へ移動。残機は `--marquee` アンバーの「予備のボール」(実ボールと同色・同径)+ `LIFE` ラベル。DESIGN-VISUAL §5 に HUD 位置の行を追加
+  - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
+- [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
+- 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
