@@ -127,7 +127,99 @@ curl -s -A "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" ...同UR
 - ビルド方式は Vite + CRXJS か素の esbuild(DESIGN §6、Phase 3 で決定とされている)
 - 検証は自分の GitHub プロフィールページで実施(DESIGN §7 Phase 3 完了条件)
 
-## セッション4: Chrome 拡張(未着手)
+## セッション4: Chrome 拡張(実装中)
+
+### Constraints(セッション4 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| packages/core は無変更(ゲームバランス不変) | セッション4指示 / DESIGN §3 | `git diff main -- packages/core` が空 |
+| 拡張アダプタは count = level² を投入(セッション1 L4) | セッション1レビュー L4 / セッション4指示 | adapter のユニットテスト(count=1/4/9/16) |
+| 破壊時に実 td の背景を level0 相当へ差し替える | DESIGN §5 | td-paint のユニットテスト + 実ページ実測 |
+| 終了/遷移で原状復帰(DOM は破壊しない) | DESIGN §5 | teardown 後に td の style/属性が初期状態と一致(テスト) |
+| turbo:load でのページ遷移に対応(多重初期化・リーク防止) | DESIGN §5 / セッション4指示 | 二重 mount しないこと・rAF/リスナ解放をテスト |
+| セレクタとグリッド構築を1ファイルに隔離 | DESIGN §5 | grass-dom.ts 以外に `ContributionCalendar` 文字列が出ないこと(grep) |
+| モデルルーティング: scaffold=haiku / 実装=sonnet / ゲート=reviewer(opus) | ~/.claude/rules/behavior.md | 各 Agent 呼び出し |
+| マージは `gh api -X PUT .../merge`、`GH_HOST=github.com` 明示 | セッション1〜3 Notes | 実行コマンド |
+
+### Assumptions(セッション4 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 草 td は data-date / data-level / id=contribution-day-component-{row}-{col} を持つ | VERIFIED | 2026-07-25 実ページ実測(371セル、`data-ix`/`data-date`/`data-level`/`id` を確認) |
+| セルは正方 10px、border-spacing 3px(縦横同一 stride 13px) | VERIFIED | 2026-07-25 getBoundingClientRect 実測: rect0 l=67 w=10 h=10 / rect1 l=80 / 行の t が 13px 刻み |
+| `--color-calendar-graph-day-*-bg` の CSS 変数は :root では空。色は computed style から採る必要がある | VERIFIED | 2026-07-25 実測: 全変数が空文字。td の computedStyle は level0=rgb(239,242,245) 〜 level4=rgb(17,99,41) |
+| core の computeLayout の幾何を実 td 座標に一致させられる(gap=実ギャップ, W=cols*stride+gap, H=2*(7*cellH+9*gap)) | VERIFIED | 実測値で解いて一致確認(下記「幾何の解」)+ ユニットテストで computeLayout の出力と実 rect の一致を検証 |
+| ビルドは素の esbuild で足りる(CRXJS 不要) | VERIFIED | 調査(open-source-librarian, 2026-07-25): 単一 content script・popup/background なし・HMR不要。esbuild は core の exports(src/index.ts 直指し)を追加プラグインなしで解決 |
+| 拡張の未パック読み込みはこのセッションからは自動化できない | UNVERIFIED-ACCEPTED(2026-07-25) | chrome://extensions はブラウザ MCP の操作対象外。代替として **実 github.com ページに実ビルド成果物(dist/content.js)を注入して**エンドツーエンド検証し、手動読み込み手順を下記に残す |
+
+### 幾何の解(実測 10px セル / 3px ギャップ / 53週)
+
+core の `computeLayout` は `brickWidth=(W-gap*(cols+1))/cols`, `brickAreaTop=gap`, `brickAreaHeight=H/2-gap`, `brickHeight=(brickAreaHeight-8*gap)/7` 固定。実 td に重ねるには:
+
+- `gap = strideX - cellW`(実測 3)
+- `canvasWidth = cols*stride + gap`(53*13+3 = 692)
+- `canvasHeight = 2*(7*cellH + 9*gap)`(2*(70+27) = 194)
+- オーバーレイの原点 = (col0,row0 セルの page 座標) - gap
+
+→ ブロック矩形が実 td と1:1で重なる。盤面下半分(97px)がパドル空間になるため、`ballSpeed`/`paddle*`/`ballRadius` は狭い盤面向けに config で上書きする(core は無変更)。
+
+### タスク
+
+- [x] apps/extension scaffold(→ haiku): package.json / tsconfig / vitest(jsdom) / manifest.json / build.mjs(esbuild) / 実フラグメントのテストフィクスチャ(371セル)— `pnpm --filter @kusakuzushi/extension build` exit 0
+- [x] grass-dom.ts: セレクタ + セル読み取り + 幾何計測(純関数に分離)— jsdom + 実 HTML フィクスチャで 6 tests pass
+- [x] adapter.ts: cells → ContributionGrid(**count = level²**)+ deriveConfig — 10 tests pass(count=0/1/4/9/16、canvasWidth=692・canvasHeight=194、computeLayout の brickWidth/Height=10・brickAreaTop=3、全列で brick.x = 3+col*13)
+- [x] overlay.ts / renderer.ts: 透過キャンバス(実 td を隠さない)にボール・パドル・パーティクル・HUD を描画
+- [x] td-paint.ts: ヒットで level を下げ、破壊で level0 色へ。teardown で完全復帰 — 6 tests pass
+- [x] content.ts: 「🎮 崩す」ボタン注入、mount/unmount、turbo:load / turbo:before-render 対応(多重初期化なし)— 5 tests pass
+- [x] `pnpm -r test`(最終 162/162 pass。レビュー対応前は 145/145)/ `pnpm -r build` exit 0
+- [x] 実 github.com/toshi0607 で dist/content.js を注入してエンドツーエンド検証 — 下記「セッション4 検証記録」
+- [x] フェーズゲート: reviewer(opus) — **初回は Request changes(H1 が blocker)**。H1/M2/M3/M4 と Low 10件を修正 → 再レビューで Approve(そこで出た Medium 1件・Low 4件も対応)。詳細は Review 欄。拡張のテストは 27 → 44 件
+- [ ] PR → CI green → API マージ → 完了記録
+
+### セッション4 レビュー後の再検証(2026-07-25 実 github.com/toshi0607 実測)
+
+H1 の修正は「草がまだ DOM に無い状態で content script が動く」という順序でしか効かないため、実ページで順序を再現して確認した。
+
+```
+1. 実ページから .js-yearly-contributions ノードを取り外す(= include-fragment 未解決の状態)
+2. その状態で dist/content.js を注入   → ボタン0個・テーブル0個(以前はここで永久に諦めていた)
+3. 草ノードを後から差し戻す(= fragment 解決) → MutationObserver 経由でボタン1個「🎮 崩す」が出現
+4. そのまま発射して 400 フレーム駆動   → 5セル破壊。うち level2 のセルは中間ダメージ(L1 色)で表示され、破壊済みは L0 色
+5. turbo:before-cache を発火          → ボタン0・canvas 0・painted 0・style は "width: 10px" に復帰・rAF キュー0
+6. pageshow を発火                    → ボタン1個「🎮 崩す」で復活(bfcache 復帰)
+```
+
+### セッション4 検証記録(2026-07-25 実 github.com/toshi0607 実測)
+
+ビルド成果物 `apps/extension/dist/content.js`(esbuild の IIFE、13,922 bytes)を実ページに注入して実測。
+※ ブラウザペーンは visibilityState=hidden で rAF が止まるため、セッション2 と同じ「rAF をキュー化して同期 drain する」ハーネスで駆動。
+今回は id をキーに持つ Map 実装にした(単純な配列だと GitHub 自身の cancelAnimationFrame がゲームループごと巻き添えで消してしまい、ループが静かに死ぬ)。
+
+| 検証項目 | 実測結果 |
+|----------|----------|
+| ボタン注入 | `#kusakuzushi-launch`「🎮 崩す」が `.js-yearly-contributions` 配下に1個 |
+| **幾何の一致** | canvas: left 394.828px / top 676px / 692x194px、内部解像度 1384x388(dpr=2)。実 td の canvas 内座標 (0,0)=(3,3) / (3,10)=(133,42) / (6,52)=(679,81) — core の `computeLayout` の期待値 `3+col*13, 3+row*13` と**完全一致** |
+| 透過 | キャンバスの 99.11% が alpha=0。草セル直上 (8,8) も alpha=0 で実 td が透けて見える。パドルは (346,182) に `rgb(36,41,47)` で描画 |
+| **破壊演出** | 発射 → 600フレーム駆動で6セル破壊。実 td の背景が `rgb(172,238,187)`(L1)/`rgb(74,194,107)`(L2)から `rgb(239,242,245)`(L0)へ変化 |
+| **スコア(L4)** | 3ライフ喪失で結果バナー「ゲームオーバー / Score: 3」。count=level² が効いており 0 点になっていない |
+| 原状復帰 | 「やめる」で painted td 0個、style 属性が元の `width: 10px` に完全復帰、canvas 除去、ボタン「🎮 崩す」に戻る |
+| もう一回 | バナー除去 → td 復帰(painted 0)→ 新しいゲームが走る(rAF キュー 1) |
+| turbo 対応 | `turbo:before-render` でボタン0個・canvas 0個・painted 0個・rAF キュー0(リークなし)。続けて `turbo:load` を3回発火してもボタン1個・canvas 0個(多重初期化なし) |
+
+### 拡張の手動読み込み手順(unpacked)
+
+```bash
+pnpm --filter @kusakuzushi/extension build
+# → apps/extension/dist が生成される
+```
+
+1. Chrome で `chrome://extensions` を開く
+2. 右上「デベロッパー モード」を ON
+3. 「パッケージ化されていない拡張機能を読み込む」→ `apps/extension/dist` を選択
+4. `https://github.com/toshi0607` を開き、草グラフ右上の「🎮 崩す」を押す
+5. マウスでパドル移動、クリック/Space で発射。破壊された日の草が実際に灰色になる
+6. 「やめる」または他ページへ遷移で原状復帰
 
 ## Notes
 
@@ -135,6 +227,11 @@ curl -s -A "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" ...同UR
 - 2026-07-25: CI で web テストが「Failed to resolve entry for package @kusakuzushi/core」で fail(CI は core の dist 未ビルド、ローカルは過去ビルドの stale dist で偶然通っていた)。内部専用パッケージのため core の exports を src/index.ts 直指しに変更して解消。moduleResolution: bundler なので tsc/Vite とも src 直参照で問題ない
 - 2026-07-25 (S3): workers-og@0.0.27 の `loadGoogleFont` は `text` パラメータを URL エンコードせず css2 URL に埋め込むため、サブセット文字列に生の `%` があると不正なパーセントエスケープになり、Google が日本語グリフ抜きのフォントを返す(cmap 実測: 正エンコード 79 グリフ/生 67 グリフ・日本語なし)。workers/ogp/src/fonts.ts で encodeURIComponent する自前ローダーに置き換えて解消
 - 2026-07-25 (S3): satori(workers-og の HTMLRewriter パーサ)は `&nbsp;` 等の HTML 実体参照を解釈せずリテラル文字列として描画する。スペーシングは margin で行うこと
+- 2026-07-25 (S4): **拡張のビルド方式は素の esbuild を採用**(DESIGN §6 で「Phase 3 で決定」とされていた項目)。理由: エントリは content script 1本のみで popup/background なし、HMR も不要。CRXJS(@crxjs/vite-plugin、2.7.1 / 2026-07-01 リリース、Vite 3-8 対応で活発にメンテ中)の価値は MV3 の複数エントリ管理と content script の HMR にあり、今回はそのどちらも使わない。しかも CRXJS の未解決 issue は HMR 周りに集中している(#898/#1021/#671/#897)。一方 esbuild は `@kusakuzushi/core` の `exports: {".": "./src/index.ts"}`(TS ソース直公開)を追加プラグインなしで解決でき、ビルドは build.mjs 30行で済む。popup 追加や複数エントリが必要になったら CRXJS へ移行する
+- 2026-07-25 (S4): **core の `render()` は拡張では使えない**。キャンバス全面を `theme.colors[0]` で不透明に塗り、さらにブロック自体も描くため、実 td が隠れて DESIGN §5 の核(本物の草が減って見える)が成立しない。拡張は `apps/extension/src/renderer.ts` に透過レンダラ(clearRect のみ、ボール・パドル・パーティクル・HUD だけ描画)を持ち、ブロックの見た目は実 td そのものが担う
+- 2026-07-25 (S4): オーバーレイは DESIGN §5 の `position: fixed` ではなく `absolute` + page 座標にした。fixed だとページスクロールした瞬間に草からズレる。逸脱の理由は overlay.ts にコメントで残してある
+- 2026-07-25 (S4): 草 td には contribution 数そのものは無いが、`aria-labelledby` が指す tooltip 要素には「N contributions on ...」というテキストがある。今回は申し送りどおり count=level² を採用(決定的で DOM 依存が少ない)。将来スコアの精度を上げたければ tooltip 経由で実数を取る余地がある
+- 2026-07-25 (S4): 実ページ検証用の rAF ハーネスは **id をキーにした Map** で実装すること。単純な配列キューにして `cancelAnimationFrame` で全消しすると、GitHub 自身のコードが自分の rAF をキャンセルした瞬間にゲームループまで消えて「原因不明でループが止まる」現象になる(実際に1回踏んだ)
 - 2026-07-25: Claude Code の Browser ペーンは visibilityState=hidden のため rAF・setTimeout が完全停止する。ライブプレイ検証は「requestAnimationFrame をキュー化して javascript_exec 内で同期的に drain する」ハーネスで実施(1フレーム=100ms の合成タイムスタンプ)。加えて viewport が一時的に 0px に崩壊する事象あり — resize_window(desktop) で復旧。getBoundingClientRect が 2px を返したらこれを疑う
 
 ## Review
@@ -174,3 +271,37 @@ curl -s -A "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" ...同UR
 | L1 | Low | jogruber 一時障害時のグリッド無しフォールバック PNG が 24h キャッシュされる | 同セッションで修正(フォールバック時は max-age=300。本番で 300 を実測) |
 | L2 | Low | フォント取得/satori 例外が未捕捉で Worker 例外(1101)になる | 同セッションで修正(try/catch → no-store の 500) |
 | L3 | Low | クローラー HTML に Vary: User-Agent がなく共有キャッシュ経由で人間に HTML が返り得る | 同セッションで修正(vary: user-agent 付与。本番で実測) |
+
+### セッション4 フェーズゲート(reviewer/opus, 2026-07-25)
+
+判定: **初回 Request changes → 全件対応済み**。検証: pnpm -r test 162/162 pass(拡張は 27 → 44 件)、pnpm -r build exit 0、`git diff main...HEAD -- packages/core` 0行、セレクタ隔離・count=level² のテスト担保を確認。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| H1 | High | **GitHub は草グラフを `<include-fragment>` で後から流し込む**(プロフィールの初期 HTML に `ContributionCalendar` は0個 — curl で実測)。content script は `document_idle` で1回試すだけだったので、実ページでは「🎮 崩す」が永久に出ない。turbo:load も fragment 解決より先に発火するため同様。私の初回実ページ検証が「読み込み済みページへの注入」だったためこの競合を隠していた | 修正: `autoMount` を追加し、mount 失敗時は MutationObserver で草の出現を待つ。エントリを `src/main.ts` に分離(content.ts を副作用なしに)。実ページで順序を再現して検証済み(上記「再検証」) |
+| M2 | Medium | `paddleX` が未クランプ。mousemove は window に張っているので広い画面では常に盤外の値になり、←→ キーが数十回効かない | 修正: `setPaddleX` で `[0, canvasWidth]` にクランプ(apps/web/src/session.ts と同じ対処) |
+| M3 | Medium | Turbo は `turbo:before-cache` でスナップショットを取るのに、片付けが `turbo:before-render` だった。戻るボタンで灰色の草と孤児 canvas が復元され得る。再利用したボタンのラベルも「やめる」のままだった | 修正: `turbo:before-cache` を追加、ボタン再利用時に必ずラベルを初期化。実ページで検証済み |
+| M4 | Medium | `createGameRuntime` のテストがゼロ(jsdom に 2D コンテキストが無く、全テストがゲーム開始前で止まっていた)。最重要の row/col → date → td の写像が未検証 | 修正: `game-runtime.test.ts` を追加。canvas ctx / rect / rAF をスタブして実際にゲームを走らせ、破壊された日の td だけが塗られること・teardown の完全性(canvas 除去、rAF キャンセル、style 完全復帰、リスナ解除)を検証 |
+| L1 | Low | keydown が window 直付けで、GitHub の検索欄に打った Space を飲み込む | 修正(input/textarea/select/contenteditable では素通し) |
+| L2 | Low | 結果バナーが白固定で、ダークテーマだと文字が読めない | 修正(ページの実際の色を採用。L3 と同時対応) |
+| L3 | Low | パドル/ボールの色が OS の prefers-color-scheme 依存で、GitHub 側のテーマ設定と食い違う | 修正: `readPageColors` で body の computed color/background を採用 |
+| L4 | Low | bfcache 復帰時、pagehide でボタンを消したきり戻らない | 修正(`pageshow` で再マウント) |
+| L5 | Low | `geometry.cols` と `grid.weeks.length` の食い違いが起きても無言でズレる | 修正(不一致時に console.warn) |
+| L6 | Low | `typeof document` ガードは vitest では効かない(jsdom にも document がある) | 修正: エントリを `src/main.ts` に分離してガード自体を廃止 |
+| L7 | Low | ブロックの y 座標の整合テストが無い(y こそ canvasHeight の導出に依存) | 修正(`brick.rect.y === 3 + row*13` を追加) |
+| L8 | Low | `readLevelColors` にテストが無い(1レベルでも欠けると全体フォールバックする all-or-nothing 挙動) | 修正(正常系と level4 欠落時の null を追加) |
+| L9 | Low | CI が `pnpm -r test` のみで、型チェック(build の tsc)を回していない | 修正(ci.yml に `pnpm -r build` を追加) |
+| L10 | Low | フィクスチャに実ページ由来の `data-hydro-click-hmac` が残っている(資格情報ではないが不要) | 修正(hmac/nonce を scrubbed に置換。371セルは維持) |
+
+#### 再レビュー(同日、修正差分 dc6ec2f に対して)
+
+判定: **Approve**(Critical/High なし。前回13件はすべて解消を確認)。追加で出た指摘も全件対応:
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| R-M1 | Medium | ボタンの置き場所 `.js-yearly-contributions` は include-fragment の**レスポンスのルート要素そのもの**。fragment が差し替わるとボタンごと消えるが、mount 成功後に observer を切っていたため二度と復帰しない(Turbo イベントも飛ばない) | 修正: observer をページ寿命の間張り続け、`isMounted()` が false のときだけ張り直す。**さらに実ページ検証で判定の弱さを発見** — id で探すと「スナップショットに含まれるボタンの複製」を生きていると誤認するため、セッションが持つ要素の同一性(`activeButton.isConnected`)で判定するよう変更。修正前に落ちる回帰テスト2件を追加 |
+| R-L1 | Low | teardown テストの rAF キャンセル検証が空虚(ラウンド終了後に停止しており、キュー0を stop 前に確認していた) | 修正(ゲーム中の teardown で `pendingCount` が 1 → 0 になることを検証) |
+| R-L2 | Low | content script は github.com 全体にマッチするので、リポジトリ/PR ページでも observer が張りっぱなしになる | 修正(パスが1セグメント = プロフィール形式のときだけ張る) |
+| R-L3 | Low | 既存ボタンを再利用すると前のセッションのクリックハンドラが残り、1クリックで2ゲーム起動し得る | 修正(再利用せず作り直す)+ 回帰テスト |
+| R-L4 | Low | M2(クランプ)と L1(入力欄)にテストが無い | 修正(パドル位置をスタブ ctx の fillRect から読む形で検証)。**この過程でクランプ範囲の誤りを発見** — カーソルを `[0, canvasWidth]` ではなくパドル中心の可動域 `[w/2, canvasWidth-w/2]` に合わせないと、狭い盤面で最初の1〜2回の矢印入力が飲まれる |
+| R-L5 | Low | リファクタで置き去りになったコメント・README・todo.md の件数 | 修正 |
