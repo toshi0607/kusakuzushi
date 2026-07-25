@@ -80,7 +80,9 @@ describe("deriveConfig + computeLayout geometry alignment", () => {
     expect(layout.brickHeight).toBe(10);
     expect(layout.brickAreaTop).toBe(3);
 
-    // #and every column's brick x lines up with the real td's stride (3 + col*13)
+    // #and every brick's x/y lines up with the real td's stride (3 + col*13 / 3 + row*13) —
+    // y is the more fragile of the two: it depends on deriveConfig's canvasHeight
+    // formula (2*(7*cellHeight+9*gap)) rather than the more direct canvasWidth one.
     const week = Array.from({ length: 7 }, (_, row) => ({
       date: `d-${row}`,
       count: 1,
@@ -90,6 +92,7 @@ describe("deriveConfig + computeLayout geometry alignment", () => {
     const game = new Game(grid, config);
     for (const brick of game.liveBricks) {
       expect(brick.rect.x).toBe(3 + brick.col * 13);
+      expect(brick.rect.y).toBe(3 + brick.row * 13);
     }
   });
 });

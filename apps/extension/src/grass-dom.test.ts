@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import FIXTURE_HTML from "./__fixtures__/contributions.html?raw";
-import type { CellRect } from "./grass-dom";
-import { findGrassTable, GRASS_TABLE_SELECTOR, measureGeometry, readGrassCells } from "./grass-dom";
+import type { CellRect, ContributionLevel, GrassCell } from "./grass-dom";
+import { findGrassTable, GRASS_TABLE_SELECTOR, measureGeometry, readGrassCells, readLevelColors } from "./grass-dom";
 
 /** Builds a synthetic 7-row x `cols`-col rect grid: 10x10 cells, 3px gap, 13px stride. */
 function makeCellGrid(cols: number): CellRect[] {
@@ -112,5 +112,56 @@ describe("measureGeometry", () => {
     const geometry = measureGeometry(rects);
     // #then
     expect(geometry).toBeNull();
+  });
+});
+
+describe("readLevelColors", () => {
+  // GitHub's real 5-step green scale (see task context / DESIGN.md).
+  const REAL_COLORS = [
+    "rgb(239, 242, 245)",
+    "rgb(172, 238, 187)",
+    "rgb(74, 194, 107)",
+    "rgb(45, 164, 78)",
+    "rgb(17, 99, 41)",
+  ];
+
+  let styleEl: HTMLStyleElement;
+
+  function styleRuleFor(levels: readonly number[]): string {
+    return levels.map((level) => `td[data-level="${level}"] { background-color: ${REAL_COLORS[level]}; }`).join("\n");
+  }
+
+  function makeCell(level: ContributionLevel, date: string): GrassCell {
+    const el = document.createElement("td");
+    el.setAttribute("data-level", String(level));
+    document.body.appendChild(el);
+    return { date, level, el };
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    styleEl = document.createElement("style");
+    document.head.appendChild(styleEl);
+  });
+
+  it("reads each level's computed background-color, returned index 0..4 regardless of input order", () => {
+    // #given a stylesheet mapping every data-level 0-4 to GitHub's real colors,
+    // and cells supplied out of level order
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    const cells = [4, 2, 0, 3, 1].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    // #when
+    const colors = readLevelColors(cells, window);
+    // #then
+    expect(colors).toEqual(REAL_COLORS);
+  });
+
+  it("returns null when even one level (e.g. level 4) has no cell at all", () => {
+    // #given a user who has never had a level-4 day: levels 0-3 are present, 4 is not
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3]);
+    const cells = [0, 1, 2, 3].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    // #when
+    const colors = readLevelColors(cells, window);
+    // #then all-or-nothing: a single missing level falls back to a bundled theme entirely
+    expect(colors).toBeNull();
   });
 });

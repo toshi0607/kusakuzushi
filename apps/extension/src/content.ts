@@ -78,6 +78,28 @@ function prefersDarkTheme(view: Window): boolean {
   }
 }
 
+type PageColors = { foreground: string; background: string };
+
+/**
+ * Samples the page's own text and background colour. GitHub's theme is a
+ * per-account setting that can disagree with the OS `prefers-color-scheme`
+ * (light GitHub on a dark Mac is a common combination), so reading the
+ * rendered page is the only way to be sure the paddle, ball, HUD and
+ * result banner stay legible. Falls back to the bundled themes when the
+ * page doesn't give a usable answer.
+ */
+function readPageColors(doc: Document, view: Window): PageColors | null {
+  if (typeof view.getComputedStyle !== "function") return null;
+
+  const style = view.getComputedStyle(doc.body);
+  const foreground = style.color;
+  const background = style.backgroundColor;
+  const transparent = !background || background === "transparent" || background.startsWith("rgba(0, 0, 0, 0)");
+
+  if (!foreground || transparent) return null;
+  return { foreground, background };
+}
+
 /** Everything created for a single play-through; `teardown` undoes all of it. */
 type GameRuntime = {
   teardown(): void;
@@ -103,12 +125,14 @@ function createGameRuntime(
   const game = new Game(grid, config);
 
   const themeBase = prefersDarkTheme(view) ? DARK_THEME : LIGHT_THEME;
+  const pageColors = readPageColors(doc, view);
+  const foreground = pageColors?.foreground ?? themeBase.paddleColor;
   const levelColors = readLevelColors([...grassCells], view) ?? themeBase.colors;
   const overlayTheme: OverlayTheme = {
     levelColors,
-    paddleColor: themeBase.paddleColor,
-    ballColor: themeBase.ballColor,
-    textColor: themeBase.textColor,
+    paddleColor: foreground,
+    ballColor: foreground,
+    textColor: foreground,
   };
 
   const painter: TdPainter = createTdPainter(levelColors);
@@ -149,20 +173,42 @@ function createGameRuntime(
     return clientX - rect.left;
   }
 
-  function handleMouseMove(event: MouseEvent): void {
-    paddleX = canvasXFromClientX(event.clientX);
+  /**
+   * `game.movePaddle` clamps internally, but `paddleX` is our own cursor and
+   * has to be clamped too: the mousemove listener is on `window`, so on a
+   * wide monitor it is routinely far outside the ~692px board, and an
+   * unclamped value would need dozens of arrow presses to walk back into
+   * range before the paddle moved at all (same fix as apps/web/src/session.ts).
+   */
+  function setPaddleX(x: number): void {
+    paddleX = Math.min(Math.max(x, 0), config.canvasWidth);
     game.movePaddle(paddleX);
+  }
+
+  function handleMouseMove(event: MouseEvent): void {
+    setPaddleX(canvasXFromClientX(event.clientX));
   }
 
   function handleTouchMove(event: TouchEvent): void {
     const touch = event.touches[0];
     if (!touch) return;
-    paddleX = canvasXFromClientX(touch.clientX);
-    game.movePaddle(paddleX);
+    setPaddleX(canvasXFromClientX(touch.clientX));
   }
 
   function handleCanvasClick(): void {
     game.launch();
+  }
+
+  /** True while the user is typing into GitHub's own UI (search, comment box, ...). */
+  function isTextEntry(target: EventTarget | null): boolean {
+    // `view` is typed as a bare `Window`, which doesn't carry the global
+    // constructors; the intersection is the standard way to reach them
+    // without an `any`.
+    const elementCtor = (view as Window & typeof globalThis).HTMLElement;
+    if (typeof elementCtor !== "function" || !(target instanceof elementCtor)) return false;
+
+    const tag = target.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
   }
 
   function handleKeyDown(event: KeyboardEvent): void {
@@ -170,6 +216,9 @@ function createGameRuntime(
     // swallowing Space here would stop the user pressing its buttons with
     // the keyboard (same fix as the web app's session 2 review L1).
     if (game.state === "gameOver" || game.state === "clear") return;
+    // The listener is on `window`, so without this the game would eat every
+    // space typed into GitHub's search box while a round is running.
+    if (isTextEntry(event.target)) return;
 
     if (event.code === "Space") {
       event.preventDefault();
@@ -177,11 +226,9 @@ function createGameRuntime(
       return;
     }
     if (event.code === "ArrowLeft") {
-      paddleX -= ARROW_STEP_PX;
-      game.movePaddle(paddleX);
+      setPaddleX(paddleX - ARROW_STEP_PX);
     } else if (event.code === "ArrowRight") {
-      paddleX += ARROW_STEP_PX;
-      game.movePaddle(paddleX);
+      setPaddleX(paddleX + ARROW_STEP_PX);
     }
   }
 
@@ -211,7 +258,10 @@ function createGameRuntime(
     banner.style.alignItems = "center";
     banner.style.justifyContent = "center";
     banner.style.gap = "4px";
-    banner.style.background = "rgba(255, 255, 255, 0.85)";
+    // Page colours, not hardcoded white-on-default: on GitHub's dark theme a
+    // white banner would carry near-white inherited text and be unreadable.
+    banner.style.background = pageColors?.background ?? "rgba(255, 255, 255, 0.92)";
+    banner.style.color = foreground;
     banner.style.font = "12px -apple-system, sans-serif";
 
     const heading = doc.createElement("p");
@@ -300,17 +350,18 @@ export function mount(doc: Document, view: Window): Session | null {
 
   const container = findGraphContainer(doc) ?? table.parentElement ?? doc.body;
 
-  // A stale button surviving an incomplete teardown (e.g. a bfcache
-  // restore) is reused rather than duplicated.
+  // A stale button surviving an incomplete teardown — a Turbo restoration
+  // visit replays a snapshot that was cached mid-game — is reused rather
+  // than duplicated, and its label reset since no game is running yet.
   let button = doc.getElementById(BUTTON_ID) as HTMLButtonElement | null;
   if (!button) {
     button = doc.createElement("button");
     button.type = "button";
     button.id = BUTTON_ID;
     button.className = "btn btn-sm";
-    button.textContent = BUTTON_LABEL_IDLE;
     container.appendChild(button);
   }
+  button.textContent = BUTTON_LABEL_IDLE;
   const launchButton = button;
 
   let message: HTMLElement | null = null;
@@ -363,6 +414,16 @@ export function mount(doc: Document, view: Window): Session | null {
     const geometry = measureGeometry(rects);
     if (!geometry) return;
 
+    if (geometry.cols !== grid.weeks.length) {
+      // These are equal by construction (both are the same contiguous run of
+      // days folded on the same weekday boundary). If GitHub ever breaks that
+      // — a gap in the dates, a column the grid doesn't know about — the
+      // bricks silently stop lining up with the grass, so say so out loud.
+      console.warn(
+        `kusakuzushi: grass has ${geometry.cols} columns but the grid folded to ${grid.weeks.length}; bricks may not line up.`,
+      );
+    }
+
     // A retry re-enters `startGame` *after* teardown has restored every
     // repainted `td`, so the second round starts from the untouched grass.
     const created = createGameRuntime(doc, view, grid, grassCells, geometry, (restart) => {
@@ -391,33 +452,87 @@ export function mount(doc: Document, view: Window): Session | null {
     clearMessage();
     launchButton.removeEventListener("click", handleButtonClick);
     launchButton.remove();
-    doc.removeEventListener("turbo:before-render", stop);
-    view.removeEventListener("pagehide", stop);
     activeSession = null;
   }
-
-  doc.addEventListener("turbo:before-render", stop);
-  view.addEventListener("pagehide", stop);
 
   activeSession = { stop };
   return activeSession;
 }
 
-// The extension's actual entry point. Guarded so this module stays
-// side-effect-free (and therefore directly testable via `mount`/`Session`)
-// when imported from vitest under jsdom without a real page.
-if (typeof document !== "undefined") {
-  const boot = (): void => {
-    mount(document, window);
-  };
+export type AutoMount = { stop(): void };
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
+/**
+ * Keeps the extension mounted across the page's whole lifecycle.
+ *
+ * The graph is NOT in the profile page's initial HTML: GitHub streams it in
+ * with an `<include-fragment>` that resolves well after `document_idle`, so
+ * a content script that only tries once at startup finds no table and gives
+ * up forever. The same is true after a Turbo navigation — `turbo:load`
+ * fires before the fragment lands. So every entry point below re-runs
+ * `mount`, and when it comes up empty we watch the DOM until the grass
+ * actually appears.
+ */
+export function autoMount(doc: Document, view: Window): AutoMount {
+  let observer: MutationObserver | null = null;
+
+  function unwatch(): void {
+    observer?.disconnect();
+    observer = null;
   }
 
-  document.addEventListener("turbo:load", boot);
-  document.addEventListener("turbo:before-render", () => activeSession?.stop());
-  window.addEventListener("pagehide", () => activeSession?.stop());
+  function tryMount(): void {
+    if (mount(doc, view)) {
+      unwatch();
+      return;
+    }
+    if (observer) return;
+
+    const observerCtor = (view as Window & typeof globalThis).MutationObserver;
+    if (typeof observerCtor !== "function") return;
+
+    const watcher = new observerCtor(() => {
+      if (findGrassTable(doc)) tryMount();
+    });
+    watcher.observe(doc.documentElement, { childList: true, subtree: true });
+    observer = watcher;
+  }
+
+  // `turbo:before-cache` fires *before* `turbo:before-render`, and it is the
+  // one that matters: Turbo snapshots the DOM there for restoration visits.
+  // Tearing down any later would cache the greyed-out grass and the overlay
+  // canvas, and the user would meet them again on Back.
+  function reset(): void {
+    unwatch();
+    activeSession?.stop();
+  }
+
+  // A bfcache restore replays the page with the button already removed by
+  // `pagehide`, so `pageshow` has to put it back.
+  function handlePageShow(): void {
+    tryMount();
+  }
+
+  doc.addEventListener("turbo:load", tryMount);
+  doc.addEventListener("turbo:before-cache", reset);
+  doc.addEventListener("turbo:before-render", reset);
+  view.addEventListener("pagehide", reset);
+  view.addEventListener("pageshow", handlePageShow);
+
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", tryMount);
+  } else {
+    tryMount();
+  }
+
+  return {
+    stop(): void {
+      reset();
+      doc.removeEventListener("turbo:load", tryMount);
+      doc.removeEventListener("turbo:before-cache", reset);
+      doc.removeEventListener("turbo:before-render", reset);
+      doc.removeEventListener("DOMContentLoaded", tryMount);
+      view.removeEventListener("pagehide", reset);
+      view.removeEventListener("pageshow", handlePageShow);
+    },
+  };
 }
