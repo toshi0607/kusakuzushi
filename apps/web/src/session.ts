@@ -7,6 +7,7 @@
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
+import { createPaddleRail } from "./paddle-rail";
 import { buildIntentUrl, saveResultImage } from "./share";
 import { watchTheme } from "./theme";
 
@@ -41,6 +42,11 @@ export function createSession(
 ): () => void {
   const game = new Game(grid);
 
+  // The board and the touch rail move together as one block: the rail is
+  // only meaningful directly under the paddle track it mirrors.
+  const stack = document.createElement("div");
+  stack.className = "play-stack";
+
   const wrapper = document.createElement("div");
   wrapper.className = "play-area";
 
@@ -50,9 +56,14 @@ export function createSession(
   canvas.className = "game-canvas";
   wrapper.appendChild(canvas);
 
+  // Touch devices have neither a click nor a Space key, and the board
+  // ignores touches — so point at the one surface that does answer them.
+  // The rail carries its own label for the gesture itself.
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+
   const guide = document.createElement("div");
   guide.className = "overlay guide-overlay";
-  guide.textContent = "クリック / Space で発射";
+  guide.textContent = coarsePointer ? "下のバーで発射" : "クリック / Space で発射";
   guide.hidden = true;
   wrapper.appendChild(guide);
 
@@ -61,7 +72,8 @@ export function createSession(
   result.hidden = true;
   wrapper.appendChild(result);
 
-  container.appendChild(wrapper);
+  stack.appendChild(wrapper);
+  container.appendChild(stack);
 
   const maybeCtx = canvas.getContext("2d");
   if (!maybeCtx) {
@@ -75,18 +87,44 @@ export function createSession(
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealStartMs = performance.now();
 
+  /**
+   * Holds `paddleX` inside the paddle centre's own range rather than
+   * [0, canvasWidth]. `paddleX` is the cursor the arrow keys move from, so
+   * a value the paddle can never reach would swallow the first key presses.
+   */
+  function clampPaddleX(x: number): number {
+    const half = game.paddleState.width / 2;
+    return Math.min(Math.max(x, half), DEFAULT_CONFIG.canvasWidth - half);
+  }
+
   function canvasXFromClientX(clientX: number): number {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
-    return (clientX - rect.left) * scaleX;
+    return clampPaddleX((clientX - rect.left) * scaleX);
+  }
+
+  /**
+   * True when the rail is on screen and should own touch instead of the
+   * board: a finger on the board hides the ball, and a tap that misses the
+   * rail by a few pixels would fire before the player has aimed.
+   *
+   * Asking the rail — rather than re-testing `(pointer: coarse)` here — is
+   * what keeps the two in step. A touchscreen laptop reports `pointer: fine`,
+   * so the stylesheet leaves the rail hidden; if this said "touch" instead,
+   * that machine would have no touch surface at all.
+   */
+  function railOwnsTouch(event: PointerEvent): boolean {
+    return event.pointerType === "touch" && rail.isVisible();
   }
 
   function handlePointerMove(event: PointerEvent): void {
+    if (railOwnsTouch(event)) return;
     paddleX = canvasXFromClientX(event.clientX);
     game.movePaddle(paddleX);
   }
 
-  function handlePointerDown(): void {
+  function handlePointerDown(event: PointerEvent): void {
+    if (railOwnsTouch(event)) return;
     game.launch();
   }
 
@@ -116,13 +154,26 @@ export function createSession(
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
 
+  const rail = createPaddleRail({
+    canvasWidth: DEFAULT_CONFIG.canvasWidth,
+    paddleWidth: game.paddleState.width,
+    onMove: (canvasX) => {
+      paddleX = clampPaddleX(canvasX);
+      game.movePaddle(paddleX);
+    },
+    onLaunch: () => {
+      game.launch();
+    },
+  });
+  stack.appendChild(rail.element);
+
   function applyKeyboardMovement(dt: number): void {
     if (heldKeys.size === 0) return;
     let delta = 0;
     if (heldKeys.has("ArrowLeft")) delta -= KEY_MOVE_SPEED_PX_PER_SEC * dt;
     if (heldKeys.has("ArrowRight")) delta += KEY_MOVE_SPEED_PX_PER_SEC * dt;
     if (delta === 0) return;
-    paddleX = Math.min(Math.max(paddleX + delta, 0), DEFAULT_CONFIG.canvasWidth);
+    paddleX = clampPaddleX(paddleX + delta);
     game.movePaddle(paddleX);
   }
 
@@ -209,6 +260,7 @@ export function createSession(
   function updateOverlay(): void {
     const state = game.state;
     guide.hidden = !(state === "ready" || state === "ballLost");
+    rail.setActive(state !== "gameOver" && state !== "clear");
 
     if (state === "gameOver" || state === "clear") {
       if (lastResultState !== state) {
@@ -235,6 +287,10 @@ export function createSession(
     game.update(dt);
     const reveal = reducedMotion ? 1 : Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
     render(ctx, game, getTheme(), { reveal });
+    // Read the paddle back from the game rather than from `paddleX`: the
+    // game clamps the centre to the track, so this is the only value that
+    // actually matches what the player sees on the board.
+    rail.setPaddleCenter(game.paddleState.x + game.paddleState.width / 2);
     updateOverlay();
 
     // Terminal states never leave without a full session restart
@@ -265,6 +321,7 @@ export function createSession(
     canvas.removeEventListener("pointerdown", handlePointerDown);
     window.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("keyup", handleKeyUp);
-    wrapper.remove();
+    rail.destroy();
+    stack.remove();
   };
 }
