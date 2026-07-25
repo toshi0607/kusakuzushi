@@ -282,9 +282,44 @@ button:disabled {
   letter-spacing: 0.06em;
 }
 
-.result-stats {
-  margin: 0;
-  font-size: 1.1rem;
+.result-stat-grid {
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+}
+
+.result-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.result-stat-label {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.result-stat-value {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.harvest-bar {
+  display: flex;
+  gap: 3px;
+}
+
+.harvest-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--ridge);
+}
+
+/* 刈り取った分だけ強い緑 — 緑は草(コンテンツ)にだけ許される */
+.harvest-cell-filled {
+  background: #26a641;
 }
 
 .result-actions {
