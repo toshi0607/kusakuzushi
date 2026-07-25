@@ -1159,8 +1159,8 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
 | `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト2種で exit 1 を実測(下記) |
 | `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
-| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED | secret 登録後の初回デプロイが検証。足りなければスコープを足す |
-| private のままブランチ保護が設定できる(GitHub のプラン依存) | UNVERIFIED | `gh api` の応答で判定。不可ならパブリック化時に実施 |
+| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: トークンはまだ存在せず(作成はユーザー、Claude はクレデンシャルを扱わない)、スコープの十分性はトークンを持たずには確かめられない。緩和策: 不足時の失敗は wrangler の認証エラー(`Authentication error [code: 10000]`)として**デプロイ前に**出るので、現行の本番配信は落ちない。マージ後の初回 `deploy-*` が実際の検証になり、足りなければスコープを足して再実行する |
+| private のままブランチ保護が設定できる(GitHub のプラン依存) | UNVERIFIED-ACCEPTED(2026-07-26) | **この PR の成否に影響しない**(デプロイ経路はブランチ保護に依存していない)。手元の gh トークンに `user` スコープが無く `gh api user` の `plan` が読めないため(実測: `plan: None`)、確定は PUT を投げるしかない = リポジトリ設定の変更なのでユーザー承認が要る。緩和策: 保護が張れなくても自動デプロイは動く。パブリック化のタイミングで必ず設定する(そこでは無料で使える) |
 
 ### 変えたもの
 
