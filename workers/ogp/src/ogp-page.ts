@@ -40,9 +40,14 @@ export function buildOgpHtml(user: string, score: number, percentage: number): s
     <meta property="og:title" content="${escapedTitle}" />
     <meta property="og:description" content="${escapedDescription}" />
     <meta property="og:image" content="${escapedImageUrl}" />
+    <!-- 寸法を明示しておくと、画像を取得する前に large card レイアウトが確定する。 -->
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:url" content="${escapedShareUrl}" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="草崩し" />
+    <meta property="og:locale" content="ja_JP" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${escapedImageUrl}" />
   </head>

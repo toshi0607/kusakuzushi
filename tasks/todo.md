@@ -310,7 +310,55 @@ pnpm --filter @kusakuzushi/extension build
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
 - 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
 
-## セッション8: Lighthouse によるパフォーマンス改善 + 継続計測(実装中)
+## セッション8: トップページの OGP 画像(完了 2026-07-25)
+
+### 症状と原因(2026-07-25 実測)
+
+ユーザー報告: Slack に `https://kusakuzushi.toshi0607.com` を貼ってもカード画像が出ない。
+
+- 原因: **トップページ(Pages が返す `apps/web/index.html`)に OGP タグが1つも無い**。Slack が出していたのは `<title>`(草崩し)と `<meta name="description">` だけ。X でも同様に画像は出ない
+- `/share/{user}` は無関係(正常)。Slackbot の UA `Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)` は `crawler.ts` の `"bot"` に一致し、curl 実測でも OGP HTML(og:image + twitter:card)が返り、`og.png` は 200 / image/png / 48,932 bytes
+
+### Constraints(セッション8)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 新しい依存を増やさない(OGP 画像生成に puppeteer 等を入れない) | DESIGN.md §4 / constraints.md | package.json diff が空 |
+| 共有画像は閲覧者テーマに関係なく常に「夜の畑」(ダーク固定) | share.ts の SHARE_COLORS コメント(ブランド判断) | 生成画像の背景が `#0c110d` |
+| ワードマークは demo-grid の実グリフを使う(独自に描き直さない) | lessons.md 2026-07-25(黙った代替グリフ事故) | 生成コードが `buildDemoGrid()` を import している |
+| 生成物(PNG)は再現手順ごとコミットする | unknowns.md 1.3(参照可能であること) | tools/ にジェネレータが存在し手順がヘッダにある |
+| ゲームバランス・core を変更しない | 全セッション共通 | `git diff main -- packages/core` が空 |
+
+### Assumptions(セッション8)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| トップの OGP 欠落が Slack で画像が出ない原因(share は正常) | VERIFIED | 2026-07-25 curl 実測(上記「症状と原因」) |
+| Slackbot は `crawler.ts` の `"bot"` 部分一致で既にクローラー判定される | VERIFIED | 同上(Slackbot UA で /share/ が OGP HTML を返す) |
+| `apps/web/public/` は Vite が dist へコピーし `/og.png` で配信される | VERIFIED | 2026-07-25 `pnpm -r build` 後 `apps/web/dist/og.png`(1200x630, 68,138 bytes)が存在。dev でも `HEAD /og.png` → 200 image/png |
+| Vite dev は `tools/*.html` を任意ページとして配信でき、既定ビルド入力は index.html のみ(tools がバンドルに混ざらない) | VERIFIED | 2026-07-25 dev で `/tools/og-card.html` が描画。build 後 `find dist -name "*og-card*"` が空、JS ハッシュも本番と同一(index-CWyvfmJ6.js) |
+
+### タスク
+
+- [x] `apps/web/tools/og-card.{html,ts}` + `og-card-main.ts` — 1200x630 のトップ用カードを canvas で合成するジェネレータ。`buildDemoGrid()` + core `render()` + share.ts / theme.ts のトークンを再利用し、attract 画面と同じ盤面を描く
+  - 盤面(2:1)は草の下に約 190px の空白帯があるので、単色の帯だけを切り落として上下 2 スライスを詰めて描く。境界は core の `computeLayout` から導出
+  - `SHARE_COLORS` / `DISPLAY_FONT` / `BODY_FONT`(share.ts)と `WEB_DARK_THEME`(theme.ts)を export して再利用 — カード側で色やフォントを再定義しない
+- [x] `apps/web/vite.config.ts` — dev 専用エンドポイント `/__save-og-card` を追加し、ボタン押下で `public/og.png` を直接上書き(ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため)
+- [x] 生成した PNG を `apps/web/public/og.png` としてコミット — 1200x630 / 68,138 bytes。フルサイズで目視確認(DotGothic16 のドット字形が出ていること、ワードマークが KUSAKUZUSHI で崩れていないこと)
+- [x] `apps/web/index.html` に OGP/Twitter メタを追加(og:type/site_name/locale/title/description/url/image/image:type/width/height/alt、twitter:card/title/description/image、canonical)
+  - 実測: dev の DOM から 14 タグすべてを確認、`HEAD /og.png` → 200 image/png、アトラクト canvas も従来どおり描画、console エラー 0
+- [x] `workers/ogp` の share ページにも og:image:type/width/height と og:locale を追加(Slack/Facebook の large card 判定を確実にする)+ 回帰テスト 1 件
+- [x] `pnpm -r test`(174 tests / 4 パッケージ)/ `pnpm -r build` exit 0
+- [x] PR → CI green → マージ → Pages + Worker デプロイ → 本番 curl でメタ確認 — https://github.com/toshi0607/kusakuzushi/pull/15(CI pass 38s → merge d0787fd)、`wrangler pages deploy`(59aa94b0)、`wrangler deploy`(worker version 5d018091)
+  - 本番実測(2026-07-25): `/` は素の curl・Slackbot UA とも同一 3,413 bytes で og:type/site_name/locale/title/description/url/image(+type/width/height/alt)/twitter:card/canonical を返す。`/og.png` は 200 image/png 68,138 bytes(コミットした PNG とサイズ一致)。`/share/{user}` も og:image:type/width/height + og:locale を返す
+  - 未実施: Slack への実貼り確認はユーザー側。**Slack はアンフォールを URL 単位でキャッシュするので、以前貼った URL は同じカードのままになることがある**(新しいクエリ付き URL を貼るか時間を置く)
+
+### セッション8 の設計判断メモ
+
+- **トップは静的 PNG、share は Worker 動的**という役割分担にした。トップ URL は最も貼られるので、表示のたびに satori + Google Fonts に依存させたくない(それらが落ちてもカードは出る)。share カードはスコア依存なので動的でしか作れない
+- 途中で作った盤面の「空白帯カット」は、盤面 2:1 の下半分がほぼ無地であることに依存している。core の `computeLayout` が変わっても追従するよう境界値はそこから導出済み
+- ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため、dev 専用エンドポイント(vite.config.ts)で `public/og.png` を直接書く方式にした。結果として再生成手順が「開いてボタンを押す」だけになった
+## セッション9: Lighthouse によるパフォーマンス改善 + 継続計測(実装中)
 
 対象は apps/web(公開ページ)のみ。拡張は計測対象外(ページ所有者が GitHub)。
 
@@ -407,9 +455,9 @@ pnpm --filter @kusakuzushi/extension build
 - 2026-07-25 (S6): デプロイ後の本番確認で画面が真っ白になり production 障害に見えたが、**原因はブラウザペーン側の HTTP キャッシュに残った切り詰めレスポンス**だった(ネットワークログに `net::ERR_CONNECTION_CLOSED` あり)。判別方法: ページ内で `fetch(url)` と `fetch(url, {cache:"reload"})` の長さを比較 — キャッシュ 1,535 文字 / 実体 21,622 文字で確定した。origin 側は curl で dist と byte 一致、同一成果物が pages.dev と localhost では正常描画。切り詰めた JS はパースが通ってしまうと **console エラーを出さずに何もしない**ため「JS が実行されていない」ようにしか見えない。真っ白のときは (1) curl で HTML/JS を dist と shasum 比較、(2) pages.dev で同一成果物を確認、(3) ページ内 fetch のキャッシュ有無比較、の順で切り分ける
 - 2026-07-25: Claude Code の Browser ペーンは visibilityState=hidden のため rAF・setTimeout が完全停止する。ライブプレイ検証は「requestAnimationFrame をキュー化して javascript_exec 内で同期的に drain する」ハーネスで実施(1フレーム=100ms の合成タイムスタンプ)。加えて viewport が一時的に 0px に崩壊する事象あり — resize_window(desktop) で復旧。getBoundingClientRect が 2px を返したらこれを疑う
 
-- 2026-07-25 (S8): **lhci の設定切り替えに `LHCI_` 始まりの環境変数を使ってはいけない**。lhci は `LHCI_*` を自分の CLI 引数として読むため、`LHCI_TARGET=production` が upload の `--target production` になり `Invalid values: target` で落ちる。`KUSAKUZUSHI_LH_TARGET` に改名して解消
-- 2026-07-25 (S8): lhci の assert 既定 `aggregationMethod` は **optimistic**(3 回のうち最良回だけを見る)。回帰ゲートとしては甘いので `median` を明示している
-- 2026-07-25 (S8): Cloudflare Pages は存在しないパスに index.html を **200** で返す。`/robots.txt` が HTML になっていて Lighthouse SEO が 92 に落ちていた。`apps/web/public/` に置けば解決する(404 ページの挙動を前提にしないこと)
+- 2026-07-25 (S9): **lhci の設定切り替えに `LHCI_` 始まりの環境変数を使ってはいけない**。lhci は `LHCI_*` を自分の CLI 引数として読むため、`LHCI_TARGET=production` が upload の `--target production` になり `Invalid values: target` で落ちる。`KUSAKUZUSHI_LH_TARGET` に改名して解消
+- 2026-07-25 (S9): lhci の assert 既定 `aggregationMethod` は **optimistic**(3 回のうち最良回だけを見る)。回帰ゲートとしては甘いので `median` を明示している
+- 2026-07-25 (S9): Cloudflare Pages は存在しないパスに index.html を **200** で返す。`/robots.txt` が HTML になっていて Lighthouse SEO が 92 に落ちていた。`apps/web/public/` に置けば解決する(404 ページの挙動を前提にしないこと)
 
 ## Review
 
