@@ -298,6 +298,63 @@ pnpm --filter @kusakuzushi/extension build
   - 検証(実測): 1280px で草下端との間隔 31px / パドルとの間隔 19px、375px で 30px / 18px。light・dark 両テーマでスクリーンショット確認
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/11(CI pass 32s → merge 55741e3)、`wrangler pages deploy`(d6a5e170)、本番 https://kusakuzushi.toshi0607.com/?user=toshi0607 で間隔 31px / 19px を実測
 
+## セッション8: モバイル操作 — 盤面下のパドルレール(実装中)
+
+ユーザー指摘(2026-07-25): 「スマホだと全然できないので、描画領域下で触れる形でもバーを左右に動かせるようにしてください」
+
+問題の実体: パドル操作は canvas 上の `pointermove` だけ。タッチでは (1) 指を高さ ~170px の盤面に置くのでボールとパドルが指の下に隠れる、(2) `pointerdown` が即 `launch()` なので狙いを定める前に発射される、(3) 指を離すと追従が切れる。結果、スマホでは実質操作不能。
+
+解: 盤面の**すぐ下**に、パドルの可動域を 1:1 で写した専用のタッチレールを置く。レール幅 = canvas の CSS 幅なので、指の x はそのまま「真下にパドルが来る」絶対マッピングになる。押している間は移動だけ、**指を離した瞬間に発射**(狙ってから撃てる)。
+
+### Constraints(セッション8 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| ゲームバランス(core)は変えない | セッション3以降の継続制約 | `git diff main...HEAD -- packages/core` が0行 |
+| 緑はコンテンツ(草)専用。UI 操作系はアンバー | DESIGN-VISUAL §1 | レールのハンドルは `--marquee` |
+| canvas 内部解像度 960x480 は不変 | DESIGN-VISUAL §3 | canvas.width/height 無変更 |
+| デスクトップの見え方は変えない | 最小差分 | `@media (pointer: coarse)` でのみ表示 |
+| 装飾はシグネチャー(アトラクト)以外に足さない | DESIGN-VISUAL §0 | レールは canvas と同じ枠(`--ridge` 1px / 角丸 8px)だけ |
+
+### Assumptions(セッション8 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| レール幅と canvas の CSS 幅が一致する(比例変換で指の真下にパドルが来る) | VERIFIED | 同一 `.play-stack`(flex column)の直下で両方 `width: 100%` — 実測で確認(下記検証記録) |
+| jsdom 25 に `PointerEvent` / `setPointerCapture` は無い | VERIFIED | 2026-07-25 実測(`typeof PointerEvent === "undefined"`、`setPointerCapture is not a function`)。→ ドラッグ追従は暗黙のポインタキャプチャに頼らず window リスナで実装し、テストは `MouseEvent("pointerdown")` で駆動する |
+| `(pointer: coarse)` が「主入力がタッチ」の判定として妥当 | VERIFIED | Baseline(Media Queries L4、全モダンブラウザ対応)。ハイブリッド機ではレールが出るが、マウスでも操作可能なので実害なし |
+
+### タスク
+
+- [x] `apps/web/src/paddle-rail.ts`: レールの生成・ポインタ処理・ハンドル位置反映(DOM 依存を1ファイルに閉じる)
+- [x] `apps/web/src/session.ts`: `.play-stack` でレールを盤面の下に組み込み、rAF ループでハンドルを**実パドル位置**(`game.paddleState`)に追従。ラウンド終了時に `setActive(false)`
+- [x] `apps/web/src/style.css`: `.play-stack` / `.paddle-rail` / ハンドル / ヒント / 無効化スタイル
+- [x] タッチ端末では発射ガイドの文言を「タップで発射」に(クリック / Space は存在しない操作)
+- [x] `apps/web` に jsdom を追加(環境指定は新規テストの docblock `@vitest-environment jsdom` のみ。既存3ファイルの実行環境は node のまま=無変更)し `paddle-rail.test.ts` 12件
+- [x] `pnpm -r test` 186/186 pass(web 40件)/ `pnpm -r build` exit 0
+- [x] テストが実際に回帰を捕まえることをミューテーションで確認 — `if (!active) return;` を削ると1件 fail、発射を pointerup → pointerdown に変えると4件 fail
+- [x] 実機相当の検証でパドルが指の x に一致することを実測(下記「検証記録」)
+- [x] DESIGN-VISUAL.md §3 にタッチ操作の節を追加
+- [ ] フェーズゲート: reviewer(opus) → PR → CI green → マージ → デプロイ → 本番確認
+
+### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
+
+Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Notes 既知)ため、セッション2/4と同じ **rAF キュー化ハーネス**で検証した。今回はさらに `matchMedia("(pointer: coarse)")` を true に差し替えたうえで `import("/src/app.ts")` → `initApp()` でアプリを再起動し、**タッチ端末の分岐そのもの**を動かしている。
+
+| 検証項目 | 実測 |
+|---|---|
+| レール幅 = canvas 幅 | 両方 left=16 / width=343、間隔 8px(Assumption 検証) |
+| 発射ガイドの文言(coarse) | 「タップで発射」 |
+| レール 25% をタッチ | パドル中心 239.5(期待 240)、ハンドル `left: 25%` |
+| 90% へドラッグ | パドル中心 863.5(期待 864)、ハンドル `left: 90%` |
+| レール右端の外までドラッグ | パドル中心 919.5(可動域上限 920 にクランプ)、ハンドル `95.8333%`(ハンドル右端がちょうど 100%) |
+| 押している間 | ガイド表示のまま = 未発射 |
+| 指を離した直後 | ガイドが消える = 発射 |
+| 初回タッチ | `data-touched="true"` が付き、ヒントの computed opacity が 0(トランジション無効時に実測。ハーネスは実描画しないので通常時は 1 のまま止まる) |
+| ライト/ダーク | 375px でスクリーンショット確認。ヒントは 1 行(高さ 11px)に収まる |
+
+- **CSS の `@media (pointer: coarse)` だけは実測できていない**(ペーンにも実 Chrome にもタッチエミュレーションが無く、iOS シミュレータは Xcode 未導入で利用不可)。JS 側の coarse 分岐は上記のとおりスタブで実測済み。実機での最終確認はデプロイ後に手元のスマホで行う
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する

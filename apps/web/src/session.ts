@@ -7,6 +7,7 @@
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
+import { createPaddleRail } from "./paddle-rail";
 import { buildIntentUrl, saveResultImage } from "./share";
 import { watchTheme } from "./theme";
 
@@ -41,6 +42,11 @@ export function createSession(
 ): () => void {
   const game = new Game(grid);
 
+  // The board and the touch rail move together as one block: the rail is
+  // only meaningful directly under the paddle track it mirrors.
+  const stack = document.createElement("div");
+  stack.className = "play-stack";
+
   const wrapper = document.createElement("div");
   wrapper.className = "play-area";
 
@@ -50,9 +56,13 @@ export function createSession(
   canvas.className = "game-canvas";
   wrapper.appendChild(canvas);
 
+  // Touch devices have neither a click nor a Space key — name the gesture
+  // they actually have. The rail carries its own label for its own gesture.
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+
   const guide = document.createElement("div");
   guide.className = "overlay guide-overlay";
-  guide.textContent = "クリック / Space で発射";
+  guide.textContent = coarsePointer ? "タップで発射" : "クリック / Space で発射";
   guide.hidden = true;
   wrapper.appendChild(guide);
 
@@ -61,7 +71,8 @@ export function createSession(
   result.hidden = true;
   wrapper.appendChild(result);
 
-  container.appendChild(wrapper);
+  stack.appendChild(wrapper);
+  container.appendChild(stack);
 
   const maybeCtx = canvas.getContext("2d");
   if (!maybeCtx) {
@@ -115,6 +126,19 @@ export function createSession(
   canvas.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
+
+  const rail = createPaddleRail({
+    canvasWidth: DEFAULT_CONFIG.canvasWidth,
+    paddleWidth: game.paddleState.width,
+    onMove: (canvasX) => {
+      paddleX = canvasX;
+      game.movePaddle(canvasX);
+    },
+    onLaunch: () => {
+      game.launch();
+    },
+  });
+  stack.appendChild(rail.element);
 
   function applyKeyboardMovement(dt: number): void {
     if (heldKeys.size === 0) return;
@@ -209,6 +233,7 @@ export function createSession(
   function updateOverlay(): void {
     const state = game.state;
     guide.hidden = !(state === "ready" || state === "ballLost");
+    rail.setActive(state !== "gameOver" && state !== "clear");
 
     if (state === "gameOver" || state === "clear") {
       if (lastResultState !== state) {
@@ -235,6 +260,10 @@ export function createSession(
     game.update(dt);
     const reveal = reducedMotion ? 1 : Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
     render(ctx, game, getTheme(), { reveal });
+    // Read the paddle back from the game rather than from `paddleX`: the
+    // game clamps the centre to the track, so this is the only value that
+    // actually matches what the player sees on the board.
+    rail.setPaddleCenter(game.paddleState.x + game.paddleState.width / 2);
     updateOverlay();
 
     // Terminal states never leave without a full session restart
@@ -265,6 +294,7 @@ export function createSession(
     canvas.removeEventListener("pointerdown", handlePointerDown);
     window.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("keyup", handleKeyUp);
-    wrapper.remove();
+    rail.destroy();
+    stack.remove();
   };
 }
