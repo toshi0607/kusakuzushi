@@ -70,7 +70,7 @@
 - Cloudflare 公式プラグイン(cloudflare@cloudflare)インストール済み — **次セッションから Cloudflare MCP サーバーが使える**(OAuth は初回ツール使用時に自動)。DNS 操作もそちらで可能になる見込み
 - git 運用: セッション2から PR 方式(branch → PR → CI green → API マージ)。`gh pr merge` はタイムアウトするので `gh api -X PUT .../merge` を使う
 
-## セッション3: OGP Worker + 演出(進行中 2026-07-25)
+## セッション3: OGP Worker + 演出(完了 2026-07-25)
 
 ### Constraints(セッション3 追加分)
 
@@ -97,7 +97,7 @@
 - [x] wrangler deploy(route: kusakuzushi.toshi0607.com/share/*、version e8b47efc)+ web 再デプロイ(新バンドルに share/ URL を確認)
 - [x] 検証: 下記「セッション3 検証記録」参照。X/Slack の実クローラー UA でのエンドツーエンド(HTML → og:image 抽出 → PNG 取得)を実証
 - [x] フェーズゲート: reviewer(opus) — Approve(Critical/High/Medium なし、Low 3件は同セッションで全て修正・本番検証済み。詳細は Review 欄)
-- [ ] PR → CI green → API マージ、セッション4 への引き継ぎ記録
+- [x] PR → CI green → API マージ — https://github.com/toshi0607/kusakuzushi/pull/5(CI test pass 24s → merge 1e16afc)。セッション4 への引き継ぎは下記
 
 ### セッション3 検証記録(2026-07-25 本番実測)
 
