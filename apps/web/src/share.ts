@@ -53,7 +53,7 @@ export type ShareResult = {
  * 共有画像は閲覧者のテーマに関係なく常に「夜の畑」で合成する
  * (タイムライン上で見た目が揺れないようにするブランド判断)。
  */
-const SHARE_COLORS = {
+export const SHARE_COLORS = {
   soil: "#0c110d",
   ridge: "#28332a",
   ink: "#e4ede2",
@@ -63,8 +63,8 @@ const SHARE_COLORS = {
 
 const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
-const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
-const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
+export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
+export const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
 
 /**
  * ゲーム canvas の最終盤面を 1200x630(OGP 比)のリザルトカードに合成する。
@@ -82,7 +82,9 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   ctx.fillStyle = SHARE_COLORS.soil;
   ctx.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
 
-  const boardWidth = 880;
+  // 盤面は 8:3。880 幅だとカード下部に 130px の空白が残るので、左右 60px の
+  // 余白まで広げて縦の重心を戻す(1080 x 405 + 見出し行で 630 をほぼ使い切る)。
+  const boardWidth = 1080;
   const boardHeight = Math.round((boardWidth * source.height) / source.width);
   const boardX = (SHARE_WIDTH - boardWidth) / 2;
   const boardY = 44;

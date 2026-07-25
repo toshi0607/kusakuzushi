@@ -109,7 +109,7 @@ function buildFormView(initialUsername: string, errorMessage: string | undefined
 function buildLoadingView(username: string): HTMLElement {
   const section = document.createElement("section");
   section.className = "view view-loading";
-  // canvas と同寸(アスペクト比 2:1)の枠を先に置き、
+  // canvas と同寸(アスペクト比 8:3)の枠を先に置き、
   // デモ → ローディング → プレイでレイアウトが往復しないようにする
   const placeholder = document.createElement("div");
   placeholder.className = "board-placeholder";

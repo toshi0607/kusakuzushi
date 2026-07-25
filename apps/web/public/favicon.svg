@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="草崩し">
+  <!--
+    16 単位の viewBox に整数座標だけで置く。DESIGN-VISUAL 冒頭のとおり
+    「草グラフは本物のピクセルグリッド」なので、16px 表示で 1 図形 = 整数ピクセルに
+    落ちるよう設計する(角丸やアンチエイリアスでにじませない)。
+
+    配色は DESIGN-VISUAL 1章のトークン。緑は草(ブロック)だけに使い、
+    地は soil(夜の畑)、ボールとパドルは marquee のアンバー。
+    3 つのブロックは左から濃 → 淡 で、level = HP が減った状態を表す
+    (ゲーム規則どおり、当たるほど色が薄くなる)。淡いブロックの真下にボールがいる。
+
+    ボールだけは正方形。ゲーム本体は円で描いているが、16px では半径 1.5px の円が
+    十字のにじみになって読めない。元祖 Breakout のボールも正方形なので題材からも外れない。
+    パドルは本体と同じピル形(core の renderer は radius = height / 2 で描いている)。
+  -->
+  <rect width="16" height="16" rx="2" fill="#0C110D"/>
+  <rect x="1" y="2" width="4" height="4" fill="#30a14e"/>
+  <rect x="6" y="2" width="4" height="4" fill="#40c463"/>
+  <rect x="11" y="2" width="4" height="4" fill="#9be9a8"/>
+  <rect x="11" y="8" width="3" height="3" fill="#FFB224"/>
+  <rect x="4" y="12" width="8" height="2" rx="1" fill="#FFB224"/>
+</svg>
