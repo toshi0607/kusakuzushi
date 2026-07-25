@@ -40,6 +40,14 @@ describe("buildOgpHtml", () => {
     );
   });
 
+  it("declares the image dimensions so crawlers can pick the large-card layout", () => {
+    // #given / #when
+    const html = buildOgpHtml("toshi0607", 12340, 87);
+    // #then
+    expect(html).toContain('<meta property="og:image:width" content="1200" />');
+    expect(html).toContain('<meta property="og:image:height" content="630" />');
+  });
+
   it("formats a large score with thousands separators", () => {
     // #given / #when
     const html = buildOgpHtml("octocat", 1234567, 50);
