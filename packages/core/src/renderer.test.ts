@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Game } from "./game";
+import { DEFAULT_CONFIG, Game } from "./game";
 import type { Cell, ContributionGrid } from "./model";
 import { LIGHT_THEME, render } from "./renderer";
 
@@ -16,12 +16,14 @@ function makeGrid(rowLevels: Array<0 | 1 | 2 | 3 | 4>): ContributionGrid {
 type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
 type RoundRectCall = { fillStyle: string; x: number; y: number; width: number; height: number; radius: number };
 type FillTextCall = { font: string; text: string };
+type ArcCall = { fillStyle: string; x: number; y: number; radius: number };
 
 type FakeContext = {
   ctx: CanvasRenderingContext2D;
   fillRects: FillRectCall[];
   roundRects: RoundRectCall[];
   fillTexts: FillTextCall[];
+  arcs: ArcCall[];
 };
 
 /**
@@ -33,6 +35,7 @@ function makeFakeContext(withRoundRect = false): FakeContext {
   const fillRects: FillRectCall[] = [];
   const roundRects: RoundRectCall[] = [];
   const fillTexts: FillTextCall[] = [];
+  const arcs: ArcCall[] = [];
   const stub = {
     fillStyle: "",
     globalAlpha: 1,
@@ -43,7 +46,9 @@ function makeFakeContext(withRoundRect = false): FakeContext {
       fillRects.push({ fillStyle: String(this.fillStyle), x, y, width, height });
     },
     beginPath(): void {},
-    arc(): void {},
+    arc(x: number, y: number, radius: number): void {
+      arcs.push({ fillStyle: String(this.fillStyle), x, y, radius });
+    },
     fill(): void {},
     fillText(text: string): void {
       fillTexts.push({ font: String(this.font), text });
@@ -56,7 +61,7 @@ function makeFakeContext(withRoundRect = false): FakeContext {
       },
     });
   }
-  return { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, roundRects, fillTexts };
+  return { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, roundRects, fillTexts, arcs };
 }
 
 describe("render", () => {
@@ -79,18 +84,36 @@ describe("render", () => {
     expect(styles).not.toContain(LIGHT_THEME.colors[1]);
   });
 
-  it("draws one level-4 grass cell per remaining life instead of a text counter", () => {
+  it("draws one spare ball per remaining life, in the accent colour and clear of the grass", () => {
     // #given a fresh game (3 lives) with a single low-level brick
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
+    const theme = { ...LIGHT_THEME, accentColor: "#ffb224" };
+    const fake = makeFakeContext();
+
+    // #when a frame renders
+    render(fake.ctx, game, theme);
+
+    // #then three accent-coloured circles sit on the HUD row below the grass
+    // (grass occupies the top half, so anything above canvasHeight/2 would be buried in it)
+    const hudRowY = DEFAULT_CONFIG.canvasHeight / 2 + 18;
+    const spares = fake.arcs.filter((call) => call.y === hudRowY);
+    expect(spares).toHaveLength(3);
+    for (const spare of spares) {
+      expect(spare.fillStyle).toBe("#ffb224");
+      expect(spare.radius).toBe(DEFAULT_CONFIG.ballRadius);
+    }
+  });
+
+  it("labels both HUD halves so the spare balls read as lives", () => {
+    // #given a fresh game
     const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
     const fake = makeFakeContext();
 
     // #when a frame renders
     render(fake.ctx, game, LIGHT_THEME);
 
-    // #then three 10px cells in the strongest green appear, and no "Life" text
-    const lifeCells = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[4] && call.width === 10 && call.height === 10);
-    expect(lifeCells).toHaveLength(3);
-    expect(fake.fillTexts.map((call) => call.text).join(" ")).not.toContain("Life");
+    // #then the HUD carries a score readout and a LIFE label
+    expect(fake.fillTexts.map((call) => call.text)).toEqual(["SCORE 0", "LIFE"]);
   });
 
   it("uses theme.hudFont for the HUD text when provided", () => {
@@ -154,10 +177,11 @@ describe("render", () => {
     // #when rendering with hud: false
     render(fake.ctx, game, LIGHT_THEME, { hud: false });
 
-    // #then neither the score text nor the life cells are drawn
+    // #then neither the score text nor the spare balls are drawn
+    // (the single remaining arc is the ball in play)
     expect(fake.fillTexts).toHaveLength(0);
-    const lifeCells = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[4] && call.width === 10);
-    expect(lifeCells).toHaveLength(0);
+    const spares = fake.arcs.filter((call) => call.y === DEFAULT_CONFIG.canvasHeight / 2 + 18);
+    expect(spares).toHaveLength(0);
   });
 
   it("keeps drawing bricks as sharp rects when roundRect is missing", () => {
