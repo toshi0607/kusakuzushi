@@ -140,6 +140,37 @@ describe("createPaddleRail", () => {
     expect(onMove).toHaveBeenLastCalledWith(720);
   });
 
+  it("frees the rail when the browser takes the pointer away without a release", () => {
+    // #given — e.g. a mouse button released outside the window
+    const { rail, onMove, onLaunch } = mountRail();
+    rail.element.dispatchEvent(pointer("pointerdown", 120));
+
+    // #when
+    rail.element.dispatchEvent(pointer("lostpointercapture", 120));
+
+    // #then — the stale drag is gone, and the rail answers the next finger
+    window.dispatchEvent(pointer("pointermove", 360));
+    window.dispatchEvent(pointer("pointerup", 360));
+    expect(onLaunch).not.toHaveBeenCalled();
+    onMove.mockClear();
+    rail.element.dispatchEvent(pointer("pointerdown", 360));
+    expect(onMove).toHaveBeenCalledWith(720);
+  });
+
+  it("reports whether it is on screen, so the board knows who owns touch", () => {
+    // #given
+    const { rail } = mountRail();
+
+    // #then
+    expect(rail.isVisible()).toBe(true);
+
+    // #when — hidden by the media query
+    rail.element.getBoundingClientRect = () => ({ width: 0, left: 0 }) as DOMRect;
+
+    // #then
+    expect(rail.isVisible()).toBe(false);
+  });
+
   it("ignores pointers while the rail has no width to map onto", () => {
     // #given — hidden by the media query, or detached
     const { rail, onMove } = mountRail();

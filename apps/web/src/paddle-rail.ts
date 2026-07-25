@@ -24,6 +24,14 @@ export type PaddleRailOptions = PaddleRailHandlers & {
 
 export type PaddleRail = {
   element: HTMLElement;
+  /**
+   * Whether the rail is actually on screen. The media query in the
+   * stylesheet is the only thing that decides this, and the board asks
+   * before handing its touches over — otherwise a device where the query
+   * misses (a touchscreen laptop, whose *primary* pointer is the trackpad)
+   * would end up with no touch surface at all.
+   */
+  isVisible: () => boolean;
   /** Mirrors the paddle's real centre (canvas coordinates) onto the handle. */
   setPaddleCenter: (canvasX: number) => void;
   /**
@@ -45,10 +53,6 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
 
   const element = document.createElement("div");
   element.className = "paddle-rail";
-  // A touch-only surface with no keyboard path: arrow keys already steer the
-  // paddle, so announcing a gesture a screen-reader user cannot aim would
-  // only add noise.
-  element.setAttribute("aria-hidden", "true");
 
   const handle = document.createElement("div");
   handle.className = "paddle-rail-handle";
@@ -93,13 +97,17 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
     event.preventDefault();
     activePointerId = event.pointerId;
     element.dataset.touched = "true";
+    // Capture guarantees the terminating event: a mouse released outside
+    // the window would otherwise leave the rail owned forever — dead to
+    // every later finger. jsdom has no `setPointerCapture`, hence the
+    // optional call and the `lostpointercapture` reset below.
+    element.setPointerCapture?.(event.pointerId);
     steer(event.clientX);
   }
 
   // Drag tracking lives on `window`, not on the rail: a finger or cursor that
-  // wanders off the strip mid-swipe must keep steering. Touch pointers get
-  // implicit capture, but mouse pointers do not — and `setPointerCapture` is
-  // absent in jsdom, so window listeners keep one code path for both.
+  // wanders off the strip mid-swipe must keep steering. Captured events still
+  // bubble there, so one code path covers touch, mouse and jsdom alike.
   function handlePointerMove(event: PointerEvent): void {
     if (!ownsPointer(event)) return;
     steer(event.clientX);
@@ -117,13 +125,22 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
     activePointerId = null;
   }
 
+  function handleLostCapture(event: PointerEvent): void {
+    if (!ownsPointer(event)) return;
+    activePointerId = null;
+  }
+
   element.addEventListener("pointerdown", handlePointerDown);
+  element.addEventListener("lostpointercapture", handleLostCapture);
   window.addEventListener("pointermove", handlePointerMove);
   window.addEventListener("pointerup", handlePointerUp);
   window.addEventListener("pointercancel", handlePointerCancel);
 
   return {
     element,
+    isVisible(): boolean {
+      return element.getBoundingClientRect().width > 0;
+    },
     setPaddleCenter(canvasX: number): void {
       // The paddle's centre can only live inside the track, and the handle
       // is centred on it — clamping to [0, canvasWidth] instead would hang
@@ -147,6 +164,7 @@ export function createPaddleRail(options: PaddleRailOptions): PaddleRail {
     },
     destroy(): void {
       element.removeEventListener("pointerdown", handlePointerDown);
+      element.removeEventListener("lostpointercapture", handleLostCapture);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);

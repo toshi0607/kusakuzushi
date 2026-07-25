@@ -333,17 +333,17 @@ pnpm --filter @kusakuzushi/extension build
 |------------|--------|----------|
 | レール幅と canvas の CSS 幅が一致する(比例変換で指の真下にパドルが来る) | VERIFIED | 同一 `.play-stack`(flex column)の直下で両方 `width: 100%` — 実測で確認(下記検証記録) |
 | jsdom 25 に `PointerEvent` / `setPointerCapture` は無い | VERIFIED | 2026-07-25 実測(`typeof PointerEvent === "undefined"`、`setPointerCapture is not a function`)。→ ドラッグ追従は暗黙のポインタキャプチャに頼らず window リスナで実装し、テストは `MouseEvent("pointerdown")` で駆動する |
-| `(pointer: coarse)` が「主入力がタッチ」の判定として妥当 | VERIFIED | Baseline(Media Queries L4、全モダンブラウザ対応)。ハイブリッド機ではレールが出るが、マウスでも操作可能なので実害なし |
+| `(pointer: coarse)` が「主入力がタッチ」の判定として妥当 | VERIFIED(ただし当初の但し書きは誤り) | Baseline(Media Queries L4)。**`pointer` は*主*入力しか見ない**ので、タッチスクリーン付きノート PC は `pointer: fine` + `any-pointer: coarse` になりレールは出ない。当初「ハイブリッド機ではレールが出るので実害なし」と書いていたが逆で、再レビュー H-A の指摘どおり「レールも無い・盤面もタッチを拒む」死に状態を作っていた。対応: 盤面のタッチ譲渡はレール自身の可視性(幅 > 0)で判定し、レールが出ない端末では従来どおり盤面追従にフォールバックする |
 
 ### タスク
 
 - [x] `apps/web/src/paddle-rail.ts`: レールの生成・ポインタ処理・ハンドル位置反映(DOM 依存を1ファイルに閉じる)
 - [x] `apps/web/src/session.ts`: `.play-stack` でレールを盤面の下に組み込み、rAF ループでハンドルを**実パドル位置**(`game.paddleState`)に追従。ラウンド終了時に `setActive(false)`
 - [x] `apps/web/src/style.css`: `.play-stack` / `.paddle-rail` / ハンドル / ヒント / 無効化スタイル
-- [x] タッチ端末では発射ガイドの文言を「タップで発射」に(クリック / Space は存在しない操作)
-- [x] `apps/web` に jsdom を追加(環境指定は新規テストの docblock `@vitest-environment jsdom` のみ。既存3ファイルの実行環境は node のまま=無変更)し `paddle-rail.test.ts` 12件
-- [x] `pnpm -r test` 190/190 pass(web 44件)/ `pnpm -r build` exit 0
-- [x] テストが実際に回帰を捕まえることをミューテーションで確認 — `if (!active) return;` を削ると1件 fail、発射を pointerup → pointerdown に変えると4件 fail
+- [x] タッチ端末では発射ガイドの文言を「下のバーで発射」に(クリックも Space も無い操作を案内しない。当初は「タップで発射」だったが、レビュー M1 で盤面のタップ発射をやめたため実際に効く面を指す文言へ)
+- [x] `apps/web` に jsdom を追加(環境指定は新規テストの docblock `@vitest-environment jsdom` のみ。既存3ファイルの実行環境は node のまま=無変更)し `paddle-rail.test.ts` 18件 + `session.test.ts` 7件
+- [x] `pnpm -r test` 199/199 pass(web 53件)/ `pnpm -r build` exit 0
+- [x] テストが実際に回帰を捕まえることをミューテーションで確認(6種): `if (!active) return;` 削除→1件 fail、発射を pointerup→pointerdown→4件 fail、pointerId 比較の削除→2件 fail、`lostpointercapture` リスナ削除→1件 fail、`railOwnsTouch` から可視判定を削除→1件 fail、盤面のタッチ無視を削除→1件 fail、キーボードのクランプを `[0,W]` に戻す→1件 fail
 - [x] 実機相当の検証でパドルが指の x に一致することを実測(下記「検証記録」)
 - [x] DESIGN-VISUAL.md §3 にタッチ操作の節を追加
 - [x] フェーズゲート: reviewer(opus) — 初回 Request changes(High 1 / Medium 3 / Low 7)→ 全件対応済み。詳細は Review 欄
@@ -486,3 +486,17 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 | L5 | Low | デスクトップでもレール DOM と window リスナを作っている | 表示条件の真実を CSS 1 箇所に保つため意図的に維持(早期 return のみのコスト) |
 | L6 | Low | レールに accessible name が無く、AT からも隠していない | 修正: `aria-hidden="true"`(キーボード操作は矢印キーが担うため、狙えないジェスチャを読み上げない) |
 | L7 | Low | DESIGN-VISUAL の「パドルは常に指の真下」は両端 4.17% で成り立たない | 修正(可動域で頭打ちになる旨を追記) |
+
+### セッション8 再フェーズゲート(reviewer/opus, 2026-07-25、修正差分 7c6c63c 込みの全差分に対して)
+
+判定: **Request changes → 全件対応済み**。前回の H1/M1/M2/M3/L1/L2/L6/L7 は Fixed、L3 は Partially fixed と判定された。検証: `pnpm -r test` 199/199 pass(web 53件)、`pnpm -r build` exit 0、`packages/core` 0行差分。
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| H-A | High | **修正コミットが作った回帰**。`pointer: coarse` は*主*入力しか見ないので、タッチスクリーン付きノート PC(`pointer: fine` + `any-pointer: coarse`)ではレールが出ない。にもかかわらず盤面は `pointerType === "touch"` を無条件で無視していたため、**レールも無い・盤面も拒む = タッチ操作が完全に死ぬ**。DESIGN.md §3「マウス/タッチ追従」にも違反 | 修正: 盤面のタッチ譲渡を「レールが実際に表示されているか」(`rail.isVisible()` = `getBoundingClientRect().width > 0`)で判定。メディアクエリを唯一の真実にしたので CSS/JS が食い違わない。レールが出ない端末は従来どおり盤面追従にフォールバック。回帰テスト(可視判定を外すと fail)+ DESIGN.md / DESIGN-VISUAL §3 / Assumptions 行を訂正 |
+| M-A | Medium | 今回の中心的な修正(盤面のタッチ無視・`clampPaddleX`・ガイド文言)が全て `session.ts` にあるのに、テストは `paddle-rail.ts` だけを見ていた。`session.ts` にはテストファイルすら無い | 修正: `apps/web/src/session.test.ts` を新設(7件)。拡張版 `game-runtime.test.ts` と同じく ctx / rect / rAF をスタブして実 `Game` を走らせ、ハンドル位置から実パドル位置を読む。タッチ/マウス/レール非表示時のフォールバック/レール操作と発射/ガイド文言/矢印キー/teardown を検証 |
+| L-A | Low | `clampPaddleX` を矢印キーの累算に適用しておらず L3 が半分しか直っていない。壁に当て続けるとカーソルだけ 960 まで歩き、逆方向の最初の ~83ms が死ぬ | 修正: 3箇所すべて(盤面・レール・キーボード)を `clampPaddleX` 経由に統一。回帰テスト追加(クランプを戻すと fail することを確認) |
+| L-B | Low | `activePointerId` が非 null のまま取り残されると、レールが以後まったく反応しなくなる(ウィンドウ外でボタンを離す等で終了イベントが届かない場合) | 修正: `setPointerCapture` + `lostpointercapture` でのリセットを追加(jsdom には無いので optional call)。回帰テスト追加 |
+| L-C | Low | `aria-hidden="true"` が、可視のヒント文と唯一のタッチ操作面ごと AT から消していた。しかもガイドは「下のバーで発射」と、AT からは存在しない要素を指していた | 修正: `aria-hidden` を撤回(前回 L6 の対応を差し戻し)。レールは説明文を持つただの要素として AT に残す方が、ガイドの文言と整合する |
+| L-D | Low | 未コミットの `style.css` 変更がレビュー範囲外にあった | 対応済み(レビュー中に行っていたハンドル垂直中央寄せの実験。実測でヒントとの間隔が 3px まで詰まるため不採用とし、理由コメントのみを 90363d2 でコミット) |
+| L-E | Low | ドキュメントと実装の食い違い5件(DESIGN.md のタッチ記述、todo.md のガイド文言・テスト件数・ハイブリッド機の Assumption 行) | 修正(全件) |
