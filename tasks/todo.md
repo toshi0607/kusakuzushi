@@ -310,6 +310,47 @@ pnpm --filter @kusakuzushi/extension build
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
 - 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
 
+## セッション8: トップページの OGP 画像(実装中)
+
+### 症状と原因(2026-07-25 実測)
+
+ユーザー報告: Slack に `https://kusakuzushi.toshi0607.com` を貼ってもカード画像が出ない。
+
+- 原因: **トップページ(Pages が返す `apps/web/index.html`)に OGP タグが1つも無い**。Slack が出していたのは `<title>`(草崩し)と `<meta name="description">` だけ。X でも同様に画像は出ない
+- `/share/{user}` は無関係(正常)。Slackbot の UA `Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)` は `crawler.ts` の `"bot"` に一致し、curl 実測でも OGP HTML(og:image + twitter:card)が返り、`og.png` は 200 / image/png / 48,932 bytes
+
+### Constraints(セッション8)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 新しい依存を増やさない(OGP 画像生成に puppeteer 等を入れない) | DESIGN.md §4 / constraints.md | package.json diff が空 |
+| 共有画像は閲覧者テーマに関係なく常に「夜の畑」(ダーク固定) | share.ts の SHARE_COLORS コメント(ブランド判断) | 生成画像の背景が `#0c110d` |
+| ワードマークは demo-grid の実グリフを使う(独自に描き直さない) | lessons.md 2026-07-25(黙った代替グリフ事故) | 生成コードが `buildDemoGrid()` を import している |
+| 生成物(PNG)は再現手順ごとコミットする | unknowns.md 1.3(参照可能であること) | tools/ にジェネレータが存在し手順がヘッダにある |
+| ゲームバランス・core を変更しない | 全セッション共通 | `git diff main -- packages/core` が空 |
+
+### Assumptions(セッション8)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| トップの OGP 欠落が Slack で画像が出ない原因(share は正常) | VERIFIED | 2026-07-25 curl 実測(上記「症状と原因」) |
+| Slackbot は `crawler.ts` の `"bot"` 部分一致で既にクローラー判定される | VERIFIED | 同上(Slackbot UA で /share/ が OGP HTML を返す) |
+| `apps/web/public/` は Vite が dist へコピーし `/og.png` で配信される | VERIFIED | 2026-07-25 `pnpm -r build` 後 `apps/web/dist/og.png`(1200x630, 68,138 bytes)が存在。dev でも `HEAD /og.png` → 200 image/png |
+| Vite dev は `tools/*.html` を任意ページとして配信でき、既定ビルド入力は index.html のみ(tools がバンドルに混ざらない) | VERIFIED | 2026-07-25 dev で `/tools/og-card.html` が描画。build 後 `find dist -name "*og-card*"` が空、JS ハッシュも本番と同一(index-CWyvfmJ6.js) |
+
+### タスク
+
+- [x] `apps/web/tools/og-card.{html,ts}` + `og-card-main.ts` — 1200x630 のトップ用カードを canvas で合成するジェネレータ。`buildDemoGrid()` + core `render()` + share.ts / theme.ts のトークンを再利用し、attract 画面と同じ盤面を描く
+  - 盤面(2:1)は草の下に約 190px の空白帯があるので、単色の帯だけを切り落として上下 2 スライスを詰めて描く。境界は core の `computeLayout` から導出
+  - `SHARE_COLORS` / `DISPLAY_FONT` / `BODY_FONT`(share.ts)と `WEB_DARK_THEME`(theme.ts)を export して再利用 — カード側で色やフォントを再定義しない
+- [x] `apps/web/vite.config.ts` — dev 専用エンドポイント `/__save-og-card` を追加し、ボタン押下で `public/og.png` を直接上書き(ブラウザのダウンロードは preview ペーン・実 Chrome とも保存されなかったため)
+- [x] 生成した PNG を `apps/web/public/og.png` としてコミット — 1200x630 / 68,138 bytes。フルサイズで目視確認(DotGothic16 のドット字形が出ていること、ワードマークが KUSAKUZUSHI で崩れていないこと)
+- [x] `apps/web/index.html` に OGP/Twitter メタを追加(og:type/site_name/locale/title/description/url/image/image:type/width/height/alt、twitter:card/title/description/image、canonical)
+  - 実測: dev の DOM から 14 タグすべてを確認、`HEAD /og.png` → 200 image/png、アトラクト canvas も従来どおり描画、console エラー 0
+- [x] `workers/ogp` の share ページにも og:image:type/width/height と og:locale を追加(Slack/Facebook の large card 判定を確実にする)+ 回帰テスト 1 件
+- [x] `pnpm -r test`(174 tests / 4 パッケージ)/ `pnpm -r build` exit 0
+- [ ] PR → CI green → マージ → Pages + Worker デプロイ → 本番 curl でメタ確認、Slack 実貼りで画像表示を確認
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
