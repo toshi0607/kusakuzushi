@@ -262,17 +262,35 @@ pnpm --filter @kusakuzushi/extension build
 
 ### タスク(フェーズ順。各フェーズ末に build + スクリーンショット確認)
 
-- [ ] Phase 1 — トークン・タイポ・ページシェル: style.css を DESIGN-VISUAL §1〜§3 のトークン体系で書き換え、index.html にフォント読込(preconnect + subset)、ヘッダー/フッター/フォーム/エラーの新スタイル、フォーカスリング統一
-  - 検証: `pnpm -r build` exit 0、375px/1040px × light/dark の 4 スクリーンショット、フォーム送信フロー手動確認
-- [ ] Phase 2 — canvas 描画の磨き込み(core/renderer.ts): ブロック角丸、ボール=アンバー、パドル=カプセル、HUD を `theme.hudFont`(optional)で DotGothic16、ライフ=草セル表示。web 側で `document.fonts.load` 待ち
-  - 検証: `pnpm --filter @kusakuzushi/core test` pass、`pnpm --filter @kusakuzushi/extension test` 無変更 pass、プレイ画面スクリーンショット
-- [ ] Phase 3 — アトラクトモード: demo-grid.ts(KUSAKUZUSHI 3x5 文字 + ノイズ)、autopilot(パドル追従 + 自動再発射 + クリアで再生成)、生育アニメ(renderer に reveal 引数)、DEMO PLAY 表示、reduced-motion 分岐
-  - **グリフ完全性(lessons.md 2026-07-25)**: K/U/S/A/Z/H/I の 3x5 グリフを全定義し、未定義文字はフォールバックせず throw。ユニットテストで「KUSAKUZUSHI」全 11 文字が期待セルパターンで描かれることを検証(計画時のモックで Z/H/I 未定義→S 代替により KUSAKUSUSSS と表示される事故が実際に起きた)
-  - 検証: トップでデモが無限に回ること、入力→実セッション差し替え、reduced-motion で静止、`pnpm -r test` pass
-- [ ] Phase 4 — リザルト/共有画像: 収穫レポートパネル(草セル製プログレスバー含む)、保存画像を 1200x630 合成(盤面 + username + 統計 + ワードマーク)
-  - 検証: gameOver/clear 両パターンの表示、保存 PNG を開いて目視、X intent URL 不変
-- [ ] フェーズゲート: /code-review high + reviewer(opus) に DESIGN-VISUAL.md を渡して設計適合レビュー
+- [x] Phase 1 — トークン・タイポ・ページシェル(f5144d4): style.css をトークン体系で書き換え、DotGothic16 subset + Plex 読込、シェル/フォーカスリング
+  - 検証済み: `pnpm -r build` exit 0、162 tests pass、light/dark/mobile スクリーンショット目視(2026-07-25)
+- [x] Phase 2 — canvas 描画の磨き込み(5f0835a): ブロック角丸 20%、ボール=アンバー、パドル=カプセル、HUD=DotGothic16(hudFont)、ライフ=草セル。回帰テスト 4 件追加
+  - 検証済み: core 34 tests pass、extension 44 tests 無変更 pass、プレイ画面スクリーンショット目視
+- [x] Phase 3 — アトラクトモード(1cf78ad): demo-grid(グリフ完全性テスト付き、未定義 throw)、autopilot、reveal 生育アニメ、DEMO PLAY、reduced-motion 分岐
+  - 検証済み: rAF 同期駆動ハーネスで 900 フレーム駆動(ループ生存・草が刈られる)、フォーム送信→実セッション差し替え、reduced-motion で pendingRaf=0(静的グリッド)、`pnpm -r test` 173 pass
+  - グリフ完全性: KUSAKUZUSHI 全 11 文字の期待パターン一致 + 未定義文字 throw をユニットテストで検証(lessons.md 2026-07-25 対応)
+- [x] Phase 4 — リザルト/共有画像(85f54b5): 収穫レポートパネル(草セル 18 個バー)、composeResultImage で 1200x630 合成
+  - 検証済み: ハーネスで gameOver 到達しリザルト表示(見出し/ラベル/値/バー 18 セル)、合成画像 1200x630 を DOM 描画して目視、X intent ビルダーはテスト既存 pass で不変
+- [x] フェーズゲート: reviewer(opus) に DESIGN-VISUAL.md を渡して設計適合レビュー — **Approve**(Critical/High なし、Medium 4 / Low 7)。全 11 件を同セッションで対応(下記「セッション5 レビュー」)。※ /code-review スキルはこのセッションでは PR 番号引数専用だったため reviewer に一本化
 - [ ] PR → CI green → マージ → Pages デプロイ → 本番スクリーンショット
+
+### セッション5 レビュー(reviewer/opus, 2026-07-25)
+
+判定: Approve。指摘と対応:
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| M1 | Medium | DotGothic16 の text= サブセットに スコア率 が無く、共有画像の見出し行がフォント混在になる | text= に スコア率 を追加 |
+| M2 | Medium | 本番セッションに生育アニメ(reveal)が未適用(§4 の明文要件。demo だけ動く逆転) | session.ts に revealStartMs + reduced-motion 分岐を追加し render に {reveal} を渡す。ハーネス実測: 2フレーム時点で左端のみ描画(leftGreens=1235 / rightGreens=0) |
+| M3 | Medium | 375px でリザルトパネルが canvas からはみ出す(§9 品質フロア) | overlay に padding+overflow-y:auto、560px 以下で見出し/統計/ボタンを縮小(横並び維持)。実測 overflows=false。§3 も同判断に更新 |
+| M4 | Medium | ローディングでステージが1行に潰れレイアウトシフト(§3「レイアウトシフトなし」違反) | buildLoadingView に canvas 同寸(aspect-ratio 2/1)の board-placeholder を導入 |
+| L1 | Low | クリア見出しの ! が ASCII でサブセット(全角!)に無い | 全角!に統一 |
+| L2 | Low | アトラクト再スタート時に完成グリッドが1フレーム閃く | reveal 計算を restart() の後ろに移動 |
+| L3 | Low | デモのライフが§7の「無限」と不一致 | core 無変更の制約を優先し「gameOver でグリッド再生成」を正式仕様に(§7 更新+コードコメント) |
+| L4 | Low | 停止中ループ(リザルト/reduced-motion デモ)が OS テーマ切替に追従しない+theme.ts コメント齟齬 | watchTheme を復活させ、terminal state と reduced-motion デモで1フレーム再描画。コメント修正 |
+| L5 | Low | .demo-canvas の cursor 上書きがソース順で死んでいる/未使用 demo-area クラス | .game-canvas の後ろへ移動(理由コメント付き)、demo-area 削除 |
+| L6 | Low | .harvest-cell-filled の緑が固定値でテーマ非追従 | --grass-strong トークン(core colors[4] の写し、light/dark 反転)に置換 |
+| L7 | Low | フォントロードの空 catch(constraints.md 違反) | 意図的無視である旨のコメントを付与 |
 
 ## Notes
 

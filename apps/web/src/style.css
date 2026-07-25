@@ -14,6 +14,8 @@
   --marquee: #ffb224;
   --marquee-ink: #1a1206;
   --alert: #b3261e;
+  /* core LIGHT_THEME.colors[4] の写し。草(コンテンツ)にだけ使う */
+  --grass-strong: #216e39;
   --font-display: "DotGothic16", "IBM Plex Sans JP", sans-serif;
   --font-body: "IBM Plex Sans JP", system-ui, sans-serif;
 }
@@ -26,6 +28,8 @@
     --ink: #e4ede2;
     --ink-faint: #8da08c;
     --alert: #ff8f8f;
+    /* core DARK_THEME.colors[4] の写し */
+    --grass-strong: #39d353;
   }
 }
 
@@ -189,11 +193,6 @@ button:disabled {
   width: 100%;
 }
 
-.demo-canvas {
-  pointer-events: none;
-  cursor: default;
-}
-
 .demo-label {
   position: absolute;
   right: 12px;
@@ -214,6 +213,28 @@ button:disabled {
   border-radius: 8px;
   touch-action: none;
   cursor: pointer;
+}
+
+/* .game-canvas と同特異性のため、上書きはソース順で後に置く */
+.demo-canvas {
+  pointer-events: none;
+  cursor: default;
+}
+
+.board-placeholder {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ridge);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--ink-faint);
+}
+
+.board-placeholder p {
+  margin: 0;
 }
 
 .overlay {
@@ -243,6 +264,8 @@ button:disabled {
   pointer-events: auto;
   border: 1px solid var(--ridge);
   border-radius: 8px;
+  padding: 12px;
+  overflow-y: auto;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -279,6 +302,7 @@ button:disabled {
   font-family: var(--font-display);
   font-weight: 400;
   font-size: 1.75rem;
+  line-height: 1.2;
   letter-spacing: 0.06em;
 }
 
@@ -319,7 +343,7 @@ button:disabled {
 
 /* 刈り取った分だけ強い緑 — 緑は草(コンテンツ)にだけ許される */
 .harvest-cell-filled {
-  background: #26a641;
+  background: var(--grass-strong);
 }
 
 .result-actions {
@@ -351,5 +375,32 @@ button:disabled {
   .username-form input,
   .username-form button {
     width: 100%;
+  }
+
+  /*
+   * 狭幅では canvas 高が ~170px しかないため、リザルトは縦積みではなく
+   * 「横並びのまま縮小」で収める(DESIGN-VISUAL §3 の縦並び案は高さ超過
+   * するため不採用 — §3 も同判断に更新済み)。
+   */
+  .overlay {
+    gap: 8px;
+  }
+
+  .result-overlay h2 {
+    font-size: 1.2rem;
+  }
+
+  .result-stat-grid {
+    gap: 24px;
+  }
+
+  .result-stat-value {
+    font-size: 1.2rem;
+  }
+
+  .result-actions button,
+  .result-actions .share-button {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
   }
 }

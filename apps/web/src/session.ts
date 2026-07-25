@@ -8,9 +8,13 @@ import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
 import { buildIntentUrl, saveResultImage } from "./share";
+import { watchTheme } from "./theme";
 
 /** Paddle speed, in px/sec, while an arrow key is held. */
 const KEY_MOVE_SPEED_PX_PER_SEC = 480;
+
+/** 「草の生育」アニメの長さ(DESIGN-VISUAL §4。attract.ts と同じ値)。 */
+const REVEAL_DURATION_MS = 700;
 
 type ResultState = Extract<GameState, "gameOver" | "clear">;
 
@@ -68,6 +72,8 @@ export function createSession(
   let paddleX = DEFAULT_CONFIG.canvasWidth / 2;
   const heldKeys = new Set<string>();
   let lastResultState: ResultState | null = null;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const revealStartMs = performance.now();
 
   function canvasXFromClientX(clientX: number): number {
     const rect = canvas.getBoundingClientRect();
@@ -124,7 +130,7 @@ export function createSession(
     result.replaceChildren();
 
     const heading = document.createElement("h2");
-    heading.textContent = state === "clear" ? "🌱 完全刈り取り!" : "ゲームオーバー";
+    heading.textContent = state === "clear" ? "🌱 完全刈り取り！" : "ゲームオーバー";
     result.appendChild(heading);
 
     const pct = grid.total > 0 ? Math.floor((harvestedCount(game) / grid.total) * 100) : 0;
@@ -227,7 +233,8 @@ export function createSession(
 
     applyKeyboardMovement(dt);
     game.update(dt);
-    render(ctx, game, getTheme());
+    const reveal = reducedMotion ? 1 : Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
+    render(ctx, game, getTheme(), { reveal });
     updateOverlay();
 
     // Terminal states never leave without a full session restart
@@ -242,9 +249,18 @@ export function createSession(
 
   rafId = window.requestAnimationFrame(frame);
 
+  // The loop stops on gameOver/clear, so an OS theme flip while the
+  // result screen is up needs an explicit one-frame repaint.
+  const unwatchTheme = watchTheme(() => {
+    if (game.state === "gameOver" || game.state === "clear") {
+      render(ctx, game, getTheme(), { reveal: 1 });
+    }
+  });
+
   return function destroy(): void {
     running = false;
     window.cancelAnimationFrame(rafId);
+    unwatchTheme();
     canvas.removeEventListener("pointermove", handlePointerMove);
     canvas.removeEventListener("pointerdown", handlePointerDown);
     window.removeEventListener("keydown", handleKeyDown);

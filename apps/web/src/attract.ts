@@ -11,6 +11,7 @@ import type { Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
 import { buildDemoGrid } from "./demo-grid";
+import { watchTheme } from "./theme";
 
 /** 生育アニメの長さ。GitHub のグラフ読込の残像とつながる速さにする。 */
 const REVEAL_DURATION_MS = 700;
@@ -26,7 +27,7 @@ const AUTOPILOT_SPEED_PX_PER_SEC = 620;
 
 export function createAttract(container: HTMLElement, getTheme: () => Theme): () => void {
   const wrapper = document.createElement("div");
-  wrapper.className = "play-area demo-area";
+  wrapper.className = "play-area";
 
   const canvas = document.createElement("canvas");
   canvas.width = DEFAULT_CONFIG.canvasWidth;
@@ -51,8 +52,12 @@ export function createAttract(container: HTMLElement, getTheme: () => Theme): ()
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reducedMotion) {
-    render(ctx, new Game(buildDemoGrid()), getTheme(), { hud: false });
+    const staticGame = new Game(buildDemoGrid());
+    render(ctx, staticGame, getTheme(), { hud: false });
+    // 一度描いて終わりのため、OS テーマ切替時はここで再描画する
+    const unwatchTheme = watchTheme((theme) => render(ctx, staticGame, theme, { hud: false }));
     return function destroy(): void {
+      unwatchTheme();
       wrapper.remove();
     };
   }
@@ -87,8 +92,9 @@ export function createAttract(container: HTMLElement, getTheme: () => Theme): ()
     const dt = Math.min(Math.max((now - lastTimeMs) / 1000, 0), MAX_FRAME_DT);
     lastTimeMs = now;
 
-    const reveal = Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
-
+    // ライフは core の機構そのまま(3 落球で gameOver → グリッドごと作り直し)。
+    // 「デモはライフ無限」も検討したが、core を無変更に保つ制約を優先した。
+    // アーケードのデモ画面が定期的に最初へ戻るのはむしろ自然な挙動。
     if (game.state === "gameOver" || game.state === "clear") {
       restart(now);
     } else if (game.state === "ready" || game.state === "ballLost") {
@@ -105,6 +111,9 @@ export function createAttract(container: HTMLElement, getTheme: () => Theme): ()
     }
 
     game.update(dt);
+    // reveal は restart() による revealStartMs 更新の後に計算する。
+    // 先に計算すると再スタートのフレームだけ新グリッドが全表示で閃く。
+    const reveal = Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
     render(ctx, game, getTheme(), { reveal, hud: false });
 
     rafId = window.requestAnimationFrame(frame);
