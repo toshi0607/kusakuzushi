@@ -1144,7 +1144,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 |------------|--------|----------|
 | 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
-| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | VERIFIED | developer.chrome.com/docs/webstore/cws-dashboard-listing(2026-07-26 取得)が「掲載情報の言語ドロップダウンの各ロケールは、拡張に含まれる `_locales/LOCALE_CODE` ディレクトリのいずれかに対応する」と明記。ja/en の `_locales` を入れたので ja と en の両方が選べるはず。コンソール上での実地確認は C-1 で行う |
 | データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
 | Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | VERIFIED(条件付き) | 2026-07-26 実測: `/privacy` は **308** で `/privacy/` へ、`/privacy/` が 200。canonical とストア登録 URL を `/privacy/` に揃えた |
 
