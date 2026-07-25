@@ -35,6 +35,14 @@ export type Session = { stop(): void };
 
 let activeSession: Session | null = null;
 
+/**
+ * The button the live session actually owns. Tracked by element identity
+ * rather than by id, because a cached DOM snapshot can contain a *copy* of
+ * our button that no session is listening to — `getElementById` would call
+ * that "still mounted" and leave the page with a dead button.
+ */
+let activeButton: HTMLElement | null = null;
+
 function usernameFromPath(pathname: string): string {
   const [first] = pathname.split("/").filter((segment) => segment.length > 0);
   return first ?? "you";
@@ -178,10 +186,16 @@ function createGameRuntime(
    * has to be clamped too: the mousemove listener is on `window`, so on a
    * wide monitor it is routinely far outside the ~692px board, and an
    * unclamped value would need dozens of arrow presses to walk back into
-   * range before the paddle moved at all (same fix as apps/web/src/session.ts).
+   * range before the paddle moved at all.
+   *
+   * The clamp is to the range the paddle's *centre* can occupy, not to the
+   * canvas: clamping to `[0, canvasWidth]` still leaves the cursor up to
+   * half a paddle beyond where the paddle can go, which on a narrow board
+   * silently swallows the first arrow press or two.
    */
   function setPaddleX(x: number): void {
-    paddleX = Math.min(Math.max(x, 0), config.canvasWidth);
+    const half = config.paddleWidth / 2;
+    paddleX = Math.min(Math.max(x, half), config.canvasWidth - half);
     game.movePaddle(paddleX);
   }
 
@@ -334,10 +348,8 @@ function createGameRuntime(
 
 /**
  * Mounts the extension on `doc` if it looks like a GitHub profile page.
- * Idempotent: a second call while already mounted just returns the
- * existing session (see the module-scope `activeSession` guard at the
- * bottom of this file, which is what actually drives repeat calls from
- * `turbo:load`/`DOMContentLoaded`/the immediate top-level call).
+ * Idempotent: a second call while a session is live returns that session
+ * (`autoMount` below is what drives the repeat calls).
  */
 export function mount(doc: Document, view: Window): Session | null {
   if (activeSession) return activeSession;
@@ -350,19 +362,18 @@ export function mount(doc: Document, view: Window): Session | null {
 
   const container = findGraphContainer(doc) ?? table.parentElement ?? doc.body;
 
-  // A stale button surviving an incomplete teardown — a Turbo restoration
-  // visit replays a snapshot that was cached mid-game — is reused rather
-  // than duplicated, and its label reset since no game is running yet.
-  let button = doc.getElementById(BUTTON_ID) as HTMLButtonElement | null;
-  if (!button) {
-    button = doc.createElement("button");
-    button.type = "button";
-    button.id = BUTTON_ID;
-    button.className = "btn btn-sm";
-    container.appendChild(button);
-  }
-  button.textContent = BUTTON_LABEL_IDLE;
-  const launchButton = button;
+  // A stale button can outlive its session — a Turbo restoration visit
+  // replays a snapshot cached mid-game. Replace it rather than reuse it:
+  // reusing would leave the previous session's click handler attached, so
+  // one click would start two games and 「やめる」 would only stop one.
+  doc.getElementById(BUTTON_ID)?.remove();
+
+  const launchButton = doc.createElement("button");
+  launchButton.type = "button";
+  launchButton.id = BUTTON_ID;
+  launchButton.className = "btn btn-sm";
+  launchButton.textContent = BUTTON_LABEL_IDLE;
+  container.appendChild(launchButton);
 
   let message: HTMLElement | null = null;
   let runtime: GameRuntime | null = null;
@@ -453,9 +464,11 @@ export function mount(doc: Document, view: Window): Session | null {
     launchButton.removeEventListener("click", handleButtonClick);
     launchButton.remove();
     activeSession = null;
+    activeButton = null;
   }
 
   activeSession = { stop };
+  activeButton = launchButton;
   return activeSession;
 }
 
@@ -480,19 +493,42 @@ export function autoMount(doc: Document, view: Window): AutoMount {
     observer = null;
   }
 
+  /**
+   * A live session owns a button that is still in the document. Checking the
+   * DOM rather than trusting `activeSession` alone matters because the
+   * button's container IS the include-fragment's root element: a re-resolved
+   * fragment (year filter, "show private contributions") replaces it and
+   * takes the button with it, without firing any Turbo event.
+   */
+  function isMounted(): boolean {
+    return activeSession !== null && activeButton?.isConnected === true;
+  }
+
+  function sync(): void {
+    if (isMounted()) return;
+    // The session's DOM is gone; drop it so `mount` doesn't short-circuit.
+    activeSession?.stop();
+    mount(doc, view);
+  }
+
+  /** Only profile pages ever grow a contribution graph, and the content script runs on all of github.com. */
+  function looksLikeProfilePage(): boolean {
+    return view.location.pathname.split("/").filter((segment) => segment.length > 0).length === 1;
+  }
+
   function tryMount(): void {
-    if (mount(doc, view)) {
-      unwatch();
-      return;
-    }
-    if (observer) return;
+    sync();
+
+    if (observer || !looksLikeProfilePage()) return;
 
     const observerCtor = (view as Window & typeof globalThis).MutationObserver;
     if (typeof observerCtor !== "function") return;
 
-    const watcher = new observerCtor(() => {
-      if (findGrassTable(doc)) tryMount();
-    });
+    // Stays armed for the page's lifetime rather than disconnecting once
+    // mounted, so a fragment that swaps the graph out from under us is
+    // recovered from — `sync` returns immediately while the mount is intact,
+    // so the steady-state cost is one `getElementById` per mutation batch.
+    const watcher = new observerCtor(sync);
     watcher.observe(doc.documentElement, { childList: true, subtree: true });
     observer = watcher;
   }

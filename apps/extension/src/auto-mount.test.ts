@@ -11,12 +11,28 @@ import type { AutoMount } from "./content";
 import { autoMount } from "./content";
 
 const BUTTON_ID = "kusakuzushi-launch";
+const MESSAGE_ID = "kusakuzushi-message";
 
 function buildGrassTable(): HTMLTableElement {
   const table = document.createElement("table");
   table.className = "ContributionCalendar-grid";
   document.body.appendChild(table);
   return table;
+}
+
+/**
+ * The graph wrapped in the element GitHub's `<include-fragment>` actually
+ * replaces — `.js-yearly-contributions` is the fragment response's own root,
+ * and it is also where the launch button gets appended.
+ */
+function buildGraphContainer(): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "js-yearly-contributions";
+  const table = document.createElement("table");
+  table.className = "ContributionCalendar-grid";
+  container.appendChild(table);
+  document.body.appendChild(container);
+  return container;
 }
 
 /** jsdom's MutationObserver fires its callback as a microtask; flushing a macrotask reliably runs after it. */
@@ -93,6 +109,74 @@ describe("autoMount", () => {
     window.dispatchEvent(new Event("pageshow"));
     // #then
     expect(document.getElementById(BUTTON_ID)).not.toBeNull();
+  });
+
+  it("remounts when the include-fragment replaces the graph container out from under a live mount", async () => {
+    // #given a mounted button inside the fragment's own root element
+    const container = buildGraphContainer();
+    session = autoMount(document, window);
+    await flushMicrotasks();
+    expect(document.getElementById(BUTTON_ID)).not.toBeNull();
+
+    // #when the fragment re-resolves (year filter, "show private
+    // contributions", ...) and swaps the whole container's contents — no
+    // Turbo event fires for this
+    container.remove();
+    buildGraphContainer();
+    await flushMicrotasks();
+
+    // #then the observer noticed the button went with it and remounted
+    expect(document.querySelectorAll(`#${BUTTON_ID}`)).toHaveLength(1);
+  });
+
+  it("remounts even when the replacement DOM carries a copy of the button", async () => {
+    // #given a mounted button, then a snapshot-style replacement that
+    // duplicates the button element itself — no session is listening to the
+    // copy, so an id-based "am I mounted?" check would be fooled by it
+    const container = buildGraphContainer();
+    session = autoMount(document, window);
+    await flushMicrotasks();
+    const original = document.getElementById(BUTTON_ID);
+    expect(original).not.toBeNull();
+
+    // #when the container is replaced by a deep clone of itself
+    const replacement = container.cloneNode(true);
+    container.remove();
+    document.body.appendChild(replacement);
+    await flushMicrotasks();
+
+    // #then the surviving button is a live one, not the inert clone:
+    // clicking it reaches a session, which answers the empty grid with its
+    // "no grass to break" message
+    const buttons = document.querySelectorAll(`#${BUTTON_ID}`);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).not.toBe(original);
+    buttons[0].dispatchEvent(new MouseEvent("click"));
+    expect(document.getElementById(MESSAGE_ID)).not.toBeNull();
+  });
+
+  it("replaces a stale button rather than reusing it, so one click starts one game", async () => {
+    // #given a leftover button from a cached snapshot, with its own listener
+    buildGraphContainer();
+    let staleClicks = 0;
+    const stale = document.createElement("button");
+    stale.id = BUTTON_ID;
+    stale.addEventListener("click", () => {
+      staleClicks += 1;
+    });
+    document.body.appendChild(stale);
+
+    // #when the extension mounts over it and the user clicks once
+    session = autoMount(document, window);
+    await flushMicrotasks();
+    const button = document.getElementById(BUTTON_ID);
+    expect(button).not.toBe(stale);
+    button?.dispatchEvent(new MouseEvent("click"));
+
+    // #then only the live session reacted — a reused button would still
+    // carry the old handler and run two sessions off a single click
+    expect(staleClicks).toBe(0);
+    expect(document.querySelectorAll(`#${BUTTON_ID}`)).toHaveLength(1);
   });
 
   it("stop() tears down the listeners: a later turbo:load no longer injects a button", async () => {
