@@ -24,8 +24,13 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
+      # persist-credentials: false — このジョブは fork PR のコードを実行するので、
+      # GITHUB_TOKEN を .git/config に残さない。git 操作はどのジョブでも使っていない
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
@@ -53,12 +58,16 @@ jobs:
           name: web-dist
           path: apps/web/dist
           retention-days: 7
+          # 既定では隠しファイルが落ちる。将来 public/.well-known/... を足したとき
+          # artifact から静かに欠落して本番にも出ない、という壊れ方を防ぐ
+          include-hidden-files: true
 
   # 変更パスを見て、どちらをデプロイするか決める。
   # PR では走らない(= deploy-* も needs 経由でスキップされる)。
   changes:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       web: ${{ steps.filter.outputs.web }}
       ogp: ${{ steps.filter.outputs.ogp }}
@@ -67,6 +76,7 @@ jobs:
         with:
           # push の前後を diff するので履歴が要る。95 コミット規模なので全部取る
           fetch-depth: 0
+          persist-credentials: false
 
       - id: filter
         env:
@@ -116,6 +126,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     concurrency:
       # 同時デプロイで新旧が入れ替わるのを防ぐ。途中キャンセルは
       # 中途半端な状態を作るので cancel-in-progress は false
@@ -123,9 +134,14 @@ jobs:
       cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # account ID はクレデンシャルではなく識別子で、zone_id と同様に既にリポジトリへ
+      # コミットされている(workers/ogp/wrangler.toml、tasks/todo.md)。secret にすると
+      # GitHub がこの文字列をログ全体でマスクし、wrangler の出力が読みにくくなるだけなので平文で置く
+      CLOUDFLARE_ACCOUNT_ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
@@ -144,11 +160,31 @@ jobs:
           name: web-dist
           path: apps/web/dist
 
+      # concurrency は同時実行を防ぐだけで**順序は保証しない**。連続でマージすると、
+      # 後発の run が先に配信し、その後で先発の run が古い dist を上書きしうる
+      # (しかも verify は自分の artifact と比べるので緑になる)。デプロイ直前に
+      # 自分が main の tip かを確認して、追い抜かれていたら何もしない。
+      # gh api を使うのは persist-credentials: false でも動かすため
+      - id: tip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
+          if [ "${tip}" = "${GITHUB_SHA}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main は既に ${tip} まで進んでいる。この run(${GITHUB_SHA})はデプロイしない"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # `pnpm deploy` は pnpm の組み込みコマンドなので、スクリプトを回すには run が要る
-      - run: pnpm run deploy:web
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run deploy:web
 
       # 配信中の成果物 == いま出した成果物 を確定させる(伝播待ちのリトライ込み)
-      - run: pnpm run verify:web
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run verify:web
 
   deploy-ogp:
     needs: [test, changes]
@@ -157,14 +193,20 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.changes.outputs.ogp == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     concurrency:
       group: deploy-ogp
       cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # account ID はクレデンシャルではなく識別子で、zone_id と同様に既にリポジトリへ
+      # コミットされている(workers/ogp/wrangler.toml、tasks/todo.md)。secret にすると
+      # GitHub がこの文字列をログ全体でマスクし、wrangler の出力が読みにくくなるだけなので平文で置く
+      CLOUDFLARE_ACCOUNT_ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
@@ -177,7 +219,27 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Worker は wrangler が workers-og ごとバンドルするので、artifact ではなくソースから出す
-      - run: pnpm run deploy:ogp
+      # concurrency は同時実行を防ぐだけで**順序は保証しない**。連続でマージすると、
+      # 後発の run が先に配信し、その後で先発の run が古い dist を上書きしうる
+      # (しかも verify は自分の artifact と比べるので緑になる)。デプロイ直前に
+      # 自分が main の tip かを確認して、追い抜かれていたら何もしない。
+      # gh api を使うのは persist-credentials: false でも動かすため
+      - id: tip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
+          if [ "${tip}" = "${GITHUB_SHA}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main は既に ${tip} まで進んでいる。この run(${GITHUB_SHA})はデプロイしない"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - run: pnpm run verify:ogp
+      # Worker は wrangler が workers-og ごとバンドルするので、artifact ではなくソースから出す
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run deploy:ogp
+
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run verify:ogp

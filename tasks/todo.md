@@ -1157,7 +1157,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | `workers/ogp` は `packages/core` に依存しない(core 変更で Worker を出し直す必要が無い) | VERIFIED | `workers/ogp/package.json` の deps は `workers-og` のみ |
 | wrangler 4.114.0 で Worker がバンドルできる | VERIFIED | `wrangler deploy --dry-run` が Total Upload 1974.86 KiB で成功(2026-07-26) |
 | `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
-| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト2種で exit 1 を実測(下記) |
+| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト3種(別アセット / 中身切り詰め / 到達不能ホスト)で exit 1 を実測(下記) |
 | `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
 | API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: トークンはまだ存在せず(作成はユーザー、Claude はクレデンシャルを扱わない)、スコープの十分性はトークンを持たずには確かめられない。緩和策: 不足時の失敗は wrangler の認証エラー(`Authentication error [code: 10000]`)として**デプロイ前に**出るので、現行の本番配信は落ちない。マージ後の初回 `deploy-*` が実際の検証になり、足りなければスコープを足して再実行する |
 | private のままブランチ保護が設定できる(GitHub のプラン依存) | UNVERIFIED-ACCEPTED(2026-07-26) | **この PR の成否に影響しない**(デプロイ経路はブランチ保護に依存していない)。手元の gh トークンに `user` スコープが無く `gh api user` の `plan` が読めないため(実測: `plan: None`)、確定は PUT を投げるしかない = リポジトリ設定の変更なのでユーザー承認が要る。緩和策: 保護が張れなくても自動デプロイは動く。パブリック化のタイミングで必ず設定する(そこでは無料で使える) |
@@ -1196,8 +1196,12 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 
 `workers/ogp/wrangler.toml` の `zone_id` と、この todo.md にある Account ID
 (`5ee49b8e0983dc8fcf6d0eddb45ef5d8`)は**クレデンシャルではなく識別子**で、API トークン無しでは
-何もできない。よって**履歴の書き換えはしない**。GitHub の secret に `CLOUDFLARE_ACCOUNT_ID` として
-置くのはワークフローの見た目を揃えるためで、秘匿が目的ではない。
+何もできない。よって**履歴の書き換えはしない**。
+
+当初は `CLOUDFLARE_ACCOUNT_ID` も GitHub secret に置く予定だったが、レビュー(L4)を受けて
+**ワークフローに平文で置く**ことにした。secret にすると GitHub がその文字列をログ全体でマスクし、
+`wrangler` の出力が `***` だらけになって切り分けの邪魔になる。秘匿する必要が無いものを
+secret にすると、得るものが無いのに読みにくさだけが増える。
 
 ### 新しい運用
 
@@ -1221,12 +1225,13 @@ pnpm run deploy:ogp && pnpm run verify:ogp
    - Account → **Workers Scripts : Edit**
    - Zone → **Workers Routes : Edit**(`wrangler.toml` の `routes` を張り直すのに要る)
    - Account Resources: 当該アカウントのみ / Zone Resources: `toshi0607.com` のみ
-2. GitHub の repo secrets に登録
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID` = `5ee49b8e0983dc8fcf6d0eddb45ef5d8`
+2. GitHub の repo secrets に **`CLOUDFLARE_API_TOKEN`** を登録(これ 1 つだけ)。
+   account ID はワークフローに平文で置いてある(レビュー L4 の対応。識別子であって
+   クレデンシャルではなく、secret にするとログでマスクされて切り分けの邪魔になる)
 
 **secret が無いと `deploy-*` は落ちる**(ワークフローは動くがデプロイが失敗する)。
-マージ前に登録しておくこと。
+しかもこの PR 自身が `pnpm-lock.yaml` / `package.json` / `ci.yml` を触るので、
+マージ時の push は必ず両方のデプロイを起動する(レビュー M1)。**マージ前に登録しておくこと。**
 
 ### タスク
 
@@ -1236,7 +1241,7 @@ pnpm run deploy:ogp && pnpm run verify:ogp
 - [x] `ci.yml` に `changes` / `deploy-web` / `deploy-ogp`、artifact の受け渡し
 - [x] `permissions` / SHA 固定 / `concurrency` / `dependabot.yml`
 - [x] `pnpm -r test`(162件)/ `pnpm -r build` exit 0
-- [ ] ユーザーが Cloudflare API トークンを作成し、GitHub secrets に登録
+- [ ] ユーザーが Cloudflare API トークンを作成し、`CLOUDFLARE_API_TOKEN` として登録
 - [ ] PR → CI green(`deploy-*` が PR でスキップされることを確認)
 - [ ] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑
 - [ ] ブランチ保護 + Actions のセキュリティ設定(プラン次第。不可ならパブリック化時)
@@ -1288,3 +1293,33 @@ lighthouse.yml のみ : web=false ogp=false
 | 自動ロールバック | 誤検知でロールバックするほうが危険 |
 | `apps/extension` のデプロイ | Chrome Web Store は未申請、手動運用(`apps/extension/README.md`) |
 | git 履歴の書き換え | account/zone ID はクレデンシャルではない(上記) |
+
+### レビュー(フレッシュコンテキストの `reviewer`、2026-07-26)
+
+`aa628d5` に対して実施。**Request Changes**。指摘と対応:
+
+| # | 重大度 | 指摘 | 対応 |
+|---|---|---|---|
+| H1 | High | verify 系のリトライループが `fetch` の例外で即死する(リトライ 0 回で赤) | **修正**。`checkOnce` を try/catch で包み、例外を「理由の文字列」として既存の戻り値契約に乗せた |
+| M1 | Medium | この PR 自身が `shared` パターン(`pnpm-lock.yaml` / `package.json` / `ci.yml`)を触るので、マージすると必ず両方のデプロイが走る。secret 未登録なら初回から main が赤 | **運用で対応**。PR 説明と本節で「マージ前に secret 登録」を明記。コード修正は不要 |
+| M2 | Medium | `concurrency` は同時実行を防ぐだけで**順序を保証しない**。連続マージで先発 run が後から古い dist を上書きしうる。しかも verify は自分の artifact と比べるので**緑のまま退行する** | **修正**。デプロイ直前に `gh api` で main の tip を確認し、追い抜かれていたらデプロイ・verify とも skip する |
+| M3 | Medium | `verify-worker.mjs` の `property="og:image"` 判定が `og:image:width` にも部分一致し、画像本体のタグが消えても緑 | **修正**。`property="og:image" content="` まで含めて判定 |
+| L1 | Low | `--attempts abc` で `Number("abc")` が NaN になり、1 度も検証せずに「NaN 回試して駄目だった」と嘘の理由で落ちる | **修正**。`Number.isFinite` + 正数チェック。トップレベルの `.catch` で 1 行メッセージにして exit 1 |
+| L2 | Low | `upload-artifact@v4` は既定で隠しファイルを落とす。将来 `public/.well-known/...` を足すと artifact から静かに欠落 | **修正**。`include-hidden-files: true` |
+| L3 / L6 | Low | verify が index.html とエントリ JS しか見ておらず、`robots.txt` / `og.png` / favicon が欠けても緑(S9 と同種の事故) | **修正**。**dist の全ファイル**(現在 7 件)の sha256 を照合するようにした。エントリ JS も最初の 1 個ではなく全件を見る |
+| L4 | Low | account ID を secret にすると GitHub がログ全体でその文字列をマスクし、wrangler の出力が読みにくくなる | **修正**。`CLOUDFLARE_ACCOUNT_ID` を secret から外し、ワークフローに平文で置いた(識別子であってクレデンシャルではなく、zone_id と同様に既にコミット済み)。**ユーザーが登録する secret は `CLOUDFLARE_API_TOKEN` の 1 つだけになった** |
+| L5 | Low | 公開リポジトリでは `persist-credentials: false` が定石(fork PR のコードが走るジョブで GITHUB_TOKEN を `.git/config` に残さない) | **修正**。ci.yml / lighthouse.yml の全 checkout に付与。tip 確認は `gh api` にしたのでこれと両立する |
+| L7 | Low | デプロイジョブに `timeout-minutes` が無い | **修正**。test 20分 / changes 10分 / deploy 15分 |
+| L8 | Low(未確認) | `wrangler pages deploy` にコミット情報のフラグを渡していない。ダッシュボードから「どの main が本番か」を引けるかは未確認 | **保留**。CI 上では `.git` があるので wrangler が自動検出する見込みだが未検証。初回デプロイ後にダッシュボードで確認する |
+| L9 | Low(未確認) | Dependabot の npm ecosystem が pnpm workspace 配下(`apps/web` / `workers/ogp`)の `wrangler` まで辿るかは未確認 | **保留**。マージ後の初回 Dependabot 実行で確認。辿らなければ `directories` に各パッケージを明示する |
+
+レビューが「問題なし」と確認した主な点: `changes` ジョブのシェル(`set -euo pipefail` 下の
+here-string と `grep` の終了ステータス扱い)、fork PR / ブランチ push からデプロイが走らないこと、
+script injection が無いこと(`${{ }}` を `run:` 本文に埋めていない)、artifact の受け渡し、
+`pnpm run` による組み込み `deploy` コマンドとの衝突回避、既存 CI(lighthouserc.cjs 無変更)。
+
+#### M2 の残余リスク
+
+tip 確認とデプロイの間にはまだ窓が残る(数秒)。ここを閉じるには Cloudflare 側の
+デプロイ API に楽観ロックが要るが無いので、**窓を最小化するに留める**。
+実運用では 1 人が順にマージするだけなので、ここが問題になる確率は極めて低い。
