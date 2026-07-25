@@ -272,7 +272,7 @@ pnpm --filter @kusakuzushi/extension build
 - [x] Phase 4 — リザルト/共有画像(85f54b5): 収穫レポートパネル(草セル 18 個バー)、composeResultImage で 1200x630 合成
   - 検証済み: ハーネスで gameOver 到達しリザルト表示(見出し/ラベル/値/バー 18 セル)、合成画像 1200x630 を DOM 描画して目視、X intent ビルダーはテスト既存 pass で不変
 - [x] フェーズゲート: reviewer(opus) に DESIGN-VISUAL.md を渡して設計適合レビュー — **Approve**(Critical/High なし、Medium 4 / Low 7)。全 11 件を同セッションで対応(下記「セッション5 レビュー」)。※ /code-review スキルはこのセッションでは PR 番号引数専用だったため reviewer に一本化
-- [ ] PR → CI green → マージ → Pages デプロイ → 本番スクリーンショット
+- [x] PR → CI green → マージ → Pages デプロイ → 本番スクリーンショット — PR: https://github.com/toshi0607/kusakuzushi/pull/9(CI test pass 36s → API マージ 5d69164)→ `wrangler pages deploy`(760d7039)→ https://kusakuzushi.toshi0607.com/ HTTP 200 + アトラクト画面のスクリーンショット実測(2026-07-25)
 
 ### セッション5 レビュー(reviewer/opus, 2026-07-25)
 
