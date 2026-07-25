@@ -6,7 +6,9 @@ const isWatch = process.argv.includes("--watch");
 const dist = "dist";
 
 const options = {
-  entryPoints: ["src/content.ts"],
+  // `content.js` is what manifest.json injects; `src/main.ts` is the only
+  // module that mounts anything, so the rest stays side-effect-free.
+  entryPoints: ["src/main.ts"],
   outfile: path.join(dist, "content.js"),
   bundle: true,
   format: "iife",
