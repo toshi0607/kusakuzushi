@@ -14,6 +14,19 @@ function makeGrid(rowLevels: Array<0 | 1 | 2 | 3 | 4>): ContributionGrid {
   return { username: "octocat", weeks: [week], total: 70 };
 }
 
+/** A full 53-week year — the shape the web app actually renders. */
+function makeFullYearGrid(): ContributionGrid {
+  const weeks: Cell[][] = Array.from({ length: 53 }, (_, col) =>
+    Array.from({ length: 7 }, (_, row) => ({ date: `2024-w${col}-${row}`, count: 1, level: 1 as const })),
+  );
+  return { username: "octocat", weeks, total: 53 * 7 };
+}
+
+/** Baseline of the HUD row: 10px below the grass band, 16px text drawn from its top. */
+function hudRowY(game: Game): number {
+  return game.layout.brickAreaTop + game.layout.brickAreaHeight + 18;
+}
+
 type FillRectCall = { fillStyle: string; x: number; y: number; width: number; height: number };
 type RoundRectCall = { fillStyle: string; x: number; y: number; width: number; height: number; radius: number };
 type FillTextCall = { font: string; text: string };
@@ -138,9 +151,8 @@ describe("render", () => {
     render(fake.ctx, game, theme);
 
     // #then three accent-coloured circles sit on the HUD row below the grass
-    // (grass occupies the top half, so anything above canvasHeight/2 would be buried in it)
-    const hudRowY = DEFAULT_CONFIG.canvasHeight / 2 + 18;
-    const spares = fake.arcs.filter((call) => call.y === hudRowY);
+    // (anything drawn inside the grass band would be buried in it)
+    const spares = fake.arcs.filter((call) => call.y === hudRowY(game));
     expect(spares).toHaveLength(3);
     for (const spare of spares) {
       expect(spare.fillStyle).toBe("#ffb224");
@@ -224,8 +236,29 @@ describe("render", () => {
     // #then neither the score text nor the spare balls are drawn
     // (the single remaining arc is the ball in play)
     expect(fake.fillTexts).toHaveLength(0);
-    const spares = fake.arcs.filter((call) => call.y === DEFAULT_CONFIG.canvasHeight / 2 + 18);
+    const spares = fake.arcs.filter((call) => call.y === hudRowY(game));
     expect(spares).toHaveLength(0);
+  });
+
+  it("anchors the HUD to the bottom of the grass band, not to half the canvas", () => {
+    // #given a real 53-week year, whose square cells make the grass band
+    // (~130px) far shorter than half the 360px canvas
+    const game = new Game(makeFullYearGrid());
+    const theme = { ...LIGHT_THEME, accentColor: "#ffb224" };
+    const fake = makeFakeContext(true);
+
+    // #when a frame renders
+    render(fake.ctx, game, theme);
+
+    // #then the spare balls sit right under the last brick row — clear of
+    // the grass, and above canvasHeight/2 where the old HUD row was
+    const grassBottom = game.layout.brickAreaTop + game.layout.brickAreaHeight;
+    expect(grassBottom).toBeLessThan(DEFAULT_CONFIG.canvasHeight / 2);
+    const spares = fake.arcs.filter((call) => call.y === hudRowY(game));
+    expect(spares).toHaveLength(3);
+    const bricks = fake.roundRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[1]);
+    const lowestBrick = Math.max(...bricks.map((call) => call.y + call.height));
+    expect(hudRowY(game)).toBeGreaterThan(lowestBrick);
   });
 
   it("draws a falling multiBall item as an accent tile with three dot marks", () => {

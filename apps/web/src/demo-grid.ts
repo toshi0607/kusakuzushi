@@ -59,8 +59,10 @@ export function buildDemoGrid(word: string = DEMO_WORD): ContributionGrid {
     for (let gr = 0; gr < GLYPH_HEIGHT; gr++) {
       for (let gc = 0; gc < GLYPH_WIDTH; gc++) {
         if (glyph[gr][gc] === "1") {
-          // 3 と 4 を市松に混ぜ、単色ベタより草らしい濃淡を出す
-          levels[glyphCol + gc][TITLE_TOP_ROW + gr] = 3 + ((gc + gr) % 2);
+          // 全セル level4(最も濃い緑)。3/4 の市松で濃淡を付けていたが、
+          // セル間に本家と同じ 22% の隙間が入ると 3 セル幅のストロークが
+          // ちらついて字形が崩れる。gitfiti の実物も単一レベルのベタ描き。
+          levels[glyphCol + gc][TITLE_TOP_ROW + gr] = 4;
         }
       }
     }

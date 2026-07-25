@@ -96,7 +96,30 @@ describe("deriveConfig + computeLayout geometry alignment", () => {
     }
   });
 
-  it("scales dropped items down to this board instead of keeping core's 960x480 defaults", () => {
+  it("follows the measured cell height, not core's square-brick default, when the td rects are not square", () => {
+    // #given cells measured 1px taller than they are wide (measureGeometry
+    // reads width and height independently, so this can happen on a zoomed
+    // or fractionally-scaled page)
+    const geometry: GrassGeometry = { ...SYNTHETIC_GEOMETRY, cellWidth: 10, cellHeight: 11 };
+
+    // #when
+    const config = deriveConfig(geometry);
+    const layout = computeLayout({ ...DEFAULT_CONFIG, ...config }, geometry.cols);
+
+    // #then the brick keeps the real cell's height — a square brick (10px)
+    // would sit 1px higher per row and drift 6px off by the bottom row
+    expect(layout.brickWidth).toBe(10);
+    expect(layout.brickHeight).toBe(11);
+
+    const week = Array.from({ length: 7 }, (_, row) => ({ date: `d-${row}`, count: 1, level: 1 as const }));
+    const grid = { username: "octocat", weeks: Array.from({ length: 53 }, () => week), total: 371 };
+    const game = new Game(grid, config);
+    for (const brick of game.liveBricks) {
+      expect(brick.rect.y).toBe(3 + brick.row * 14);
+    }
+  });
+
+  it("scales dropped items down to this board instead of keeping core's default board", () => {
     // #given the real-world measured geometry
     // #when
     const config = deriveConfig(SYNTHETIC_GEOMETRY);
