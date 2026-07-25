@@ -141,6 +141,10 @@ function createGameRuntime(
     paddleColor: foreground,
     ballColor: foreground,
     textColor: foreground,
+    // The page's own colours are all we sample for the paddle/ball, but an
+    // item has to stand apart from both the grass and the ball, so it keeps
+    // core's blue (GitHub's accent, in the light/dark variant that matches).
+    itemColor: themeBase.itemColor ?? foreground,
   };
 
   const painter: TdPainter = createTdPainter(levelColors);
@@ -166,6 +170,13 @@ function createGameRuntime(
       // of how dark the day actually was.
       overlayRenderer.spawnBurst(cx, cy, levelByDate.get(date) ?? 1);
     }
+  };
+
+  // Catching an item is the one event with no other feedback on this board
+  // (the grass only reacts to broken bricks), so mark it with a burst where
+  // it was caught, in the strongest green.
+  game.onItemCollected = (item): void => {
+    overlayRenderer.spawnBurst(item.x, item.y, levelColors.length - 1);
   };
 
   // Mirrors overlay.ts's own left/top math so the result banner (drawn as

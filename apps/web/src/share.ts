@@ -53,7 +53,7 @@ export type ShareResult = {
  * 共有画像は閲覧者のテーマに関係なく常に「夜の畑」で合成する
  * (タイムライン上で見た目が揺れないようにするブランド判断)。
  */
-const SHARE_COLORS = {
+export const SHARE_COLORS = {
   soil: "#0c110d",
   ridge: "#28332a",
   ink: "#e4ede2",
@@ -63,8 +63,8 @@ const SHARE_COLORS = {
 
 const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
-const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
-const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
+export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
+export const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
 
 /**
  * ゲーム canvas の最終盤面を 1200x630(OGP 比)のリザルトカードに合成する。

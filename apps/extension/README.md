@@ -27,7 +27,7 @@ pnpm --filter @kusakuzushi/extension build
 | `src/grass-dom.ts` | **GitHub の DOM を知る唯一のファイル**。セレクタ・セル読み取り・幾何計測。GitHub のマークアップが変わったらここだけ直す |
 | `src/adapter.ts` | 草セル → core の `ContributionGrid` / `GameConfig`。DOM に contribution 数が無いため `count = level²` を投入する |
 | `src/overlay.ts` | 草の上に重ねる透過キャンバス |
-| `src/renderer.ts` | 拡張専用の透過レンダラ(ボール・パドル・パーティクル・HUD だけ描く) |
+| `src/renderer.ts` | 拡張専用の透過レンダラ(ボール・パドル・落下アイテム・パーティクル・HUD だけ描く) |
 | `src/td-paint.ts` | 実 `td` の背景差し替えと原状復帰 |
 | `src/content.ts` | ボタン注入・入力・ゲームループと、`autoMount`(草の出現待ち・turbo・bfcache) |
 

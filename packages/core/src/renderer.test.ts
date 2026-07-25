@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, Game } from "./game";
+import type { GameConfig } from "./game";
 import type { Cell, ContributionGrid } from "./model";
 import { LIGHT_THEME, render } from "./renderer";
 
@@ -75,6 +76,49 @@ function makeFakeContext(withRoundRect = false): FakeContext {
     });
   }
   return { ctx: stub as unknown as CanvasRenderingContext2D, fillRects, roundRects, fillTexts, arcs };
+}
+
+/**
+ * Mirrors game.test.ts's item board: a narrow paddle parked at x=20 catches
+ * both the ball and whatever falls out of the col0 target brick, while a
+ * column of level-4 decoys keeps the board from clearing mid-test.
+ */
+const ITEM_CONFIG: Partial<GameConfig> = {
+  canvasWidth: 100,
+  canvasHeight: 200,
+  brickGapPx: 0,
+  paddleWidth: 40,
+  paddleHeight: 10,
+  paddleMarginBottom: 0,
+  ballRadius: 5,
+  ballSpeed: 100,
+  itemDropChance: 1,
+  itemFallSpeed: 100,
+};
+
+function makeItemGrid(): ContributionGrid {
+  const target: Cell[] = Array.from({ length: 7 }, (_, row) => {
+    const level: 0 | 1 = row === 6 ? 1 : 0;
+    return { date: `2024-01-0${row + 1}`, count: 10, level };
+  });
+  const decoys: Cell[] = Array.from({ length: 7 }, (_, row) => ({
+    date: `2024-01-1${row + 1}`,
+    count: 10,
+    level: 4 as const,
+  }));
+  return { username: "octocat", weeks: [target, decoys], total: 20 };
+}
+
+/** Plays the item board until `predicate` holds, then hands the game back. */
+function playUntil(kindRoll: number, predicate: (game: Game) => boolean): Game {
+  const game = new Game(makeItemGrid(), { ...ITEM_CONFIG, random: () => kindRoll });
+  game.movePaddle(20);
+  game.launch();
+  for (let step = 0; step < 5000 && !predicate(game); step++) {
+    game.update(0.01);
+  }
+  if (!predicate(game)) throw new Error("playUntil: predicate never held");
+  return game;
 }
 
 describe("render", () => {
@@ -215,6 +259,72 @@ describe("render", () => {
     const bricks = fake.roundRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[1]);
     const lowestBrick = Math.max(...bricks.map((call) => call.y + call.height));
     expect(hudRowY(game)).toBeGreaterThan(lowestBrick);
+  });
+
+  it("draws a falling multiBall item as an accent tile with three dot marks", () => {
+    // #given a multiBall item on its way down
+    const game = playUntil(0, (g) => g.itemStates.length > 0);
+    const item = game.itemStates[0];
+    const fake = makeFakeContext(true);
+
+    // #when a frame renders
+    render(fake.ctx, game, LIGHT_THEME);
+
+    // #then the tile sits on the item's centre in the item colour...
+    const tile = fake.roundRects.find((call) => call.fillStyle === LIGHT_THEME.itemColor && call.width === item.size);
+    expect(tile).toMatchObject({ x: item.x - item.size / 2, y: item.y - item.size / 2, height: item.size });
+
+    // #and its glyph is three square dots knocked out in the background colour
+    const dots = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[0] && call.width === call.height);
+    expect(dots).toHaveLength(3);
+  });
+
+  it("draws a falling extraPaddle item with three bar marks instead of dots", () => {
+    // #given an extraPaddle item on its way down
+    const game = playUntil(0.9, (g) => g.itemStates.length > 0);
+    const item = game.itemStates[0];
+    const fake = makeFakeContext(true);
+
+    // #when a frame renders
+    render(fake.ctx, game, LIGHT_THEME);
+
+    // #then the glyph is three upright bars (wider than tall would be a dot).
+    // The size filter drops the canvas background, which is colours[0] too.
+    const marks = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[0] && call.width < item.size);
+    expect(marks).toHaveLength(3);
+    expect(marks.every((call) => call.height > call.width)).toBe(true);
+  });
+
+  it("draws all three bars while extraPaddle is active, and every ball after a multiBall catch", () => {
+    // #given the side bars are out
+    const withBars = playUntil(0.9, (g) => g.paddleStates.length === 3);
+    const barFrame = makeFakeContext(true);
+
+    // #when a frame renders
+    render(barFrame.ctx, withBars, LIGHT_THEME);
+
+    // #then three paddle-coloured capsules share the paddle's row
+    const bars = barFrame.roundRects.filter((call) => call.fillStyle === LIGHT_THEME.paddleColor);
+    expect(bars).toHaveLength(3);
+    expect(bars.every((call) => call.y === withBars.paddleState.y)).toBe(true);
+
+    // #given three balls in play instead
+    const withBalls = playUntil(0, (g) => g.ballStates.length > 1);
+    const ballFrame = makeFakeContext(true);
+    let arcs = 0;
+    Object.assign(ballFrame.ctx, {
+      arc(): void {
+        arcs += 1;
+      },
+    });
+
+    // #when a frame renders (without the HUD, whose spare-life markers are
+    // drawn as arcs too and would be counted here)
+    render(ballFrame.ctx, withBalls, LIGHT_THEME, { hud: false });
+
+    // #then every ball is drawn, not just the primary one
+    expect(arcs).toBe(withBalls.ballStates.length);
+    expect(arcs).toBeGreaterThan(1);
   });
 
   it("keeps drawing bricks as sharp rects when roundRect is missing", () => {
