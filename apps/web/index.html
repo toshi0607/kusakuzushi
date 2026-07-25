@@ -29,7 +29,15 @@
   <meta name="twitter:title" content="草崩し">
   <meta name="twitter:description" content="GitHubの草(コントリビューショングラフ)をブロックに見立てて刈り取るブロック崩しゲーム">
   <meta name="twitter:image" content="https://kusakuzushi.toshi0607.com/og.png">
+  <!--
+    ファビコンは 3 本立て。対応ブラウザは SVG を選ぶので .ico が余分に取得されることはない。
+    .ico を実体として置くのは robots.txt と同じ理由: Cloudflare Pages は存在しないパスに
+    index.html を 200 で返すため、置かないと /favicon.ico を叩いたクローラーが HTML を
+    アイコンとして受け取る。apple-touch-icon は iOS がホーム画面で SVG を使えないので必要。
+  -->
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!--

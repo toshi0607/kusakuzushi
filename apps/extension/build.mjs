@@ -1,4 +1,4 @@
-import { mkdir, copyFile } from "node:fs/promises";
+import { mkdir, copyFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import esbuild from "esbuild";
 
@@ -21,6 +21,13 @@ const options = {
 try {
   await mkdir(dist, { recursive: true });
   await copyFile("manifest.json", path.join(dist, "manifest.json"));
+
+  // manifest.json の "icons" が参照するパスをそのまま dist に写す。
+  // 欠けると Chrome が拡張の読み込み自体を拒否する(欠落アイコンは manifest エラー)。
+  await mkdir(path.join(dist, "icons"), { recursive: true });
+  for (const icon of await readdir("icons")) {
+    await copyFile(path.join("icons", icon), path.join(dist, "icons", icon));
+  }
 
   if (isWatch) {
     const ctx = await esbuild.context(options);
