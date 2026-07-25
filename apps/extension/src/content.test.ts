@@ -49,6 +49,28 @@ describe("mount", () => {
     expect(document.querySelectorAll("#kusakuzushi-launch")).toHaveLength(1);
   });
 
+  it("puts the launch button right below the calendar, ahead of the activity-overview panel", () => {
+    // #given a real profile fragment
+    // #when
+    session = mount(document, window);
+
+    // #then the button sits between the grass and GitHub's activity panel.
+    // Appended to the end of the block instead, it landed ~440px below the
+    // graph — off screen while the grass it acts on was still in view, which
+    // reads as the extension not working at all.
+    const button = launchButton();
+    const table = document.querySelector("table.ContributionCalendar-grid");
+    const overview = document.getElementById("user-activity-overview");
+    if (!table || !overview) throw new Error("fixture is missing the calendar or the activity overview");
+
+    expect(table.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(button.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // #and it stays inside the include-fragment root, which is what
+    // `autoMount`'s `isConnected` check relies on to notice a replacement
+    expect(button.parentElement?.classList.contains("js-yearly-contributions")).toBe(true);
+  });
+
   it("shows the no-bricks message and does not start a game when every cell is level 0", () => {
     // #given a grass grid with no contributions at all
     document.querySelectorAll(GRASS_DAY_SELECTOR).forEach((el) => el.setAttribute("data-level", "0"));

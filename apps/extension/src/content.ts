@@ -70,6 +70,32 @@ function buildDateLookup(grid: ContributionGrid): Map<string, string> {
   return lookup;
 }
 
+/**
+ * Puts `node` directly below the calendar rather than at the end of the
+ * whole yearly-contributions block.
+ *
+ * Appending to the block dropped the button under GitHub's activity-overview
+ * panel, ~440px below the grass: on an ordinary window the graph was on
+ * screen and its own button was not (measured: button at viewport y=893 in
+ * an 848px viewport), which reads as "the extension isn't working".
+ *
+ * Falls back to appending when the table isn't inside `container` at all —
+ * `mount` accepts a couple of looser containers when GitHub's markup
+ * doesn't match.
+ */
+function insertBelowCalendar(container: HTMLElement, table: HTMLElement, node: HTMLElement): void {
+  let block: HTMLElement = table;
+  while (block.parentElement && block.parentElement !== container) {
+    block = block.parentElement;
+  }
+
+  if (block.parentElement !== container) {
+    container.appendChild(node);
+    return;
+  }
+  block.after(node);
+}
+
 function buildElementLookup(cells: readonly GrassCell[]): Map<string, HTMLElement> {
   const lookup = new Map<string, HTMLElement>();
   for (const cell of cells) lookup.set(cell.date, cell.el);
@@ -394,7 +420,7 @@ export function mount(doc: Document, view: Window): Session | null {
   launchButton.id = BUTTON_ID;
   launchButton.className = "btn btn-sm";
   launchButton.textContent = BUTTON_LABEL_IDLE;
-  container.appendChild(launchButton);
+  insertBelowCalendar(container, table, launchButton);
 
   let message: HTMLElement | null = null;
   let runtime: GameRuntime | null = null;
@@ -411,7 +437,8 @@ export function mount(doc: Document, view: Window): Session | null {
     el.id = MESSAGE_ID;
     el.style.marginLeft = "8px";
     el.textContent = text;
-    container.appendChild(el);
+    // Beside the button it explains, not at the end of the block.
+    launchButton.after(el);
     message = el;
   }
 
