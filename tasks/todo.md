@@ -383,6 +383,14 @@ Browser ペーンは `visibilityState=hidden` で rAF が完全停止する(Note
 | 375x667(iPhone SE 相当) | `scrollHeight === innerHeight`(縦横ともあふれ無し)、フッター下端 538px |
 | ミューテーション | `ownsPointer` の pointerId 比較を外すと2件 fail(修正前コードで落ちることを確認) |
 
+#### 再レビュー修正後の再検証(同ハーネス)
+
+| 検証項目 | 実測 |
+|---|---|
+| coarse スタブ有り(スマホ相当) | ガイド「下のバーで発射」/ `aria-hidden` は無し / 盤面タッチは無反応・未発射 / レール 25% → 239.5・90% → 863.5 / 2本目の指は無視 / 離すと発射 / マウスは盤面追従 287.5 |
+| **coarse 無し + レール非表示(タッチスクリーン付きノート PC 相当)** | `matchMedia("(pointer: coarse)")` false・`.paddle-rail` は `display: none`・幅 0。この状態で**タッチ**を盤面に落とすとパドル 287.5(期待 288)へ追従し、発射もされる = H-A のフォールバックが実ブラウザで機能 |
+| ミューテーション(計6種) | 上記タスク欄に記載。すべて修正前コードで fail することを確認 |
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
