@@ -138,7 +138,7 @@ export function createSession(
     actions.className = "result-actions";
 
     const shareLink = document.createElement("a");
-    shareLink.className = "share-button";
+    shareLink.className = "share-button btn-primary";
     shareLink.href = buildIntentUrl(username, grid.total, pct, game.score);
     shareLink.target = "_blank";
     shareLink.rel = "noopener noreferrer";

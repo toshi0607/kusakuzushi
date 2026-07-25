@@ -234,6 +234,46 @@ pnpm --filter @kusakuzushi/extension build
 5. マウスでパドル移動、クリック/Space で発射。破壊された日の草が実際に灰色になる
 6. 「やめる」または他ページへ遷移で原状復帰
 
+## セッション5: Web 版ビジュアルデザイン改善(計画済み・実装未着手)
+
+設計: ../DESIGN-VISUAL.md が正(コンセプト「夜の畑のアーケード」、トークン、タイポ、レイアウト、モーション、コピーの全仕様)。ここは実行計画。
+
+### Constraints(セッション5 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| ゲームバランス不変(game.ts / physics.ts のロジック・数値に触らない) | 全セッション共通方針 | `git diff main -- packages/core/src/game.ts packages/core/src/physics.ts` が空 |
+| core の Theme 変更は optional フィールドのみ(拡張版の後方互換) | DESIGN-VISUAL §5 | 拡張のテスト・ビルドが無変更で pass |
+| 緑は草(コンテンツ)専用。UI 操作系はアンバー | DESIGN-VISUAL §0 | style.css に緑系 UI 色がないこと(grep) |
+| フレームワーク・JS 依存を増やさない(フォントは Google Fonts のみ) | DESIGN.md §4 / constraints.md | package.json diff |
+| ライト/ダーク両対応を維持(prefers-color-scheme) | 現行実装の検証済み挙動 | 両モードのスクリーンショット |
+| prefers-reduced-motion 尊重 | DESIGN-VISUAL §4/§9 | エミュレーションで生育アニメ・autopilot 停止を確認 |
+| 既存の `.overlay[hidden]` 特異性対策を壊さない | style.css のコメント(実バグ由来) | hidden 時に overlay が消えることを確認 |
+| 視覚/スタイリングコードの直接編集は frontend 系ルールに従う | ~/.claude/rules/constraints.md | — |
+
+### Assumptions(セッション5 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| DotGothic16 は Google Fonts で `text=` サブセット取得可(日本語ピクセルフォント) | VERIFIED | 2026-07-25 実測: css2?family=DotGothic16&text=(使用グリフ) → @font-face + unicode-range が返り、woff2 は 3,892 bytes(漢字かな含む全指定グリフが unicode-range に載ることを確認) |
+| canvas の `ctx.font` で Web フォント(DotGothic16)が使える(document.fonts.load 後) | VERIFIED | 2026-07-25 本番ページ上で実測: FontFace(subset woff2) load → status=loaded、`ctx.measureText` が sans-serif と異なる幅(136 vs 139.57)を返し、fillText で 966px 描画。フォールバック(sans-serif)でも描画自体は成立 |
+| 53x7 グリッドに 3x5 ピクセル文字 11 字(KUSAKUZUSHI = 43 列)が収まる | VERIFIED | 11×(3+1)−1 = 43 ≤ 53、5 ≤ 7(机上計算) |
+| 拡張版は core の render() を使っていない(透過レンダラ独自実装) | VERIFIED | Notes 2026-07-25 (S4)。ただし Theme 型は import しているため optional 追加のみ許容 |
+
+### タスク(フェーズ順。各フェーズ末に build + スクリーンショット確認)
+
+- [ ] Phase 1 — トークン・タイポ・ページシェル: style.css を DESIGN-VISUAL §1〜§3 のトークン体系で書き換え、index.html にフォント読込(preconnect + subset)、ヘッダー/フッター/フォーム/エラーの新スタイル、フォーカスリング統一
+  - 検証: `pnpm -r build` exit 0、375px/1040px × light/dark の 4 スクリーンショット、フォーム送信フロー手動確認
+- [ ] Phase 2 — canvas 描画の磨き込み(core/renderer.ts): ブロック角丸、ボール=アンバー、パドル=カプセル、HUD を `theme.hudFont`(optional)で DotGothic16、ライフ=草セル表示。web 側で `document.fonts.load` 待ち
+  - 検証: `pnpm --filter @kusakuzushi/core test` pass、`pnpm --filter @kusakuzushi/extension test` 無変更 pass、プレイ画面スクリーンショット
+- [ ] Phase 3 — アトラクトモード: demo-grid.ts(KUSAKUZUSHI 3x5 文字 + ノイズ)、autopilot(パドル追従 + 自動再発射 + クリアで再生成)、生育アニメ(renderer に reveal 引数)、DEMO PLAY 表示、reduced-motion 分岐
+  - **グリフ完全性(lessons.md 2026-07-25)**: K/U/S/A/Z/H/I の 3x5 グリフを全定義し、未定義文字はフォールバックせず throw。ユニットテストで「KUSAKUZUSHI」全 11 文字が期待セルパターンで描かれることを検証(計画時のモックで Z/H/I 未定義→S 代替により KUSAKUSUSSS と表示される事故が実際に起きた)
+  - 検証: トップでデモが無限に回ること、入力→実セッション差し替え、reduced-motion で静止、`pnpm -r test` pass
+- [ ] Phase 4 — リザルト/共有画像: 収穫レポートパネル(草セル製プログレスバー含む)、保存画像を 1200x630 合成(盤面 + username + 統計 + ワードマーク)
+  - 検証: gameOver/clear 両パターンの表示、保存 PNG を開いて目視、X intent URL 不変
+- [ ] フェーズゲート: /code-review high + reviewer(opus) に DESIGN-VISUAL.md を渡して設計適合レビュー
+- [ ] PR → CI green → マージ → Pages デプロイ → 本番スクリーンショット
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
