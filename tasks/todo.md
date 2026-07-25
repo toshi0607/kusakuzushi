@@ -348,7 +348,11 @@ pnpm --filter @kusakuzushi/extension build
 - [x] DESIGN-VISUAL.md §3 にタッチ操作の節を追加
 - [x] フェーズゲート: reviewer(opus) — 初回 Request changes(High 1 / Medium 3 / Low 7)→ 全件対応済み。詳細は Review 欄
 - [x] main を取り込み(セッション7 の 2 コミット)、tasks/todo.md の衝突を解消
-- [ ] PR → CI green → マージ → デプロイ → 実機(スマホ)で本番確認
+- [x] PR → CI green → マージ → デプロイ — https://github.com/toshi0607/kusakuzushi/pull/20(main が 24 コミット進んでいたためマージして衝突解消 → CI test pass 39s / Lighthouse dist pass 1m21s → `gh api -X PUT .../merge` で 0977dfc)、`wrangler pages deploy`(a5f7dec0)
+  - 本番確認(2026-07-25 実測): `https://kusakuzushi.toshi0607.com/assets/index-pr2ZC311.js` と `index-Cu7t7aJQ.css` が dist と shasum 一致。CSS に `@media (pointer: coarse)` の `paddle-rail{display:block}`、JS に「下のバーで発射」「触れた位置にパドルが動き、離すと発射」が入っていることを確認。デスクトップ UA では `paddle-rail` の computed display が `none`、ガイドは「クリック / Space で発射」= デスクトップ無変更も実測
+  - ※デプロイ直後の1回目の curl は両アセットとも 5,476 バイトの別物が返った(数十秒後には正しい 28,152 バイトを返し shasum も一致)。セッション6 の切り分け手順どおり shasum 比較で判定すること
+- [x] main 取り込み時の確認 — 盤面が 960x480 → 960x360(正方ブロック化)になった影響でレールの説明文の高さ表記を更新。パドル幅 80 は不変なのでハンドル比率 8.33% も不変。アイテム「バーが増える」は `paddle.width` を変えず左右に別バーを生やす実装(items.ts / game.ts:450)なのでハンドル寸法にも影響しない。マージ後に実ブラウザで再実測(canvas 960x360 → CSS 343x130、レール幅一致、8px 間隔、レール 25% → パドル 239.5、盤面タッチ無視、離すと発射)
+- [ ] 実機(スマホ)で本番確認 — `@media (pointer: coarse)` は手元にタッチエミュレーション環境が無いため未実測。https://kusakuzushi.toshi0607.com/?user=toshi0607 をスマホで開いて確認する
 
 ### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
 
