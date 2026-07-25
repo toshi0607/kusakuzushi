@@ -112,6 +112,23 @@ MVP は 1+2 まで。3 はリンクの見栄えが欲しくなったら。
 | テスト | Vitest | core の物理・グリッド変換のユニットテスト |
 | ホスティング | Cloudflare Pages(+ Workers) | 既存アカウント・経験あり |
 
+## 6.1 パフォーマンス計測(Lighthouse CI)
+
+しきい値と計測対象の正は `lighthouserc.cjs`。ワークフローは `.github/workflows/lighthouse.yml`。
+
+| コマンド | 対象 | 用途 |
+|----------|------|------|
+| `pnpm lh` | `apps/web/dist` をローカル静的サーバで配信 | PR/main で毎回。外部要因が入らないので差分の影響だけが出る |
+| `pnpm lh:prod` | 本番 URL | 毎日 06:00 JST + 手動。デプロイ済みの実物の劣化を拾う |
+
+どちらも mobile / 3 runs、判定は中央値。レポート(json + html)は GitHub Actions の artifact に 30 日残る。
+
+計測しているのはトップページのみ(`/?user=...` は外部 API の応答時間に左右されて数値が安定しないため)。
+拡張版はページ所有者が GitHub なので計測対象外。
+
+**この構成が守っている性質**: Google Fonts の CSS を素の `<link rel="stylesheet">` に戻すと
+`render-blocking-resources` が 1 → 3 に増え、FCP/LCP が 0.9s → 3.0s に戻って CI が落ちる(実測で確認済み)。
+
 ## 7. フェーズ計画
 
 | Phase | 内容 | 完了条件 |
