@@ -100,6 +100,7 @@
 - 上部に一行ステータス: `@{username} ─ {total} contributions`(Plex、小さく)
 - canvas(アスペクト比 2:1、`width: 100%`)。枠線は `--ridge` 1px のみ。角丸 8px 維持
 - HUD は canvas 内描画(§5)。DOM 側に重複表示しない
+- 発射ガイド「クリック / Space で発射」は**盤面下半分(パドル空間)の中央**に置く。草は上半分を占める(core の `brickAreaHeight = canvasHeight/2 - gap`)ため、盤面全体の中央に置くと草の最下行に重なる
 
 ### リザルト(収穫レポート)
 
