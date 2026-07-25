@@ -7,7 +7,11 @@
     "build": "pnpm -r build",
     "lh": "pnpm --filter @kusakuzushi/web build && lhci autorun",
     "lh:slow": "pnpm --filter @kusakuzushi/web build && KUSAKUZUSHI_LH_TARGET=slow lhci autorun",
-    "lh:prod": "KUSAKUZUSHI_LH_TARGET=production lhci autorun"
+    "lh:prod": "KUSAKUZUSHI_LH_TARGET=production lhci autorun",
+    "deploy:web": "pnpm --filter @kusakuzushi/web run deploy",
+    "deploy:ogp": "pnpm --filter @kusakuzushi/ogp run deploy",
+    "verify:web": "node tools/verify-deploy.mjs",
+    "verify:ogp": "node tools/verify-worker.mjs"
   },
   "devDependencies": {
     "@lhci/cli": "^0.15.1"

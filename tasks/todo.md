@@ -8,7 +8,7 @@
 |------------|--------|-----------|
 | core は DOM/fetch 非依存の純粋 TS | DESIGN.md §1 | core/src に fetch/document 参照がないこと(grep) |
 | データ源はアダプタで差し替え可能 | DESIGN.md §2 | core が ContributionGrid 型のみに依存 |
-| リポジトリは private で作成 | セッション1判断(公開は明示指示待ち) | gh repo view |
+| リポジトリは private で作成。**将来 public にする**(時期は未定) | セッション1判断 + ユーザー方針 2026-07-26 | gh repo view。公開耐性のある CI 構成はセッション13 で用意済み |
 | モデルルーティング: scaffold=haiku, 実装=sonnet, レビュー=reviewer(opus) | ~/.claude/rules/behavior.md | 各 Agent 呼び出し |
 | 区切りごとにセッション分割(S1:core, S2:web, S3:OGP, S4:拡張) | ユーザー指示 2026-07-24 | 各セッション末尾でコミット+push済みであること |
 | コミットに Co-Authored-By: Claude | システム規約 | git log |
@@ -43,8 +43,12 @@
 | 10(2つ目) | ファビコン | 完了 |
 | 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
 | 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
+| 13 | PR マージで自動デプロイ + パブリック化の準備 | 進行中 |
 
-**未完了なし**(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
+セッション12 までは**未完了なし**(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
+
+**デプロイの現行手順はセッション13 を見ること。** それ以前のセッションの引き継ぎに書いてある
+`npx wrangler pages deploy ...` はもう手順ではない(main へのマージで自動デプロイされる)。
 
 ## セッション1: リポジトリ + core エンジン
 
@@ -1114,3 +1118,173 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
   FCP は 1153 / 3767 / 2729ms と揺れ、中央値がしきい値を超えた。同時刻に CI(GitHub ランナー)から
   測ると FCP 中央値 1013ms で green。**本番の合否判定はローカルではなく CI の `production` ジョブで行うこと**
 - 次の一手(**発動せず**。A-11 で本番 green を実測したため前提が消えた。将来また赤くなったとき用に残す): `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
+
+## セッション13: PR マージで自動デプロイ + パブリック化の準備(2026-07-26)
+
+依頼: 「PR マージでデプロイされるようにしたい。ゆくゆくはパブリックリポジトリにするので、それも踏まえて」
+
+### なぜやるか
+
+セッション12 まで、デプロイは毎回人間が `wrangler` を叩いていた。その手動運用が実際に事故を生んでいる:
+
+- **S6**: デプロイ後に本番が真っ白。切り分けで「origin の実体は手元の dist と byte 一致か」を
+  `curl` + `shasum` で手作業確認した
+- **S12**: デプロイ直後の計測が旧ビルドと新ビルドを混ぜて引いた。判別はアセットのハッシュ名の目視
+  (`index-BpMi0tfA.js` か `index-pr2ZC311.js` か)
+- **S10(アイテムドロップ)**: 「ブランチ作成後に main へ入った別 PR の機能もこの配信に含まれる」—
+  どの時点の main が本番かが人間の記憶に依存していた
+
+いずれも「配信中の成果物 == 手元の成果物」が機械で言えれば消える手間。あわせて `npx wrangler` の
+浮動バージョン(実行時の latest)も固定する。
+
+### Constraints(セッション13)
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| デプロイ対象は apps/web(Pages)と workers/ogp(Worker)の両方。変更パスで出し分け | ユーザー選択 2026-07-26 | `changes` ジョブのログ |
+| デプロイのゲートは `ci.yml` の `test` のみ。Lighthouse は待たせない | ユーザー選択 2026-07-26 | `deploy-*` の `needs` |
+| 既存の `test` / `Lighthouse` ジョブの挙動を変えない | 既存 CI が退行ゲート | `lighthouserc.cjs` の diff が空、3 ジョブが従来どおり green |
+| デプロイは main への push のみ。fork PR から絶対に走らない | パブリック化前提 | `deploy-*` の `if` 条件 + PR でスキップされる実測 |
+| 新規のランタイム依存を増やさない | リポジトリの既存方針(`tools/*.mjs` は依存ゼロ) | 追加は devDependency の `wrangler` だけ。verify 系は Node 標準 API のみ |
+| クレデンシャルは Claude が扱わない | 安全ルール | トークン作成と secret 登録はユーザーが実施 |
+| LICENSE / README は今回入れない | ユーザー選択(公開の意思決定が要るため別 PR) | — |
+
+### Assumptions(セッション13)
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| コミット履歴にクレデンシャルは含まれない | VERIFIED | 追加された全ファイルを列挙して確認、`git grep` でトークン様の文字列 0 件 |
+| `workers/ogp` は `packages/core` に依存しない(core 変更で Worker を出し直す必要が無い) | VERIFIED | `workers/ogp/package.json` の deps は `workers-og` のみ |
+| wrangler 4.114.0 で Worker がバンドルできる | VERIFIED | `wrangler deploy --dry-run` が Total Upload 1974.86 KiB で成功(2026-07-26) |
+| `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
+| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト2種で exit 1 を実測(下記) |
+| `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
+| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED | secret 登録後の初回デプロイが検証。足りなければスコープを足す |
+| private のままブランチ保護が設定できる(GitHub のプラン依存) | UNVERIFIED | `gh api` の応答で判定。不可ならパブリック化時に実施 |
+
+### 変えたもの
+
+| ファイル | 内容 |
+|---|---|
+| `apps/web/package.json` / `workers/ogp/package.json` | devDependency に `wrangler@^4`、`deploy` スクリプトを追加。`npx wrangler`(浮動)をやめ、pnpm-lock で固定する |
+| `package.json`(ルート) | `deploy:web` / `deploy:ogp` / `verify:web` / `verify:ogp` |
+| `.github/workflows/ci.yml` | `test` に artifact upload、`changes`(パス判定)、`deploy-web`、`deploy-ogp` を追加。`permissions: contents: read`、`concurrency`、action の SHA 固定 |
+| `.github/workflows/lighthouse.yml` | `permissions: contents: read`、`pnpm/action-setup` を SHA 固定 |
+| `.github/dependabot.yml`(新規) | github-actions と npm の週次更新。wrangler は単独 PR |
+| `tools/verify-deploy.mjs`(新規) | Pages のスモーク。本番 HTML が今回のエントリ JS を指し、その sha256 が手元と一致するまでリトライ |
+| `tools/verify-worker.mjs`(新規) | Worker のスモーク。人間 UA→302 / クローラー UA→200+og:image / og.png→image/png |
+
+`deploy` スクリプトを叩くときは **`pnpm run` が要る** — `pnpm deploy` は pnpm 組み込みのコマンドで、
+`pnpm --filter X deploy` はスクリプトを実行しない。
+
+### 設計上の判断
+
+- **デプロイするのは test ジョブが上げた artifact**。deploy ジョブで build し直すと
+  「本番の中身 == テストしたもの」が状況証拠にしかならない。S6/S12 の切り分けコストはそこに由来した
+- **Lighthouse は待たせない**。`dist` / `slow` は PR で必ず走るゲートで、main に入る時点で通過済み。
+  ワークフローをまたぐ依存(`workflow_run`)は checkout する ref の指定を間違えやすく、
+  得られる保証に対して配線が重い
+- **paths-filter アクションを使わず `git diff` で判定**。パブリックリポジトリに増やす依存を減らす。
+  `github.event.before` を辿れないとき(force push / 初回 push)は**両方 true にフォールバック**する
+- **自動ロールバックは入れない**。スモークの誤検知でロールバックするほうが危険。
+  スモークが赤いときは人間が Cloudflare ダッシュボード / `wrangler pages deployment` で判断する
+- **サードパーティ action は SHA 固定、`actions/*` はメジャータグ**。前者はタグを書き換えられるため。
+  固定しっぱなしにしないために Dependabot を同時に入れた
+- **`pull_request_target` は使わない**。fork の PR コードを secret 付きで走らせる唯一の穴
+
+### account ID / zone ID の扱い
+
+`workers/ogp/wrangler.toml` の `zone_id` と、この todo.md にある Account ID
+(`5ee49b8e0983dc8fcf6d0eddb45ef5d8`)は**クレデンシャルではなく識別子**で、API トークン無しでは
+何もできない。よって**履歴の書き換えはしない**。GitHub の secret に `CLOUDFLARE_ACCOUNT_ID` として
+置くのはワークフローの見た目を揃えるためで、秘匿が目的ではない。
+
+### 新しい運用
+
+- **通常**: main へマージすると `CI` が回り、変更パスに応じて `deploy-web` / `deploy-ogp` が走る。
+  デプロイ後にスモークが自動で通る。手でコマンドを叩く必要は無い
+- **手元から出したいとき**(緊急時):
+
+```bash
+pnpm -r build
+pnpm run deploy:web && pnpm run verify:web
+pnpm run deploy:ogp && pnpm run verify:ogp
+```
+
+- **本番の健康診断**: 従来どおり `Lighthouse` ワークフローの `production` ジョブ(毎日 06:00 JST /
+  `workflow_dispatch`)。ローカルからの `pnpm lh:prod` はばらつくので合否判定に使わない(S12)
+
+### ユーザー作業(Claude は触らない)
+
+1. Cloudflare ダッシュボードで API トークンを作成。テンプレート「Edit Cloudflare Workers」をベースに、
+   - Account → **Cloudflare Pages : Edit**
+   - Account → **Workers Scripts : Edit**
+   - Zone → **Workers Routes : Edit**(`wrangler.toml` の `routes` を張り直すのに要る)
+   - Account Resources: 当該アカウントのみ / Zone Resources: `toshi0607.com` のみ
+2. GitHub の repo secrets に登録
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID` = `5ee49b8e0983dc8fcf6d0eddb45ef5d8`
+
+**secret が無いと `deploy-*` は落ちる**(ワークフローは動くがデプロイが失敗する)。
+マージ前に登録しておくこと。
+
+### タスク
+
+- [x] `wrangler` を devDependency として固定 + `deploy` スクリプト
+- [x] `tools/verify-deploy.mjs`(Pages スモーク)。ネガティブテスト2種で exit 1 を実測
+- [x] `tools/verify-worker.mjs`(Worker スモーク)。route の無いオリジンで exit 1 を実測
+- [x] `ci.yml` に `changes` / `deploy-web` / `deploy-ogp`、artifact の受け渡し
+- [x] `permissions` / SHA 固定 / `concurrency` / `dependabot.yml`
+- [x] `pnpm -r test`(162件)/ `pnpm -r build` exit 0
+- [ ] ユーザーが Cloudflare API トークンを作成し、GitHub secrets に登録
+- [ ] PR → CI green(`deploy-*` が PR でスキップされることを確認)
+- [ ] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑
+- [ ] ブランチ保護 + Actions のセキュリティ設定(プラン次第。不可ならパブリック化時)
+- [ ] 次に `workers/ogp` だけを触る PR で、`deploy-web` がスキップされることを確認(パス判定の実証)
+
+### 検証結果(2026-07-26、PR 段階)
+
+パス判定ロジック(`changes` ジョブと同じスクリプト)を代表的な変更セットで実行:
+
+```
+web のみ            : web=true  ogp=false
+worker のみ         : web=false ogp=true
+core のみ           : web=true  ogp=false      # ogp は core に依存しない
+lockfile            : web=true  ogp=true
+docs のみ           : web=false ogp=false
+extension のみ      : web=false ogp=false      # 拡張はデプロイ対象外
+lighthouse.yml のみ : web=false ogp=false
+空                  : web=false ogp=false
+```
+
+`verify-deploy.mjs`(本番 https://kusakuzushi.toshi0607.com/ に対して):
+
+```
+正常   : 期待 /assets/index-SQEC_6xV.js / sha256 14a678da… → 1 回目で一致、exit 0
+異常1  : HTML が別アセットを指す        → 「本番 HTML がまだ …-SQEC_6xV.js を指している」exit 1
+異常2  : 名前一致・中身が切り詰め(1535B)→ 「sha256 不一致(配信 27756B、手元 1535B)」exit 1
+```
+
+異常2 は S6 の白画面(切り詰められた JS はパースが通り、console エラーを出さずに何もしない)の形。
+**名前の一致だけでは中身を保証できない**ので、sha256 まで見る設計にしてある。
+
+`verify-worker.mjs`:
+
+```
+正常 : 人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png、exit 0
+異常 : route の無い kusakuzushi.pages.dev → 「人間 UA が 200(302 のはず。200 なら route が外れている)」exit 1
+```
+
+異常側が意味を持つのは、Pages が**存在しないパスに index.html を 200 で返す**から(S9 の robots.txt)。
+つまり `/share/*` が 200 であることは route の証明にならず、302 であることが証明になる。
+
+### 今回やらないこと
+
+| 項目 | 理由 |
+|---|---|
+| LICENSE / ルート README / SECURITY.md | 公開の意思決定(ライセンス選択、対外的な説明)が要るので別 PR |
+| Cloudflare Pages の Git 連携(Pages 側でビルド) | direct upload を維持。monorepo + pnpm のビルド設定を Pages 側に二重管理したくない |
+| プレビューデプロイ(PR ごとの `--branch` デプロイ) | 今回のスコープ外。PR の品質担保は Lighthouse の `slow` ゲートが担っている |
+| 自動ロールバック | 誤検知でロールバックするほうが危険 |
+| `apps/extension` のデプロイ | Chrome Web Store は未申請、手動運用(`apps/extension/README.md`) |
+| git 履歴の書き換え | account/zone ID はクレデンシャルではない(上記) |
