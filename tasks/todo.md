@@ -1114,3 +1114,66 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
   FCP は 1153 / 3767 / 2729ms と揺れ、中央値がしきい値を超えた。同時刻に CI(GitHub ランナー)から
   測ると FCP 中央値 1013ms で green。**本番の合否判定はローカルではなく CI の `production` ジョブで行うこと**
 - 次の一手(**発動せず**。A-11 で本番 green を実測したため前提が消えた。将来また赤くなったとき用に残す): `production` ジョブのログ(`lh-summary`)で FCP の内訳を見る。残るクリティカルパスは HTML 1 往復だけなので、次に効くのは Cloudflare 側(`server-response-time` 170ms)か、フォント取得が帯域を食っている分(その場合は初めて自前ホスト化に意味が出る)
+
+## セッション13: Chrome ウェブストア公開(進行中 2026-07-26)
+
+拡張(apps/extension)を Chrome ウェブストアに出す。本体は完成済み(build/test green)なので、
+このセッションの作業は **ストア提出物の作成** と **デベロッパーコンソールへの入力**。
+
+### ユーザー決定(2026-07-26)
+
+| 論点 | 決定 |
+|---|---|
+| 公開範囲 | **テスター限定 (Private)** — まず自分だけで動作確認。後から Unlisted/Public に変更可 |
+| 掲載文の言語 | **日本語 + 英語**(既定 en + ja ロケール) |
+| プライバシーポリシー | **用意する** — apps/web に `/privacy` を追加してデプロイ |
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| デベロッパー登録・$5 決済はユーザーが行う | システム規約(アカウント作成・決済情報入力は禁止) | ユーザー報告 |
+| 「審査に送信」の最終クリックはユーザー | システム規約(公開行為) | ユーザー報告 |
+| 未パック拡張の読み込みはユーザー | `chrome://` はブラウザ自動化の対象外 | ユーザー報告 |
+| 拡張は権限ゼロ・リモートコード無しを維持 | 審査摩擦の最小化 | manifest の permissions が空、dist に外部 URL の import が無いこと |
+| 拡張の挙動は変えない | 今回は公開作業であって機能変更ではない | `pnpm --filter @kusakuzushi/extension test` 49 pass |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
+| 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
+| データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | UNVERIFIED | デプロイ後に curl で実測する |
+
+### Phase A: ユーザー作業(エージェント不可)
+
+- [ ] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い — https://chrome.google.com/webstore/devconsole
+- [ ] A-2. Account タブで連絡先メールを確認済みにする(未確認だと提出できない)
+- [ ] A-3. Private 配布用に「信頼できるテスター」に自分の Google アカウントを追加
+- [ ] A-4. `chrome://extensions` → デベロッパーモード ON → `apps/extension/dist` を読み込む(スクショ撮影の前提)
+- [ ] A-5. 最終「審査に送信」クリック
+
+### Phase B: エージェントが用意する提出物
+
+- [x] B-1. manifest 仕上げ: version 1.0.0 / `homepage_url` / `default_locale` + `_locales/{en,ja}` — `pnpm -r build` exit 0、`pnpm -r test` 225 pass
+- [x] B-2. `_locales` を dist に写す(build.mjs)。ついでに毎回 dist を作り直して古い生成物を残さない
+- [x] B-3. zip パッケージ生成スクリプト `pnpm --filter @kusakuzushi/extension package` — `unzip -l` でルートに manifest.json / content.js / icons/ / _locales/ の 12 entries を実測
+- [x] B-4. 小プロモタイル 440x280 PNG — `apps/extension/store/promo-tile-440x280.png`(440x280 を `file` で実測)。生成元は `apps/web/tools/promo-tile.{html,ts}` + dev エンドポイント `/__save-card?target=promo-tile`
+- [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
+- [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
+- [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
+- [~] B-8. `/privacy` ページ作成済み(`apps/web/public/privacy/index.html`、dev サーバーで表示確認)。**デプロイはユーザー承認待ち** — `curl -sI https://kusakuzushi.toshi0607.com/privacy` が 200 になったら完了
+- [x] B-9. `apps/extension/README.md` に公開手順を追記
+
+### Phase C: 一緒に実施
+
+- [ ] C-1. デベロッパーコンソールへブラウザ操作で入力(zip アップロード・掲載文・画像・プライバシー・配布範囲)
+- [ ] C-2. ユーザーが最終送信 → 審査結果を待つ
+
+### 見送り(スコープ外・要green)
+
+- 拡張 UI 文言(「🎮 崩す」ほか 6 文字列)の i18n。今回は manifest の name/description のみ英語化する。
+  UI まで英語化するかは別途判断(content.ts に `chrome.i18n` が入ると jsdom テストにモックが要る)

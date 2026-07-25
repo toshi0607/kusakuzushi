@@ -4,3 +4,5 @@ dist/
 *.local
 .claude/settings.local.json
 .lighthouseci/
+# `pnpm --filter @kusakuzushi/extension package` の出力(ストア提出物。dist から毎回作れる)
+apps/extension/*.zip
