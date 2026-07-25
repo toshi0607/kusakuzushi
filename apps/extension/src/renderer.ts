@@ -35,6 +35,24 @@ const PARTICLE_SPEED_RANGE = 60;
 const PARTICLE_MIN_SIZE = 2;
 const PARTICLE_SIZE_RANGE = 2;
 
+/**
+ * Item glyph geometry as fractions of the item's side, mirroring core's
+ * renderer: three dots for `multiBall`, three bars for `extraPaddle`. The
+ * marks are knocked out in the level-0 grass colour, which is the closest
+ * thing to a page background this renderer has (the canvas itself is
+ * transparent, so a real background colour isn't available here).
+ */
+const ITEM_DOT_SIZE_RATIO = 0.2;
+const ITEM_DOT_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0.4, 0.15],
+  [0.17, 0.55],
+  [0.63, 0.55],
+];
+const ITEM_BAR_WIDTH_RATIO = 0.18;
+const ITEM_BAR_HEIGHT_RATIO = 0.3;
+const ITEM_BAR_TOP_RATIO = 0.35;
+const ITEM_BAR_LEFT_RATIOS: readonly number[] = [0.13, 0.41, 0.69];
+
 const HUD_FONT = "11px -apple-system, sans-serif";
 const HUD_MARGIN_PX = 4;
 const HUD_SHADOW_COLOR = "rgba(0, 0, 0, 0.6)";
@@ -95,18 +113,50 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     ctx.globalAlpha = 1;
   }
 
-  function drawPaddle(ctx: CanvasRenderingContext2D, game: Game): void {
-    const paddle = game.paddleState;
+  /** All of them: `extraPaddle` puts a side bar on each side of the paddle. */
+  function drawPaddles(ctx: CanvasRenderingContext2D, game: Game): void {
     ctx.fillStyle = theme.paddleColor;
-    ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+    for (const paddle of game.paddleStates) {
+      ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+    }
   }
 
-  function drawBall(ctx: CanvasRenderingContext2D, game: Game): void {
-    const ball = game.ballState;
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+  /** All of them: `multiBall` splits the ball into several. */
+  function drawBalls(ctx: CanvasRenderingContext2D, game: Game): void {
     ctx.fillStyle = theme.ballColor;
-    ctx.fill();
+    for (const ball of game.ballStates) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawItems(ctx: CanvasRenderingContext2D, game: Game): void {
+    for (const item of game.itemStates) {
+      const size = item.size;
+      const left = item.x - size / 2;
+      const top = item.y - size / 2;
+
+      ctx.fillStyle = theme.ballColor;
+      ctx.fillRect(left, top, size, size);
+
+      ctx.fillStyle = theme.levelColors[0];
+      if (item.kind === "multiBall") {
+        const dot = size * ITEM_DOT_SIZE_RATIO;
+        for (const [dx, dy] of ITEM_DOT_OFFSETS) {
+          ctx.fillRect(left + size * dx, top + size * dy, dot, dot);
+        }
+        continue;
+      }
+      for (const dx of ITEM_BAR_LEFT_RATIOS) {
+        ctx.fillRect(
+          left + size * dx,
+          top + size * ITEM_BAR_TOP_RATIO,
+          size * ITEM_BAR_WIDTH_RATIO,
+          size * ITEM_BAR_HEIGHT_RATIO,
+        );
+      }
+    }
   }
 
   /** Score bottom-left, life bottom-right — the paddle's half of the board, which real grass never occupies. */
@@ -137,8 +187,9 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     ctx.clearRect(0, 0, game.config.canvasWidth, game.config.canvasHeight);
 
     drawParticles(ctx);
-    drawPaddle(ctx, game);
-    drawBall(ctx, game);
+    drawItems(ctx, game);
+    drawPaddles(ctx, game);
+    drawBalls(ctx, game);
     drawHud(ctx, game);
   }
 

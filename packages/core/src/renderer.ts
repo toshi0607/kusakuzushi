@@ -1,5 +1,6 @@
 import { MAX_FRAME_DT } from "./game";
 import type { Brick, Game } from "./game";
+import type { Item } from "./items";
 
 /**
  * GitHub's 5-step green scale, index 0..4 matching `Cell.level` /
@@ -14,6 +15,8 @@ export type Theme = {
   particleColor?: string;
   /** Ball (and future highlight) colour. Falls back to `ballColor`. */
   accentColor?: string;
+  /** Falling item colour. Falls back to `accentColor`, then `ballColor`. */
+  itemColor?: string;
   /** CSS font-family list for the HUD text. Falls back to `sans-serif`. */
   hudFont?: string;
 };
@@ -90,6 +93,51 @@ function spawnParticles(particles: Particle[], brick: Brick, theme: Theme, level
       size: 2 + Math.random() * 2,
       color,
     });
+  }
+}
+
+/**
+ * Item glyph geometry, as fractions of the item's side length. The marks
+ * are knocked out of the tile in the background colour and drawn with
+ * `fillRect` only, which keeps them legible at the ~10px items the
+ * extension's board uses and matches the pixel-type look of the HUD.
+ *
+ * `multiBall` is three dots in a triangle (one ball became several);
+ * `extraPaddle` is three bars in a row — literally what the player gets.
+ */
+const ITEM_CORNER_RADIUS_RATIO = 0.25;
+const ITEM_DOT_SIZE_RATIO = 0.2;
+const ITEM_DOT_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0.4, 0.15],
+  [0.17, 0.55],
+  [0.63, 0.55],
+];
+const ITEM_BAR_WIDTH_RATIO = 0.18;
+const ITEM_BAR_HEIGHT_RATIO = 0.3;
+const ITEM_BAR_TOP_RATIO = 0.35;
+const ITEM_BAR_LEFT_RATIOS: readonly number[] = [0.13, 0.41, 0.69];
+
+function drawItem(ctx: CanvasRenderingContext2D, item: Item, theme: Theme): void {
+  const size = item.size;
+  const left = item.x - size / 2;
+  const top = item.y - size / 2;
+
+  ctx.fillStyle = theme.itemColor ?? theme.accentColor ?? theme.ballColor;
+  fillRoundRect(ctx, left, top, size, size, size * ITEM_CORNER_RADIUS_RATIO);
+
+  ctx.fillStyle = theme.colors[0];
+  if (item.kind === "multiBall") {
+    const dot = size * ITEM_DOT_SIZE_RATIO;
+    for (const [dx, dy] of ITEM_DOT_OFFSETS) {
+      ctx.fillRect(left + size * dx, top + size * dy, dot, dot);
+    }
+    return;
+  }
+
+  const barWidth = size * ITEM_BAR_WIDTH_RATIO;
+  const barHeight = size * ITEM_BAR_HEIGHT_RATIO;
+  for (const dx of ITEM_BAR_LEFT_RATIOS) {
+    ctx.fillRect(left + size * dx, top + size * ITEM_BAR_TOP_RATIO, barWidth, barHeight);
   }
 }
 
@@ -193,15 +241,23 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
   }
   ctx.globalAlpha = 1;
 
-  const paddle = game.paddleState;
-  ctx.fillStyle = theme.paddleColor;
-  fillRoundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
+  for (const item of game.itemStates) {
+    drawItem(ctx, item, theme);
+  }
 
-  const ball = game.ballState;
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+  // Every paddle, not just the main one: `extraPaddle` puts a side bar on
+  // each side of it for a while.
+  ctx.fillStyle = theme.paddleColor;
+  for (const paddle of game.paddleStates) {
+    fillRoundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
+  }
+
   ctx.fillStyle = theme.accentColor ?? theme.ballColor;
-  ctx.fill();
+  for (const ball of game.ballStates) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   if (options?.hud !== false) {
     ctx.fillStyle = theme.textColor;

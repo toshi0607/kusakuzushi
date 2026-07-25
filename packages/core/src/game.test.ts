@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Game } from "./game";
+import { detectBrickCollision } from "./physics";
+import { DEFAULT_CONFIG, Game } from "./game";
 import type { GameConfig } from "./game";
 import type { Cell, ContributionGrid } from "./model";
 
@@ -28,8 +29,14 @@ function makeTwoColumnGrid(col1RowLevels: Array<0 | 1 | 2 | 3 | 4>): Contributio
   return { username: "octocat", weeks: [emptyWeek, week1], total: 5 * col1RowLevels.filter((l) => l > 0).length };
 }
 
-/** Base config: full-width paddle so the ball always returns to it (vx stays 0). */
+/**
+ * Base config: full-width paddle so the ball always returns to it (vx stays
+ * 0). Item drops are switched off here — the tests that care about items
+ * opt back in with a scripted `random` (see the "items" describe block), and
+ * every other test stays deterministic without them.
+ */
 const BASE_CONFIG: GameConfig = {
+  ...DEFAULT_CONFIG,
   canvasWidth: 100,
   canvasHeight: 200,
   brickGapPx: 0,
@@ -41,7 +48,34 @@ const BASE_CONFIG: GameConfig = {
   maxBounceAngleDeg: 60,
   lives: 3,
   comboMultiplierStep: 0.5,
+  itemDropChance: 0,
 };
+
+/**
+ * col0 holds a single level-1 brick on the bottom row — the one the ball
+ * destroys on its first pass — and col1 a full column of level-4 (4 HP)
+ * decoys. The decoys matter: once `multiBall` fans balls out of col0 they
+ * do reach col1, and a board that "clears" freezes `update()` mid-test.
+ * 28 HP is far more than a test's worth of stray hits.
+ */
+function makeTargetAndDecoyGrid(): ContributionGrid {
+  const target: Cell[] = Array.from({ length: 7 }, (_, row) => {
+    const level: 0 | 1 = row === 6 ? 1 : 0;
+    return { date: `2024-01-0${row + 1}`, count: 10, level };
+  });
+  const decoys: Cell[] = Array.from({ length: 7 }, (_, row) => ({
+    date: `2024-01-1${row + 1}`,
+    count: 10,
+    level: 4 as const,
+  }));
+  return { username: "octocat", weeks: [target, decoys], total: 20 };
+}
+
+/** A `random` that yields `values` in order, then repeats the last one. */
+function scriptedRandom(values: number[]): () => number {
+  let index = 0;
+  return () => values[Math.min(index++, values.length - 1)];
+}
 
 function stepUntil(game: Game, predicate: () => boolean, dt = 0.01, maxSteps = 5000): void {
   let steps = 0;
@@ -233,5 +267,142 @@ describe("Game", () => {
     // #then the corner hit was caught: no life lost, still playing
     expect(game.life).toBe(3);
     expect(game.state).toBe("playing");
+  });
+
+  describe("item drops", () => {
+    /**
+     * A board where the ball loops between the bottom-row target brick and
+     * the paddle: the paddle is narrow enough to leave the ball at x=20
+     * (col0), and wide enough to catch both it and anything that falls from
+     * that brick.
+     *
+     * `random` is scripted, so which item drops is exact. Every script ends
+     * in a roll above `itemDropChance`, which `scriptedRandom` then repeats
+     * forever — later hits on the col1 decoys therefore drop nothing, and
+     * each test sees only the item it asked for.
+     */
+    function makeItemGame(random: () => number, overrides: Partial<GameConfig> = {}): Game {
+      const config: GameConfig = {
+        ...BASE_CONFIG,
+        paddleWidth: 40,
+        itemDropChance: 0.5,
+        itemFallSpeed: 100,
+        random,
+        ...overrides,
+      };
+      const game = new Game(makeTargetAndDecoyGrid(), config);
+      game.movePaddle(20);
+      game.launch();
+      return game;
+    }
+
+    it("drops an item from the destroyed brick's centre when the roll succeeds", () => {
+      // #given a board that always drops, and a roll that picks multiBall
+      const game = makeItemGame(scriptedRandom([0, 0, 0.99]));
+      const brick = game.liveBricks[0];
+      // #when the target brick is destroyed
+      stepUntil(game, () => game.itemStates.length > 0);
+      // #then one multiBall item starts falling from the brick's centre
+      expect(game.itemStates).toHaveLength(1);
+      expect(game.itemStates[0].kind).toBe("multiBall");
+      expect(game.itemStates[0].x).toBe(brick.rect.x + brick.rect.width / 2);
+    });
+
+    it("drops nothing when the roll fails", () => {
+      // #given the default 8% drop chance and a roll that always misses it
+      const game = makeItemGame(scriptedRandom([0.99]), { itemDropChance: 0.08 });
+      let hits = 0;
+      game.onBrickHit = () => {
+        hits += 1;
+      };
+      // #when the brick is destroyed
+      stepUntil(game, () => hits >= 1);
+      // #then
+      expect(game.itemStates).toHaveLength(0);
+    });
+
+    it("splits the ball into three when a multiBall item is caught", () => {
+      // #given a dropped multiBall item falling towards the paddle
+      const game = makeItemGame(scriptedRandom([0, 0, 0.99]));
+      const collected: string[] = [];
+      game.onItemCollected = (item) => {
+        collected.push(item.kind);
+      };
+      // #when the paddle catches it
+      stepUntil(game, () => collected.length > 0);
+      // #then the ball became 1 + multiBallSpawnCount, and the item is gone
+      expect(game.ballStates).toHaveLength(1 + DEFAULT_CONFIG.multiBallSpawnCount);
+      expect(game.itemStates).toHaveLength(0);
+      expect(collected).toEqual(["multiBall"]);
+    });
+
+    it("only costs a life once the last of the split balls has fallen", () => {
+      // #given three balls in play after a multiBall catch
+      const game = makeItemGame(scriptedRandom([0, 0, 0.99]));
+      stepUntil(game, () => game.ballStates.length === 3);
+      // #when the paddle abandons them entirely
+      game.movePaddle(1000);
+      stepUntil(game, () => game.ballStates.length < 3, 0.01, 20000);
+      // #then losing a ball while others are alive costs nothing
+      expect(game.life).toBe(3);
+      expect(game.state).toBe("playing");
+
+      // #when the rest fall too
+      stepUntil(game, () => game.state === "ballLost", 0.01, 20000);
+      // #then exactly one life was lost for the whole set
+      expect(game.life).toBe(2);
+      expect(game.ballStates).toHaveLength(1);
+    });
+
+    it("grows a side bar on each side of the paddle when an extraPaddle item is caught, and drops them when it expires", () => {
+      // #given a dropped extraPaddle item with a 1s effect
+      const game = makeItemGame(scriptedRandom([0, 0.9, 0.99]), { extraPaddleDurationSec: 1 });
+      // #when the paddle catches it
+      stepUntil(game, () => game.paddleStates.length > 1);
+      // #then three bars share the paddle's row, the extras half its width
+      const [main, left, right] = game.paddleStates;
+      const extraWidth = main.width * BASE_CONFIG.extraPaddleWidthRatio;
+      expect(game.paddleStates).toHaveLength(3);
+      expect(left).toMatchObject({ y: main.y, width: extraWidth, x: main.x - BASE_CONFIG.ballRadius - extraWidth });
+      expect(right).toMatchObject({ y: main.y, width: extraWidth, x: main.x + main.width + BASE_CONFIG.ballRadius });
+
+      // #when the effect runs out
+      stepUntil(game, () => game.extraPaddleRemaining === 0);
+      // #then only the main paddle is left
+      expect(game.paddleStates).toHaveLength(1);
+    });
+
+    it("leaves no gap a ball can slip through between the paddle and a side bar", () => {
+      // #given the side bars are out
+      const game = makeItemGame(scriptedRandom([0, 0.9, 0.99]));
+      stepUntil(game, () => game.paddleStates.length > 1);
+      const [main, left] = game.paddleStates;
+
+      // #when a descending ball is centred exactly on the gap between them
+      const ball = {
+        x: (left.x + left.width + main.x) / 2,
+        y: main.y,
+        vx: 0,
+        vy: BASE_CONFIG.ballSpeed,
+        radius: BASE_CONFIG.ballRadius,
+      };
+
+      // #then it still overlaps a bar (the gap is narrower than the ball)
+      const overlaps = game.paddleStates.some((paddle) => detectBrickCollision(ball, paddle) !== null);
+      expect(overlaps).toBe(true);
+    });
+
+    it("clears falling items and the side bars when a life is lost", () => {
+      // #given the side bars are out and another item is on its way down
+      const game = makeItemGame(scriptedRandom([0, 0.9, 0.99]));
+      stepUntil(game, () => game.paddleStates.length > 1);
+      // #when the ball is abandoned
+      game.movePaddle(1000);
+      stepUntil(game, () => game.state === "ballLost", 0.01, 20000);
+      // #then the next ball starts from a clean board
+      expect(game.itemStates).toHaveLength(0);
+      expect(game.paddleStates).toHaveLength(1);
+      expect(game.extraPaddleRemaining).toBe(0);
+    });
   });
 });
