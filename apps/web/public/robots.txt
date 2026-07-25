@@ -1,0 +1,5 @@
+# Cloudflare Pages は存在しないパスに index.html を 200 で返すため、
+# robots.txt を置かないとクローラーが HTML を robots.txt として解釈する
+# (本番実測 2026-07-25: Lighthouse SEO の robots-txt が 49 errors)。
+User-agent: *
+Allow: /
