@@ -7,10 +7,14 @@
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
-import { buildIntentUrl, saveCanvasImage } from "./share";
+import { buildIntentUrl, saveResultImage } from "./share";
+import { watchTheme } from "./theme";
 
 /** Paddle speed, in px/sec, while an arrow key is held. */
 const KEY_MOVE_SPEED_PX_PER_SEC = 480;
+
+/** 「草の生育」アニメの長さ(DESIGN-VISUAL §4。attract.ts と同じ値)。 */
+const REVEAL_DURATION_MS = 700;
 
 type ResultState = Extract<GameState, "gameOver" | "clear">;
 
@@ -68,6 +72,8 @@ export function createSession(
   let paddleX = DEFAULT_CONFIG.canvasWidth / 2;
   const heldKeys = new Set<string>();
   let lastResultState: ResultState | null = null;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const revealStartMs = performance.now();
 
   function canvasXFromClientX(clientX: number): number {
     const rect = canvas.getBoundingClientRect();
@@ -124,21 +130,50 @@ export function createSession(
     result.replaceChildren();
 
     const heading = document.createElement("h2");
-    heading.textContent = state === "clear" ? "🌱 完全刈り取り!" : "ゲームオーバー";
+    heading.textContent = state === "clear" ? "🌱 完全刈り取り！" : "ゲームオーバー";
     result.appendChild(heading);
 
     const pct = grid.total > 0 ? Math.floor((harvestedCount(game) / grid.total) * 100) : 0;
 
-    const stats = document.createElement("p");
-    stats.className = "result-stats";
-    stats.textContent = `スコア: ${game.score} / 刈り取り率: ${pct}%`;
-    result.appendChild(stats);
+    const statGrid = document.createElement("div");
+    statGrid.className = "result-stat-grid";
+    const entries: Array<[string, string]> = [
+      ["スコア", game.score.toLocaleString()],
+      ["刈り取り率", `${pct}%`],
+    ];
+    for (const [labelText, valueText] of entries) {
+      const stat = document.createElement("div");
+      stat.className = "result-stat";
+      const label = document.createElement("span");
+      label.className = "result-stat-label";
+      label.textContent = labelText;
+      const value = document.createElement("span");
+      value.className = "result-stat-value";
+      value.textContent = valueText;
+      stat.append(label, value);
+      statGrid.appendChild(stat);
+    }
+    result.appendChild(statGrid);
+
+    // 刈り取り率もプログレスバーではなく草セルの並びで語る(DESIGN-VISUAL §3)
+    const HARVEST_CELLS = 18;
+    const filled = Math.round((pct / 100) * HARVEST_CELLS);
+    const bar = document.createElement("div");
+    bar.className = "harvest-bar";
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", `刈り取り率 ${pct}%`);
+    for (let i = 0; i < HARVEST_CELLS; i++) {
+      const cell = document.createElement("span");
+      cell.className = i < filled ? "harvest-cell harvest-cell-filled" : "harvest-cell";
+      bar.appendChild(cell);
+    }
+    result.appendChild(bar);
 
     const actions = document.createElement("div");
     actions.className = "result-actions";
 
     const shareLink = document.createElement("a");
-    shareLink.className = "share-button";
+    shareLink.className = "share-button btn-primary";
     shareLink.href = buildIntentUrl(username, grid.total, pct, game.score);
     shareLink.target = "_blank";
     shareLink.rel = "noopener noreferrer";
@@ -150,7 +185,7 @@ export function createSession(
     saveButton.textContent = "画像を保存";
     saveButton.addEventListener("click", () => {
       saveButton.disabled = true;
-      saveCanvasImage(canvas, username)
+      saveResultImage(canvas, username, { score: game.score, percentage: pct, cleared: state === "clear" })
         .catch(() => {
           saveButton.textContent = "保存に失敗しました";
         })
@@ -198,7 +233,8 @@ export function createSession(
 
     applyKeyboardMovement(dt);
     game.update(dt);
-    render(ctx, game, getTheme());
+    const reveal = reducedMotion ? 1 : Math.min((now - revealStartMs) / REVEAL_DURATION_MS, 1);
+    render(ctx, game, getTheme(), { reveal });
     updateOverlay();
 
     // Terminal states never leave without a full session restart
@@ -213,9 +249,18 @@ export function createSession(
 
   rafId = window.requestAnimationFrame(frame);
 
+  // The loop stops on gameOver/clear, so an OS theme flip while the
+  // result screen is up needs an explicit one-frame repaint.
+  const unwatchTheme = watchTheme(() => {
+    if (game.state === "gameOver" || game.state === "clear") {
+      render(ctx, game, getTheme(), { reveal: 1 });
+    }
+  });
+
   return function destroy(): void {
     running = false;
     window.cancelAnimationFrame(rafId);
+    unwatchTheme();
     canvas.removeEventListener("pointermove", handlePointerMove);
     canvas.removeEventListener("pointerdown", handlePointerDown);
     window.removeEventListener("keydown", handleKeyDown);

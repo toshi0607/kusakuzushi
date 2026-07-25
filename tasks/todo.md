@@ -234,6 +234,64 @@ pnpm --filter @kusakuzushi/extension build
 5. マウスでパドル移動、クリック/Space で発射。破壊された日の草が実際に灰色になる
 6. 「やめる」または他ページへ遷移で原状復帰
 
+## セッション5: Web 版ビジュアルデザイン改善(計画済み・実装未着手)
+
+設計: ../DESIGN-VISUAL.md が正(コンセプト「夜の畑のアーケード」、トークン、タイポ、レイアウト、モーション、コピーの全仕様)。ここは実行計画。
+
+### Constraints(セッション5 追加分)
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| ゲームバランス不変(game.ts / physics.ts のロジック・数値に触らない) | 全セッション共通方針 | `git diff main -- packages/core/src/game.ts packages/core/src/physics.ts` が空 |
+| core の Theme 変更は optional フィールドのみ(拡張版の後方互換) | DESIGN-VISUAL §5 | 拡張のテスト・ビルドが無変更で pass |
+| 緑は草(コンテンツ)専用。UI 操作系はアンバー | DESIGN-VISUAL §0 | style.css に緑系 UI 色がないこと(grep) |
+| フレームワーク・JS 依存を増やさない(フォントは Google Fonts のみ) | DESIGN.md §4 / constraints.md | package.json diff |
+| ライト/ダーク両対応を維持(prefers-color-scheme) | 現行実装の検証済み挙動 | 両モードのスクリーンショット |
+| prefers-reduced-motion 尊重 | DESIGN-VISUAL §4/§9 | エミュレーションで生育アニメ・autopilot 停止を確認 |
+| 既存の `.overlay[hidden]` 特異性対策を壊さない | style.css のコメント(実バグ由来) | hidden 時に overlay が消えることを確認 |
+| 視覚/スタイリングコードの直接編集は frontend 系ルールに従う | ~/.claude/rules/constraints.md | — |
+
+### Assumptions(セッション5 追加分)
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| DotGothic16 は Google Fonts で `text=` サブセット取得可(日本語ピクセルフォント) | VERIFIED | 2026-07-25 実測: css2?family=DotGothic16&text=(使用グリフ) → @font-face + unicode-range が返り、woff2 は 3,892 bytes(漢字かな含む全指定グリフが unicode-range に載ることを確認) |
+| canvas の `ctx.font` で Web フォント(DotGothic16)が使える(document.fonts.load 後) | VERIFIED | 2026-07-25 本番ページ上で実測: FontFace(subset woff2) load → status=loaded、`ctx.measureText` が sans-serif と異なる幅(136 vs 139.57)を返し、fillText で 966px 描画。フォールバック(sans-serif)でも描画自体は成立 |
+| 53x7 グリッドに 3x5 ピクセル文字 11 字(KUSAKUZUSHI = 43 列)が収まる | VERIFIED | 11×(3+1)−1 = 43 ≤ 53、5 ≤ 7(机上計算) |
+| 拡張版は core の render() を使っていない(透過レンダラ独自実装) | VERIFIED | Notes 2026-07-25 (S4)。ただし Theme 型は import しているため optional 追加のみ許容 |
+
+### タスク(フェーズ順。各フェーズ末に build + スクリーンショット確認)
+
+- [x] Phase 1 — トークン・タイポ・ページシェル(f5144d4): style.css をトークン体系で書き換え、DotGothic16 subset + Plex 読込、シェル/フォーカスリング
+  - 検証済み: `pnpm -r build` exit 0、162 tests pass、light/dark/mobile スクリーンショット目視(2026-07-25)
+- [x] Phase 2 — canvas 描画の磨き込み(5f0835a): ブロック角丸 20%、ボール=アンバー、パドル=カプセル、HUD=DotGothic16(hudFont)、ライフ=草セル。回帰テスト 4 件追加
+  - 検証済み: core 34 tests pass、extension 44 tests 無変更 pass、プレイ画面スクリーンショット目視
+- [x] Phase 3 — アトラクトモード(1cf78ad): demo-grid(グリフ完全性テスト付き、未定義 throw)、autopilot、reveal 生育アニメ、DEMO PLAY、reduced-motion 分岐
+  - 検証済み: rAF 同期駆動ハーネスで 900 フレーム駆動(ループ生存・草が刈られる)、フォーム送信→実セッション差し替え、reduced-motion で pendingRaf=0(静的グリッド)、`pnpm -r test` 173 pass
+  - グリフ完全性: KUSAKUZUSHI 全 11 文字の期待パターン一致 + 未定義文字 throw をユニットテストで検証(lessons.md 2026-07-25 対応)
+- [x] Phase 4 — リザルト/共有画像(85f54b5): 収穫レポートパネル(草セル 18 個バー)、composeResultImage で 1200x630 合成
+  - 検証済み: ハーネスで gameOver 到達しリザルト表示(見出し/ラベル/値/バー 18 セル)、合成画像 1200x630 を DOM 描画して目視、X intent ビルダーはテスト既存 pass で不変
+- [x] フェーズゲート: reviewer(opus) に DESIGN-VISUAL.md を渡して設計適合レビュー — **Approve**(Critical/High なし、Medium 4 / Low 7)。全 11 件を同セッションで対応(下記「セッション5 レビュー」)。※ /code-review スキルはこのセッションでは PR 番号引数専用だったため reviewer に一本化
+- [ ] PR → CI green → マージ → Pages デプロイ → 本番スクリーンショット
+
+### セッション5 レビュー(reviewer/opus, 2026-07-25)
+
+判定: Approve。指摘と対応:
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| M1 | Medium | DotGothic16 の text= サブセットに スコア率 が無く、共有画像の見出し行がフォント混在になる | text= に スコア率 を追加 |
+| M2 | Medium | 本番セッションに生育アニメ(reveal)が未適用(§4 の明文要件。demo だけ動く逆転) | session.ts に revealStartMs + reduced-motion 分岐を追加し render に {reveal} を渡す。ハーネス実測: 2フレーム時点で左端のみ描画(leftGreens=1235 / rightGreens=0) |
+| M3 | Medium | 375px でリザルトパネルが canvas からはみ出す(§9 品質フロア) | overlay に padding+overflow-y:auto、560px 以下で見出し/統計/ボタンを縮小(横並び維持)。実測 overflows=false。§3 も同判断に更新 |
+| M4 | Medium | ローディングでステージが1行に潰れレイアウトシフト(§3「レイアウトシフトなし」違反) | buildLoadingView に canvas 同寸(aspect-ratio 2/1)の board-placeholder を導入 |
+| L1 | Low | クリア見出しの ! が ASCII でサブセット(全角!)に無い | 全角!に統一 |
+| L2 | Low | アトラクト再スタート時に完成グリッドが1フレーム閃く | reveal 計算を restart() の後ろに移動 |
+| L3 | Low | デモのライフが§7の「無限」と不一致 | core 無変更の制約を優先し「gameOver でグリッド再生成」を正式仕様に(§7 更新+コードコメント) |
+| L4 | Low | 停止中ループ(リザルト/reduced-motion デモ)が OS テーマ切替に追従しない+theme.ts コメント齟齬 | watchTheme を復活させ、terminal state と reduced-motion デモで1フレーム再描画。コメント修正 |
+| L5 | Low | .demo-canvas の cursor 上書きがソース順で死んでいる/未使用 demo-area クラス | .game-canvas の後ろへ移動(理由コメント付き)、demo-area 削除 |
+| L6 | Low | .harvest-cell-filled の緑が固定値でテーマ非追従 | --grass-strong トークン(core colors[4] の写し、light/dark 反転)に置換 |
+| L7 | Low | フォントロードの空 catch(constraints.md 違反) | 意図的無視である旨のコメントを付与 |
+
 ## Notes
 
 - 2026-07-24: gh のデフォルトホストが github.gatech.edu のため、github.com 操作は GH_HOST=github.com を明示する
