@@ -39,9 +39,19 @@ export type GameConfig = {
   itemFallSpeed: number;
   /** Side length of the square item sprite, in px. */
   itemSize: number;
-  /** Balls added by catching one `multiBall` item. */
-  multiBallSpawnCount: number;
-  /** Hard cap on how many balls can be in play at once. */
+  /**
+   * How many balls each ball in play becomes when a `multiBall` item is
+   * caught. Splitting *every* ball (rather than adding a fixed number) is
+   * what lets the count compound: on a year of dense grass, a handful of
+   * catches is the difference between never finishing and clearing it.
+   */
+  multiBallSplitFactor: number;
+  /**
+   * Hard cap on how many balls can be in play at once — a backstop, not a
+   * balance knob. Measured cost of `update()` on a 371-brick board:
+   * 1 ball 0.02ms, 25 balls 0.29ms, 121 balls 0.49ms per frame against a
+   * 16.7ms budget, so this is set far above what play actually reaches.
+   */
   maxBalls: number;
   /** How long one `extraPaddle` item keeps the side bars, in seconds. */
   extraPaddleDurationSec: number;
@@ -71,8 +81,8 @@ export const DEFAULT_CONFIG: GameConfig = {
   itemDropChance: 0.08,
   itemFallSpeed: 120,
   itemSize: 14,
-  multiBallSpawnCount: 2,
-  maxBalls: 5,
+  multiBallSplitFactor: 2,
+  maxBalls: 200,
   extraPaddleDurationSec: 12,
   extraPaddleWidthRatio: 0.5,
   random: Math.random,
@@ -443,27 +453,34 @@ export class Game {
   }
 
   /**
-   * Fans `multiBallSpawnCount` clones out of the ball in play, alternating
-   * sides so the spread stays symmetric. Clones keep the configured speed —
-   * only the direction differs.
+   * Splits *every* ball in play into `multiBallSplitFactor`, fanning the
+   * clones out to alternating sides of the ball they came from so the
+   * spread stays symmetric. Clones keep the configured speed — only the
+   * direction differs. Compounding this way is deliberate: catching two
+   * items should be worth far more than catching one.
    */
   private splitBalls(): void {
-    const source = this.balls[0];
-    if (!source) return;
-
-    const baseAngle = Math.atan2(source.vy, source.vx);
     const spreadRad = MULTI_BALL_SPREAD_DEG * (Math.PI / 180);
+    const clones: Ball[] = [];
 
-    for (let i = 1; i <= this._config.multiBallSpawnCount; i++) {
-      if (this.balls.length >= this._config.maxBalls) return;
-      const sign = i % 2 === 0 ? 1 : -1;
-      const angle = baseAngle + sign * Math.ceil(i / 2) * spreadRad;
-      this.balls.push({
-        ...source,
-        vx: Math.cos(angle) * this._config.ballSpeed,
-        vy: Math.sin(angle) * this._config.ballSpeed,
-      });
+    for (const source of this.balls) {
+      const baseAngle = Math.atan2(source.vy, source.vx);
+      for (let i = 1; i < this._config.multiBallSplitFactor; i++) {
+        if (this.balls.length + clones.length >= this._config.maxBalls) {
+          this.balls.push(...clones);
+          return;
+        }
+        const sign = i % 2 === 0 ? 1 : -1;
+        const angle = baseAngle + sign * Math.ceil(i / 2) * spreadRad;
+        clones.push({
+          ...source,
+          vx: Math.cos(angle) * this._config.ballSpeed,
+          vy: Math.sin(angle) * this._config.ballSpeed,
+        });
+      }
     }
+
+    this.balls.push(...clones);
   }
 
   private handleBallLost(): void {
