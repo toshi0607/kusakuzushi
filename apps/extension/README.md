@@ -19,6 +19,25 @@ pnpm --filter @kusakuzushi/extension build
 開発中は `pnpm --filter @kusakuzushi/extension dev`(esbuild watch)。
 ビルドのたびに `chrome://extensions` で拡張のリロードが必要。
 
+## ウェブストアへの公開
+
+```bash
+pnpm --filter @kusakuzushi/extension package
+```
+
+`dist` を作り直して `kusakuzushi-extension-<version>.zip` を出す(zip のルートに
+`manifest.json` が来る形。`dist/` ごと包んだ zip はストアに拒否される)。
+
+1. `apps/extension/manifest.json` の `version` を上げる(ストアは前回より大きい値しか受け付けない)
+2. `pnpm --filter @kusakuzushi/extension package`
+3. [デベロッパーコンソール](https://chrome.google.com/webstore/devconsole)に zip をアップロード
+4. 掲載文・画像・プライバシーの回答は [`store/listing.md`](store/listing.md) が原本。
+   コンソール側を直接いじらず、原本を更新してからコピーする
+
+名前と簡単な説明はコンソールではなく `_locales/{en,ja}/messages.json` が持つ
+(`default_locale` は en)。`_locales` が dist から欠けると Chrome は manifest エラーで
+拡張の読み込み自体を拒否するので、`build.mjs` が毎回コピーしている。
+
 ## 構成
 
 | ファイル | 役割 |
@@ -30,6 +49,8 @@ pnpm --filter @kusakuzushi/extension build
 | `src/renderer.ts` | 拡張専用の透過レンダラ(ボール・パドル・落下アイテム・パーティクル・HUD だけ描く) |
 | `src/td-paint.ts` | 実 `td` の背景差し替えと原状復帰 |
 | `src/content.ts` | ボタン注入・入力・ゲームループと、`autoMount`(草の出現待ち・turbo・bfcache) |
+| `_locales/{en,ja}/messages.json` | 拡張の名前と説明。ストアの掲載名もここから引かれる |
+| `store/` | ウェブストアの提出物(掲載文の原本・プロモタイル・スクリーンショット) |
 
 ### 草はページの初期 HTML に無い
 

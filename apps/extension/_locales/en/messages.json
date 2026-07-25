@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Kusakuzushi — Break your GitHub grass",
+    "description": "Extension name shown in the Chrome Web Store and chrome://extensions."
+  },
+  "extDescription": {
+    "message": "Turns the contribution graph on a GitHub profile into a playable game of Breakout, right where it stands.",
+    "description": "Store short description. Must stay under 132 characters."
+  }
+}

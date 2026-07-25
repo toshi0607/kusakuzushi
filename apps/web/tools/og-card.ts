@@ -9,7 +9,7 @@
  *   1. pnpm --filter @kusakuzushi/web dev
  *   2. http://localhost:5173/tools/og-card.html を開く(canvas が描かれる)
  *   3. 「public/og.png に書き出す」ボタンを押す(dev 専用エンドポイントが
- *      apps/web/public/og.png を直接上書きする — vite.config.ts 参照)
+ *      apps/web/public/og.png を直接上書きする — vite.config.ts の card-writer 参照)
  *
  * 盤面はアトラクト画面そのもの(buildDemoGrid + core の render)を使う。
  * 草に描くワードマークを独自に描き直さないための制約(lessons.md 2026-07-25)。
