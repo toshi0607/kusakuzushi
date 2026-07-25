@@ -1,10 +1,25 @@
 name: CI
 
+# main へのマージで本番へ出るまでを 1 本のワークフローに入れてある。
+# ジョブ間の `needs` でしか順序は保証できず、ワークフローをまたぐ依存
+# (workflow_run)は checkout する ref の指定を間違えやすいため。
+#
+# Lighthouse は別ワークフロー(lighthouse.yml)のまま。PR で必ず走る退行ゲートなので、
+# main に入った時点で通過済みとみなし、デプロイは待たせない。
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+
+# GITHUB_TOKEN を最小権限に固定する(リポジトリ既定値に依存しない)。
+# デプロイの認証は Cloudflare の API トークンで、GITHUB_TOKEN は使わない。
+permissions:
+  contents: read
+
+# サードパーティの action はフルコミット SHA で固定する(タグは書き換えられる)。
+# actions/* は GitHub 管理なのでメジャータグのままにしている。
+# パブリックリポジトリでは fork から PR が来るので、この非対称な扱いを意図的に選んでいる。
 
 jobs:
   test:
@@ -12,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.30.3
 
@@ -28,3 +43,141 @@ jobs:
       # Type-checking only happens in the build scripts (tsc), so a test-only
       # CI would let type errors through.
       - run: pnpm -r build
+
+      # デプロイするのは「テストとビルドを通したこの成果物」そのものにする。
+      # deploy ジョブで build し直すと、本番の中身が手元の dist と同じであることが
+      # 状況証拠にしかならない(セッション6/12 の切り分けコストはそこに由来した)。
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 7
+
+  # 変更パスを見て、どちらをデプロイするか決める。
+  # PR では走らない(= deploy-* も needs 経由でスキップされる)。
+  changes:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      ogp: ${{ steps.filter.outputs.ogp }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # push の前後を diff するので履歴が要る。95 コミット規模なので全部取る
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # force push や初回 push では before を辿れない。取りこぼすくらいなら
+          # 余分にデプロイする(どちらも冪等)
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "前回の main tip を特定できないため両方デプロイする (before=${BEFORE})"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            echo "ogp=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "${BEFORE}" "${AFTER}")
+          echo "変更ファイル:"
+          echo "${changed}" | sed 's/^/  /'
+
+          # 両方に効く土台。ロックファイルや tsconfig の変更はビルド結果を変えうる
+          shared='^(pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|package\.json|\.github/workflows/ci\.yml|tools/verify-.*\.mjs)$'
+          # workers/ogp は packages/core に依存していない(deps は workers-og だけ)ので
+          # core の変更で Worker を出し直す必要は無い
+          web='^(apps/web/|packages/core/)'
+          ogp='^workers/ogp/'
+
+          # パイプにしないこと: `grep -q` は一致した時点で終了するので、書き手が SIGPIPE で
+          # 死ぬと pipefail のせいで「一致したのに失敗」になりうる
+          matches() { grep -qE "$1" <<< "${changed}"; }
+
+          if matches "${web}" || matches "${shared}"; then web=true; else web=false; fi
+          if matches "${ogp}" || matches "${shared}"; then ogp=true; else ogp=false; fi
+
+          echo "→ web=${web} ogp=${ogp}"
+          echo "web=${web}" >> "$GITHUB_OUTPUT"
+          echo "ogp=${ogp}" >> "$GITHUB_OUTPUT"
+
+  deploy-web:
+    needs: [test, changes]
+    # needs.changes が push 限定なので実質 main への push だけだが、
+    # デプロイの門番は条件側にも明示しておく(fork の PR から絶対に走らせない)
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      # 同時デプロイで新旧が入れ替わるのを防ぐ。途中キャンセルは
+      # 中途半端な状態を作るので cancel-in-progress は false
+      group: deploy-web
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # test ジョブが上げたものを使う(ここでは build し直さない)
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      # `pnpm deploy` は pnpm の組み込みコマンドなので、スクリプトを回すには run が要る
+      - run: pnpm run deploy:web
+
+      # 配信中の成果物 == いま出した成果物 を確定させる(伝播待ちのリトライ込み)
+      - run: pnpm run verify:web
+
+  deploy-ogp:
+    needs: [test, changes]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.outputs.ogp == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-ogp
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Worker は wrangler が workers-og ごとバンドルするので、artifact ではなくソースから出す
+      - run: pnpm run deploy:ogp
+
+      - run: pnpm run verify:ogp
