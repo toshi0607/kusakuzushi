@@ -121,6 +121,45 @@ describe("render", () => {
     expect(brickCall!.radius).toBeCloseTo(expected);
   });
 
+  it("hides bricks at reveal 0 and draws them full-size at reveal 1", () => {
+    // #given a game with one brick
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 2]));
+
+    // #when rendering at reveal 0
+    const hidden = makeFakeContext();
+    render(hidden.ctx, game, LIGHT_THEME, { reveal: 0 });
+
+    // #then no brick rect is drawn
+    expect(hidden.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[2])).toHaveLength(0);
+
+    // #when rendering at reveal 1 (and with options omitted)
+    const shown = makeFakeContext();
+    render(shown.ctx, game, LIGHT_THEME, { reveal: 1 });
+    const plain = makeFakeContext();
+    render(plain.ctx, game, LIGHT_THEME);
+
+    // #then the brick appears at its exact rect in both
+    const brick = game.liveBricks[0];
+    for (const fake of [shown, plain]) {
+      const call = fake.fillRects.find((c) => c.fillStyle === LIGHT_THEME.colors[2]);
+      expect(call).toMatchObject({ x: brick.rect.x, y: brick.rect.y, width: brick.rect.width, height: brick.rect.height });
+    }
+  });
+
+  it("skips the HUD when options.hud is false", () => {
+    // #given a fresh game
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 1]));
+    const fake = makeFakeContext();
+
+    // #when rendering with hud: false
+    render(fake.ctx, game, LIGHT_THEME, { hud: false });
+
+    // #then neither the score text nor the life cells are drawn
+    expect(fake.fillTexts).toHaveLength(0);
+    const lifeCells = fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[4] && call.width === 10);
+    expect(lifeCells).toHaveLength(0);
+  });
+
   it("keeps drawing bricks as sharp rects when roundRect is missing", () => {
     // #given a context without roundRect (older canvas / test stubs)
     const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 2]));
