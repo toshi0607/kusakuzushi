@@ -38,6 +38,10 @@ jobs:
       # lhci(chrome-launcher)が自動で見つける
       - run: pnpm exec lhci autorun
 
+      # 緑でも実測値をログに残す(assertion は落ちた項目しか出さないため)
+      - if: always()
+        run: node tools/lh-summary.mjs
+
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -71,6 +75,10 @@ jobs:
         env:
           KUSAKUZUSHI_LH_TARGET: slow
 
+      # 緑でも実測値をログに残す(assertion は落ちた項目しか出さないため)
+      - if: always()
+        run: node tools/lh-summary.mjs
+
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -99,6 +107,10 @@ jobs:
       - run: pnpm exec lhci autorun
         env:
           KUSAKUZUSHI_LH_TARGET: production
+
+      # 緑でも実測値をログに残す(assertion は落ちた項目しか出さないため)
+      - if: always()
+        run: node tools/lh-summary.mjs
 
       - if: always()
         uses: actions/upload-artifact@v4
