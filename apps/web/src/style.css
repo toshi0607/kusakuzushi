@@ -301,7 +301,8 @@ button:disabled {
 
 .board-placeholder {
   width: 100%;
-  aspect-ratio: 2 / 1;
+  /* 盤面 canvas と同じ 960x360。取得中と開始後でレイアウトを動かさない */
+  aspect-ratio: 8 / 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -328,12 +329,12 @@ button:disabled {
 }
 
 /*
- * 草(ブロック)は盤面の上半分を占める(core computeLayout: brickAreaHeight
- * = canvasHeight/2 - gap)。ガイドを盤面全体の中央に置くと、ちょうどその
- * 下端に重なるので、下半分=パドル空間の中央に寄せる。
+ * 草は正方セルぶんの帯(960x360 の盤面で上から約 134px = 37%)を占め、その
+ * すぐ下が HUD 行。ガイドを盤面全体の中央に置くと草や HUD に重なるので、
+ * 草の下端から下を可動域として、その中央に寄せる(= 盤面の約 69%)。
  */
 .guide-overlay {
-  top: 50%;
+  top: 37%;
   color: var(--ink);
   font-family: var(--font-display);
   font-size: 1.1rem;
@@ -462,29 +463,54 @@ button:disabled {
   }
 
   /*
-   * 狭幅では canvas 高が ~170px しかないため、リザルトは縦積みではなく
-   * 「横並びのまま縮小」で収める(DESIGN-VISUAL §3 の縦並び案は高さ超過
-   * するため不採用 — §3 も同判断に更新済み)。
+   * 狭幅では canvas 高が ~130px(375px 幅、正方セルの 8:3 盤面)しかないため、
+   * リザルトは縦積みではなく「横並びのまま縮小」で収める(DESIGN-VISUAL §3 の
+   * 縦並び案は高さ超過するため不採用 — §3 も同判断に更新済み)。4 ブロック
+   * (見出し / 統計 / 刈り取り率バー / ボタン)を全部残したままスクロールを
+   * 出さないため、余白・行間・草セルを一段ずつ小さくする。
    */
   .overlay {
-    gap: 8px;
+    gap: 4px;
+  }
+
+  .result-overlay {
+    padding: 6px;
   }
 
   .result-overlay h2 {
-    font-size: 1.2rem;
+    font-size: 1rem;
   }
 
   .result-stat-grid {
     gap: 24px;
   }
 
+  .result-stat {
+    gap: 0;
+  }
+
+  /* 1 語のラベルに本文の行間(1.7)は要らない */
+  .result-stat-label {
+    line-height: 1.2;
+  }
+
   .result-stat-value {
-    font-size: 1.2rem;
+    font-size: 1.05rem;
+  }
+
+  /* 草セルの 10:3(セル:隙間)を保ったまま縮める */
+  .harvest-bar {
+    gap: 2px;
+  }
+
+  .harvest-cell {
+    width: 7px;
+    height: 7px;
   }
 
   .result-actions button,
   .result-actions .share-button {
-    padding: 6px 12px;
+    padding: 5px 10px;
     font-size: 0.8125rem;
   }
 }

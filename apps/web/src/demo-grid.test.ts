@@ -32,8 +32,10 @@ describe("buildDemoGrid", () => {
     const grid = buildDemoGrid();
     const originCol = 5;
 
-    // #when / #then each letter's 3x5 box matches its glyph:
-    // on-pixels are strong grass (level 3-4), off-pixels are never letter-strength
+    // #when / #then each letter's 3x5 box matches its glyph: on-pixels are
+    // all level 4 — a single flat level, because mixing levels inside a
+    // 3-cell-wide stroke makes the glyph read as dither once the cells carry
+    // GitHub's own 22% gaps — off-pixels are never letter-strength
     for (let i = 0; i < DEMO_WORD.length; i++) {
       const glyph = EXPECTED[DEMO_WORD[i]];
       expect(glyph, `glyph for ${DEMO_WORD[i]}`).toBeDefined();
@@ -43,7 +45,7 @@ describe("buildDemoGrid", () => {
           const level = grid.weeks[glyphCol + gc][1 + gr].level;
           const where = `${DEMO_WORD[i]}[${i}] cell (${gr},${gc})`;
           if (glyph[gr][gc] === "1") {
-            expect(level, where).toBeGreaterThanOrEqual(3);
+            expect(level, where).toBe(4);
           } else {
             expect(level, where).toBeLessThanOrEqual(1);
           }

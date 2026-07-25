@@ -32,6 +32,15 @@ const MIN_PADDLE_MARGIN_BOTTOM_PX = 6;
 /** Ball crosses the whole board height in 1/0.8 = 1.25s — tuned for the ~194px real board. */
 const BALL_SPEED_HEIGHT_RATIO = 0.8;
 
+/**
+ * A dropped item is one grass cell across, so it reads as a cell falling
+ * out of the graph. core's 14px default would be larger than the 10px cells
+ * it drops from on this board.
+ */
+const MIN_ITEM_SIZE_PX = 6;
+/** Same share of the board per second as core's default (120px on a 480px board). */
+const ITEM_FALL_SPEED_HEIGHT_RATIO = 0.25;
+
 /** `level` squared, so a brick's score value scales with how "green" the day was. Negative levels clamp to 0. */
 export function levelToCount(level: number): number {
   return level > 0 ? level * level : 0;
@@ -75,17 +84,26 @@ export function deriveConfig(geometry: GrassGeometry): Partial<GameConfig> {
   // brickAreaTop=gap, brickAreaHeight=7*brickHeight+8*gap (computeLayout's
   // own math), so H/2 = brickAreaTop + brickAreaHeight = 7*cellHeight +
   // 9*gap — the "+2" below is that extra brickAreaTop gap plus the
-  // outer-edge gap computeLayout adds beyond the 7 inter-row gaps.
+  // outer-edge gap computeLayout adds beyond the 7 inter-row gaps. This
+  // keeps the grass in the top half; the row stride itself comes from
+  // `brickHeightPx` below.
   const canvasHeight = 2 * (ROWS_PER_WEEK * cellHeight + (ROWS_PER_WEEK + 2) * gap);
 
   return {
     canvasWidth,
     canvasHeight,
     brickGapPx: gap,
+    // core's default brick is square (its side = its width). Here the real
+    // `td`s are the truth: `measureGeometry` reads width and height
+    // independently, so pin the height rather than let a width/height
+    // disagreement drift the overlay further down with every row.
+    brickHeightPx: cellHeight,
     ballRadius: Math.max(MIN_BALL_RADIUS_PX, cellHeight * BALL_RADIUS_HEIGHT_RATIO),
     paddleWidth: Math.max(MIN_PADDLE_WIDTH_PX, (cellWidth + gap) * PADDLE_WIDTH_STRIDE_MULTIPLIER),
     paddleHeight: Math.max(MIN_PADDLE_HEIGHT_PX, cellHeight * PADDLE_HEIGHT_RATIO),
     paddleMarginBottom: Math.max(MIN_PADDLE_MARGIN_BOTTOM_PX, cellHeight * PADDLE_MARGIN_BOTTOM_RATIO),
     ballSpeed: canvasHeight * BALL_SPEED_HEIGHT_RATIO,
+    itemSize: Math.max(MIN_ITEM_SIZE_PX, cellHeight),
+    itemFallSpeed: canvasHeight * ITEM_FALL_SPEED_HEIGHT_RATIO,
   };
 }

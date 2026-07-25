@@ -2,7 +2,7 @@
  * The touch rail: a strip directly under the board that maps a finger's
  * horizontal position onto the paddle track 1:1.
  *
- * On a phone the board is only ~170px tall, so steering by dragging on the
+ * On a phone the board is only ~130px tall, so steering by dragging on the
  * canvas itself buries the ball and the paddle under the thumb — and a tap
  * there launches immediately, before the player can aim. The rail moves the
  * touch surface out of the picture: it is exactly as wide as the canvas, so
