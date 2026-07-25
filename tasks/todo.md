@@ -609,6 +609,7 @@ canvasHeight を 360 にした理由: 480 のままだと草が上端の細い�
 
 - 2026-07-25 (S9): **lhci の設定切り替えに `LHCI_` 始まりの環境変数を使ってはいけない**。lhci は `LHCI_*` を自分の CLI 引数として読むため、`LHCI_TARGET=production` が upload の `--target production` になり `Invalid values: target` で落ちる。`KUSAKUZUSHI_LH_TARGET` に改名して解消
 - 2026-07-25 (S9): lhci の assert 既定 `aggregationMethod` は **optimistic**(3 回のうち最良回だけを見る)。回帰ゲートとしては甘いので `median` を明示している
+- 2026-07-25 (S12): **lhci の `collect --url=...` は rc の `staticDistDir` に負ける**。`staticDistDir` が設定されたままだと lhci は自分の静的サーバをランダムポートで立て、`--url` で渡した URL を無視してそちらを測る。切り分け用に自前サーバを立てて `--url` で差し込む、という使い方は**黙って別のページを測る**ので必ず失敗する(セッション12 で 8 通りの比較を丸ごと無駄にした)。判別方法: レポートの `finalDisplayedUrl` が渡したポートかどうかを見る。バリアント比較をするならバリアントごとに rc ファイルを書いて `--config` で渡すこと。
 - 2026-07-25 (S9): Cloudflare Pages は存在しないパスに index.html を **200** で返す。`/robots.txt` が HTML になっていて Lighthouse SEO が 92 に落ちていた。`apps/web/public/` に置けば解決する(404 ページの挙動を前提にしないこと)
 
 ## Review
@@ -837,8 +838,8 @@ localhost 配信ではこの鎖の各往復がほぼ 0ms なので `pnpm lh` は
 |---|---|---|
 | A-1: FCP/LCP は module JS のダウンロードと実行を待っている(`#app` が空でシェルを JS が組み立てている) | VERIFIED | `apps/web/index.html`(body は `<div id="app"></div>` のみ)と `app.ts` の `buildShell()`。LCP 要素 `p.subtitle` は `buildShell` が生成している |
 | A-2: しきい値 FCP 1800 / LCP 2500 は Core Web Vitals の "good" 境界であり dist 由来の値ではない | VERIFIED | 数値が mobile の "good" 境界と一致。dist の実測は FCP 0.9s で、この値からは導けない |
-| A-3: localhost 配信では往復回数が FCP にほぼ効かない(= dist ゲートはこの種の劣化を検出できない) | VERIFIED | 下記ラボ実測(delay=0 では A→C の FCP 差が小さい) |
-| A-4: 本番の `server-response-time` 170ms を localhost に注入すると本番寄りの挙動が再現できる | VERIFIED(部分) | 下記ラボ実測。ただし TLS・HTTP/2・クロスオリジンのフォント取得は再現していない(「実測できなかったこと」参照) |
+| A-3: localhost 配信では往復回数が FCP にほぼ効かない(= dist ゲートはこの種の劣化を検出できない) | VERIFIED | 下記ラボ実測(TTFB 0ms では main の成果物も本ブランチの成果物も FCP がほぼ同じ) |
+| A-4: `tools/lh-slow-server.mjs` の遅延が Lighthouse に TTFB として観測される | VERIFIED | `KUSAKUZUSHI_LH_TARGET=slow` で実行し `server-response-time: 175ms`(表示 "Root document took 170 ms")、ルート文書の wall clock 2→180ms を実測 |
 | A-5: Google Fonts の CSS はセッション9 で非ブロッキング化済みで FCP の鎖に乗っていない | VERIFIED | 本番の `render-blocking-resources` が 1 件(自前 CSS)のみ。index.html の `media="print"` + `onload` |
 | A-6: フォントの自前ホスト化は FCP を直接動かさない | VERIFIED(前提が実測) | A-5 より、フォントは render-blocking ではない。効くとすればシミュレーション帯域の取り合いのみで、クリティカルパスの往復は減らない |
 | A-7: このサンドボックスからは本番 URL を計測できない | VERIFIED | egress ポリシーで `kusakuzushi.toshi0607.com:443` への CONNECT が 403(agent proxy の status に記録) |
