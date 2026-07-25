@@ -175,7 +175,20 @@ core の `computeLayout` は `brickWidth=(W-gap*(cols+1))/cols`, `brickAreaTop=g
 - [x] `pnpm -r test`(最終 162/162 pass。レビュー対応前は 145/145)/ `pnpm -r build` exit 0
 - [x] 実 github.com/toshi0607 で dist/content.js を注入してエンドツーエンド検証 — 下記「セッション4 検証記録」
 - [x] フェーズゲート: reviewer(opus) — **初回は Request changes(H1 が blocker)**。H1/M2/M3/M4 と Low 10件を修正 → 再レビューで Approve(そこで出た Medium 1件・Low 4件も対応)。詳細は Review 欄。拡張のテストは 27 → 44 件
-- [ ] PR → CI green → API マージ → 完了記録
+- [x] PR → CI green → API マージ — https://github.com/toshi0607/kusakuzushi/pull/7(CI pass 30s → merge 47fb541)
+
+## 全4セッション完了(2026-07-25)
+
+| Phase | 内容 | 成果物 | 完了条件(DESIGN §7)の充足 |
+|-------|------|--------|---------------------------|
+| 1 | core + web MVP | `packages/core`, `apps/web` | 自分のユーザー名で最後まで遊べ、共有リンクが機能する ✔ |
+| 2 | 動的OGP + 演出 | `workers/ogp` | X/Slack の実クローラー UA でカードプレビューが出る ✔ |
+| 3 | Chrome 拡張 | `apps/extension` | 自分のプロフィールで本物の草が崩せる ✔(実 github.com/toshi0607 で実測) |
+
+- 本番: https://kusakuzushi.toshi0607.com(Cloudflare Pages)+ `/share/*` は OGP Worker
+- 拡張はストア未申請。`apps/extension/README.md` の手順で unpacked 読み込み
+- テスト 162件 / 4パッケージ、CI は `pnpm -r test` + `pnpm -r build`
+- `packages/core` はセッション1以降**一度も変更していない**(ゲームバランス不変)。web も拡張も core の同じ `Game`/`toGrid` を、それぞれのアダプタでデータ源だけ差し替えて使っている — DESIGN §1 の唯一の重要な設計判断がそのまま成立した
 
 ### セッション4 レビュー後の再検証(2026-07-25 実 github.com/toshi0607 実測)
 
