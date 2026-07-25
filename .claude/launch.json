@@ -4,8 +4,8 @@
     {
       "name": "web-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@kusakuzushi/web", "dev"],
-      "port": 5173
+      "runtimeArgs": ["--filter", "@kusakuzushi/web", "dev", "--port", "5185", "--strictPort"],
+      "port": 5185
     }
   ]
 }

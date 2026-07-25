@@ -33,8 +33,19 @@ export type GameConfig = {
    * touching the paddle: multiplier = 1 + combo * comboMultiplierStep.
    */
   comboMultiplierStep: number;
-  /** Probability (0..1) that destroying a brick drops an item. */
+  /**
+   * Probability (0..1) that destroying a brick drops an item, once the
+   * board is fully cleared out — the floor of the ramp below.
+   */
   itemDropChance: number;
+  /**
+   * Extra drop chance on top of `itemDropChance`, at full board, easing
+   * linearly to 0 as bricks are destroyed. The opening is where a lone ball
+   * has the least help and the least momentum, so drops are front-loaded:
+   * with the defaults it starts at 22% and settles back to 8%. By the time
+   * it thins out, the balls the player caught early are doing the work.
+   */
+  earlyItemDropBonus: number;
   /** Falling speed of a dropped item, in px/sec. */
   itemFallSpeed: number;
   /** Side length of the square item sprite, in px. */
@@ -79,6 +90,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   lives: 3,
   comboMultiplierStep: 0.5,
   itemDropChance: 0.08,
+  earlyItemDropBonus: 0.14,
   itemFallSpeed: 120,
   itemSize: 14,
   multiBallSplitFactor: 2,
@@ -180,6 +192,8 @@ export class Game {
    */
   private balls: Ball[];
   private items: Item[] = [];
+  /** Bricks destroyed so far — drives the drop-chance ramp. */
+  private destroyedCount = 0;
   /** Seconds of `extraPaddle` left; the side bars exist while this is > 0. */
   private extraPaddleRemainingSec = 0;
   private _state: GameState = "ready";
@@ -369,6 +383,7 @@ export class Game {
 
       if (brick.level <= 0) {
         brick.alive = false;
+        this.destroyedCount += 1;
         const multiplier = 1 + this._combo * this._config.comboMultiplierStep;
         this._score += Math.round(brick.count * multiplier);
         this._combo += 1;
@@ -407,10 +422,15 @@ export class Game {
     ];
   }
 
-  /** Rolls `itemDropChance` for a brick that was just destroyed. */
+  /**
+   * Rolls the drop chance for a brick that was just destroyed. The chance
+   * ramps down with how much of the board is already gone — see
+   * `earlyItemDropBonus`.
+   */
   private maybeDropItem(brick: Brick): void {
-    const { itemDropChance, random, itemSize, itemFallSpeed } = this._config;
-    if (random() >= itemDropChance) return;
+    const { itemDropChance, earlyItemDropBonus, random, itemSize, itemFallSpeed } = this._config;
+    const remainingRatio = this.bricks.length === 0 ? 0 : 1 - this.destroyedCount / this.bricks.length;
+    if (random() >= itemDropChance + earlyItemDropBonus * remainingRatio) return;
 
     const kind: ItemKind = random() < 0.5 ? "multiBall" : "extraPaddle";
     this.items.push({

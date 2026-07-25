@@ -49,6 +49,7 @@ const BASE_CONFIG: GameConfig = {
   lives: 3,
   comboMultiplierStep: 0.5,
   itemDropChance: 0,
+  earlyItemDropBonus: 0,
 };
 
 /**
@@ -306,6 +307,33 @@ describe("Game", () => {
       expect(game.itemStates).toHaveLength(1);
       expect(game.itemStates[0].kind).toBe("multiBall");
       expect(game.itemStates[0].x).toBe(brick.rect.x + brick.rect.width / 2);
+    });
+
+    it("front-loads the drops: the same roll that drops early is refused once most of the board is gone", () => {
+      // #given three stacked bricks and a chance that ramps 30% -> 10%, and
+      // items that never fall (so every drop stays visible and countable)
+      const game = new Game(makeGrid([0, 0, 0, 0, 1, 1, 1]), {
+        ...BASE_CONFIG,
+        itemDropChance: 0.1,
+        earlyItemDropBonus: 0.2,
+        itemFallSpeed: 0,
+        random: () => 0.2,
+      });
+      let hits = 0;
+      game.onBrickHit = () => {
+        hits += 1;
+      };
+
+      // #when the first brick goes (1 of 3 gone -> chance 0.1 + 0.2*0.67 = 0.23)
+      game.launch();
+      stepUntil(game, () => hits >= 1);
+      // #then the 0.2 roll clears the early bar
+      expect(game.itemStates).toHaveLength(1);
+
+      // #when the second goes (2 of 3 gone -> chance 0.1 + 0.2*0.33 = 0.17)
+      stepUntil(game, () => hits >= 2);
+      // #then the identical roll is now refused — no second item
+      expect(game.itemStates).toHaveLength(1);
     });
 
     it("drops nothing when the roll fails", () => {
