@@ -306,6 +306,9 @@ describe("createGameRuntime (via mount)", () => {
       const keydownHandler = addSpy.mock.calls.find(([type]) => type === "keydown")?.[1];
       expect(mousemoveHandler).toBeDefined();
       expect(keydownHandler).toBeDefined();
+      // Mid-game, so the frame loop really is holding a scheduled callback —
+      // this is what makes the post-stop assertion below non-vacuous.
+      expect(raf.pendingCount()).toBe(1);
 
       // #when the game is stopped
       launchButton().click();
@@ -313,6 +316,8 @@ describe("createGameRuntime (via mount)", () => {
       // #then the exact same handler references were unregistered...
       expect(removeSpy).toHaveBeenCalledWith("mousemove", mousemoveHandler);
       expect(removeSpy).toHaveBeenCalledWith("keydown", keydownHandler);
+      // #and the in-flight frame was cancelled by its own id
+      expect(raf.pendingCount()).toBe(0);
 
       // #and dispatching them afterwards is a harmless no-op (no canvas to crash into)
       expect(() => {
@@ -320,6 +325,55 @@ describe("createGameRuntime (via mount)", () => {
         window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowLeft" }));
       }).not.toThrow();
       expect(document.querySelector("canvas")).toBeNull();
+    });
+  });
+
+  describe("keyboard control", () => {
+    /** The paddle is the last `fillRect` of a frame that draws no particles, so its x is readable off the stubbed context. */
+    function paddleXAfterFrame(ctx: FakeCtx2D, now: number): number {
+      ctx.fillRect.mockClear();
+      raf.drain(now);
+      const lastCall = ctx.fillRect.mock.calls.at(-1);
+      if (!lastCall) throw new Error("no paddle drawn this frame");
+      return Number(lastCall[0]);
+    }
+
+    it("an arrow key moves the paddle immediately after the pointer was far outside the board", () => {
+      // #given a game whose paddle was last driven by a mousemove far to the
+      // right of the ~200px board — the everyday case, since the listener is
+      // on `window` and GitHub pages are much wider than the grass
+      const ctx = stubCanvasContext();
+      buildSyntheticGrass({ row: 4, col: 3 });
+      session = mount(document, window);
+      launchButton().click();
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 5000, clientY: 0 }));
+      const clampedX = paddleXAfterFrame(ctx, 100);
+
+      // #when the player nudges left once
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowLeft" }));
+
+      // #then the paddle moves by exactly one step. Without clamping the
+      // internal cursor, it would sit at ~5000 and take dozens of presses
+      // to walk back into range before moving at all.
+      expect(paddleXAfterFrame(ctx, 200)).toBe(clampedX - 24);
+    });
+
+    it("ignores keys typed into GitHub's own inputs", () => {
+      // #given a running game and a focused text field (GitHub's search box)
+      const ctx = stubCanvasContext();
+      buildSyntheticGrass({ row: 4, col: 3 });
+      session = mount(document, window);
+      launchButton().click();
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      const startX = paddleXAfterFrame(ctx, 100);
+
+      // #when arrow keys and a space are typed into it
+      input.dispatchEvent(new KeyboardEvent("keydown", { code: "ArrowLeft", bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", bubbles: true }));
+
+      // #then the game ignored them entirely
+      expect(paddleXAfterFrame(ctx, 200)).toBe(startX);
     });
   });
 });

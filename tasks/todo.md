@@ -172,9 +172,9 @@ core の `computeLayout` は `brickWidth=(W-gap*(cols+1))/cols`, `brickAreaTop=g
 - [x] overlay.ts / renderer.ts: 透過キャンバス(実 td を隠さない)にボール・パドル・パーティクル・HUD を描画
 - [x] td-paint.ts: ヒットで level を下げ、破壊で level0 色へ。teardown で完全復帰 — 6 tests pass
 - [x] content.ts: 「🎮 崩す」ボタン注入、mount/unmount、turbo:load / turbo:before-render 対応(多重初期化なし)— 5 tests pass
-- [x] `pnpm -r test`(145/145 pass)/ `pnpm -r build` exit 0
+- [x] `pnpm -r test`(最終 162/162 pass。レビュー対応前は 145/145)/ `pnpm -r build` exit 0
 - [x] 実 github.com/toshi0607 で dist/content.js を注入してエンドツーエンド検証 — 下記「セッション4 検証記録」
-- [x] フェーズゲート: reviewer(opus) — **初回は Request changes(H1 が blocker)**。H1/M2/M3/M4 と Low 7件を同セッションで修正・再検証(詳細は Review 欄)。テスト 27 → 39 件
+- [x] フェーズゲート: reviewer(opus) — **初回は Request changes(H1 が blocker)**。H1/M2/M3/M4 と Low 10件を修正 → 再レビューで Approve(そこで出た Medium 1件・Low 4件も対応)。詳細は Review 欄。拡張のテストは 27 → 44 件
 - [ ] PR → CI green → API マージ → 完了記録
 
 ### セッション4 レビュー後の再検証(2026-07-25 実 github.com/toshi0607 実測)
@@ -274,7 +274,7 @@ pnpm --filter @kusakuzushi/extension build
 
 ### セッション4 フェーズゲート(reviewer/opus, 2026-07-25)
 
-判定: **初回 Request changes → 全件対応済み**。検証: pnpm -r test 157/157 pass(拡張は 27 → 39 件)、pnpm -r build exit 0、`git diff main...HEAD -- packages/core` 0行、セレクタ隔離・count=level² のテスト担保を確認。
+判定: **初回 Request changes → 全件対応済み**。検証: pnpm -r test 162/162 pass(拡張は 27 → 44 件)、pnpm -r build exit 0、`git diff main...HEAD -- packages/core` 0行、セレクタ隔離・count=level² のテスト担保を確認。
 
 | ID | Sev | 内容 | 対応 |
 |----|-----|------|------|
@@ -292,3 +292,16 @@ pnpm --filter @kusakuzushi/extension build
 | L8 | Low | `readLevelColors` にテストが無い(1レベルでも欠けると全体フォールバックする all-or-nothing 挙動) | 修正(正常系と level4 欠落時の null を追加) |
 | L9 | Low | CI が `pnpm -r test` のみで、型チェック(build の tsc)を回していない | 修正(ci.yml に `pnpm -r build` を追加) |
 | L10 | Low | フィクスチャに実ページ由来の `data-hydro-click-hmac` が残っている(資格情報ではないが不要) | 修正(hmac/nonce を scrubbed に置換。371セルは維持) |
+
+#### 再レビュー(同日、修正差分 dc6ec2f に対して)
+
+判定: **Approve**(Critical/High なし。前回13件はすべて解消を確認)。追加で出た指摘も全件対応:
+
+| ID | Sev | 内容 | 対応 |
+|----|-----|------|------|
+| R-M1 | Medium | ボタンの置き場所 `.js-yearly-contributions` は include-fragment の**レスポンスのルート要素そのもの**。fragment が差し替わるとボタンごと消えるが、mount 成功後に observer を切っていたため二度と復帰しない(Turbo イベントも飛ばない) | 修正: observer をページ寿命の間張り続け、`isMounted()` が false のときだけ張り直す。**さらに実ページ検証で判定の弱さを発見** — id で探すと「スナップショットに含まれるボタンの複製」を生きていると誤認するため、セッションが持つ要素の同一性(`activeButton.isConnected`)で判定するよう変更。修正前に落ちる回帰テスト2件を追加 |
+| R-L1 | Low | teardown テストの rAF キャンセル検証が空虚(ラウンド終了後に停止しており、キュー0を stop 前に確認していた) | 修正(ゲーム中の teardown で `pendingCount` が 1 → 0 になることを検証) |
+| R-L2 | Low | content script は github.com 全体にマッチするので、リポジトリ/PR ページでも observer が張りっぱなしになる | 修正(パスが1セグメント = プロフィール形式のときだけ張る) |
+| R-L3 | Low | 既存ボタンを再利用すると前のセッションのクリックハンドラが残り、1クリックで2ゲーム起動し得る | 修正(再利用せず作り直す)+ 回帰テスト |
+| R-L4 | Low | M2(クランプ)と L1(入力欄)にテストが無い | 修正(パドル位置をスタブ ctx の fillRect から読む形で検証)。**この過程でクランプ範囲の誤りを発見** — カーソルを `[0, canvasWidth]` ではなくパドル中心の可動域 `[w/2, canvasWidth-w/2]` に合わせないと、狭い盤面で最初の1〜2回の矢印入力が飲まれる |
+| R-L5 | Low | リファクタで置き去りになったコメント・README・todo.md の件数 | 修正 |

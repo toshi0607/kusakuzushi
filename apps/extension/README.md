@@ -23,12 +23,19 @@ pnpm --filter @kusakuzushi/extension build
 
 | ファイル | 役割 |
 |----------|------|
+| `src/main.ts` | エントリポイント。副作用を持つ唯一のモジュール(`autoMount` を呼ぶだけ) |
 | `src/grass-dom.ts` | **GitHub の DOM を知る唯一のファイル**。セレクタ・セル読み取り・幾何計測。GitHub のマークアップが変わったらここだけ直す |
 | `src/adapter.ts` | 草セル → core の `ContributionGrid` / `GameConfig`。DOM に contribution 数が無いため `count = level²` を投入する |
 | `src/overlay.ts` | 草の上に重ねる透過キャンバス |
 | `src/renderer.ts` | 拡張専用の透過レンダラ(ボール・パドル・パーティクル・HUD だけ描く) |
 | `src/td-paint.ts` | 実 `td` の背景差し替えと原状復帰 |
-| `src/content.ts` | ボタン注入・入力・ゲームループ・turbo 対応 |
+| `src/content.ts` | ボタン注入・入力・ゲームループと、`autoMount`(草の出現待ち・turbo・bfcache) |
+
+### 草はページの初期 HTML に無い
+
+GitHub は草グラフを `<include-fragment>` で後から流し込むため、`document_idle` で1回だけ探しても
+見つからない(`turbo:load` も fragment 解決より先に発火する)。`autoMount` は MutationObserver で
+草の出現を待ち、さらに fragment が差し替わってボタンごと消えた場合も貼り直す。
 
 ブロックの**見た目は実 `td` そのもの**で、キャンバスは描かない。だから破壊時に `td` の背景を
 level 0 の色へ差し替えると、本物の草が減っていくように見える(DESIGN.md §5)。
