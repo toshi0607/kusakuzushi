@@ -1,0 +1,30 @@
+# 依存の更新を PR で受け取る。パブリックリポジトリでは供給網が攻撃面になるので、
+# 「固定するが、放置はしない」を成立させるために入れてある
+# (ci.yml では action を SHA で固定しており、その更新もここが担う)。
+#
+# Dependabot の PR は fork ではないので CI は通常どおり走る。
+# デプロイは main へマージした後にだけ走る(ci.yml の門番条件)。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      # まとめて 1 PR にする。個別に来ても判断材料は変わらない
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # wrangler はデプロイ経路そのものなので単独の PR で受ける
+      # (壊れたときに他の更新と切り分けられるように)
+      wrangler:
+        patterns: ["wrangler"]
+      dev-dependencies:
+        dependency-type: development
+        exclude-patterns: ["wrangler"]

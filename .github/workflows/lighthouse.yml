@@ -12,6 +12,14 @@ on:
     - cron: "0 21 * * *"
   workflow_dispatch:
 
+# GITHUB_TOKEN を最小権限に固定する(リポジトリ既定値に依存しない)。
+# 計測して artifact を上げるだけなので読み取りで足りる。
+permissions:
+  contents: read
+
+# サードパーティの action(pnpm/action-setup)はフルコミット SHA で固定する。
+# 方針は ci.yml と同じ。
+
 jobs:
   # PR / main: ビルド成果物をローカル配信して計測する。
   # 外部要因(回線・DNS・Pages の状態)が入らないので、差分の影響だけが出る。
@@ -19,9 +27,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # fork PR のコードを実行するので GITHUB_TOKEN を .git/config に残さない
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.30.3
 
@@ -56,9 +67,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      # fork PR のコードを実行するので GITHUB_TOKEN を .git/config に残さない
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.30.3
 
@@ -91,9 +105,12 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      # このジョブは fork PR では走らないが、扱いを他ジョブと揃えておく
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.30.3
 
