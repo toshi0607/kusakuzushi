@@ -37,6 +37,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
