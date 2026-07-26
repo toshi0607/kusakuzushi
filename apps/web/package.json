@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "wrangler pages deploy dist --project-name kusakuzushi --branch main"
   },
   "dependencies": {
     "@kusakuzushi/core": "workspace:*"
@@ -15,6 +16,7 @@
     "jsdom": "^25.0.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.0",
-    "vitest": "^2.1.1"
+    "vitest": "^2.1.1",
+    "wrangler": "^4.114.0"
   }
 }

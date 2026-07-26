@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -p . --noEmit"
+    "build": "tsc -p . --noEmit",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@kusakuzushi/core": "workspace:*",
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260701.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.1"
+    "vitest": "^2.1.1",
+    "wrangler": "^4.114.0"
   }
 }
