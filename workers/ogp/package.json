@@ -9,6 +9,7 @@
     "build": "tsc -p . --noEmit"
   },
   "dependencies": {
+    "@kusakuzushi/core": "workspace:*",
     "workers-og": "^0.0.27"
   },
   "devDependencies": {

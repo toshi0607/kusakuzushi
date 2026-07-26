@@ -16,8 +16,18 @@ const CELL_SIZE = 11;
 const CELL_GAP = 3;
 const CELL_RADIUS = 2;
 
+export type GridSvgOptions = {
+  /**
+   * True to draw every cell at level 0 — the year as the player left it.
+   * A card that says "100% 刈り取った" above a full green grid contradicts
+   * itself; the saved image shows the real emptied board, so this one should
+   * agree with it (DESIGN-VISUAL §8).
+   */
+  emptied?: boolean;
+};
+
 /** Builds the contribution grid SVG. Returns a minimal 0x0 SVG when `weeks` is empty. */
-export function buildContributionGridSvg(weeks: ContributionCell[][]): string {
+export function buildContributionGridSvg(weeks: ContributionCell[][], options?: GridSvgOptions): string {
   const columns = weeks.length;
   const step = CELL_SIZE + CELL_GAP;
   const width = columns > 0 ? columns * step - CELL_GAP : 0;
@@ -28,7 +38,8 @@ export function buildContributionGridSvg(weeks: ContributionCell[][]): string {
       week.map((cell, row) => {
         const x = column * step;
         const y = row * step;
-        return `<rect x="${x}" y="${y}" width="${CELL_SIZE}" height="${CELL_SIZE}" rx="${CELL_RADIUS}" fill="${LEVEL_COLORS[cell.level]}" />`;
+        const level = options?.emptied ? 0 : cell.level;
+        return `<rect x="${x}" y="${y}" width="${CELL_SIZE}" height="${CELL_SIZE}" rx="${CELL_RADIUS}" fill="${LEVEL_COLORS[level]}" />`;
       }),
     )
     .join("");
