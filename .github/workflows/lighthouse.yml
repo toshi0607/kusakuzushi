@@ -28,15 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # fork PR のコードを実行するので GITHUB_TOKEN を .git/config に残さない
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
@@ -54,7 +54,7 @@ jobs:
         run: node tools/lh-summary.mjs
 
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-dist
           path: .lighthouseci/report
@@ -68,15 +68,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # fork PR のコードを実行するので GITHUB_TOKEN を .git/config に残さない
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
@@ -94,7 +94,7 @@ jobs:
         run: node tools/lh-summary.mjs
 
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-slow
           path: .lighthouseci/report
@@ -106,15 +106,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # このジョブは fork PR では走らないが、扱いを他ジョブと揃えておく
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
@@ -130,7 +130,7 @@ jobs:
         run: node tools/lh-summary.mjs
 
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-production
           path: .lighthouseci/report

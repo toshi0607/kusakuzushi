@@ -28,15 +28,15 @@ jobs:
     steps:
       # persist-credentials: false — このジョブは fork PR のコードを実行するので、
       # GITHUB_TOKEN を .git/config に残さない。git 操作はどのジョブでも使っていない
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
@@ -53,7 +53,7 @@ jobs:
       # deploy ジョブで build し直すと、本番の中身が手元の dist と同じであることが
       # 状況証拠にしかならない(セッション6/12 の切り分けコストはそこに由来した)。
       - if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: apps/web/dist
@@ -72,7 +72,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       ogp: ${{ steps.filter.outputs.ogp }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # push の前後を diff するので履歴が要る。95 コミット規模なので全部取る
           fetch-depth: 0
@@ -139,15 +139,15 @@ jobs:
       # GitHub がこの文字列をログ全体でマスクし、wrangler の出力が読みにくくなるだけなので平文で置く
       CLOUDFLARE_ACCOUNT_ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
@@ -155,7 +155,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # test ジョブが上げたものを使う(ここでは build し直さない)
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: web-dist
           path: apps/web/dist
@@ -204,15 +204,15 @@ jobs:
       # GitHub がこの文字列をログ全体でマスクし、wrangler の出力が読みにくくなるだけなので平文で置く
       CLOUDFLARE_ACCOUNT_ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.30.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 26
           cache: pnpm
