@@ -1,0 +1,41 @@
+# 依存の更新を PR で受け取る。パブリックリポジトリでは供給網が攻撃面になるので、
+# 「固定するが、放置はしない」を成立させるために入れてある
+# (ci.yml では action を SHA で固定しており、その更新もここが担う)。
+#
+# Dependabot の PR は fork ではないので CI は通常どおり走る。
+# デプロイは main へマージした後にだけ走る(ci.yml の門番条件)。
+#
+# グループはすべて `update-types: [minor, patch]` に絞ってある。major を
+# グループに入れると、無関係な破壊的変更が 1 つの PR に束ねられてレビュー不能になる。
+# 初回実行(PR #34)が実例で、TypeScript 5→7 / vite 5→8 / vitest 2→4 / jsdom 25→29 が
+# 同時に来て CI が赤になり、どれが原因かを PR 単位で切り分けられなかった。
+# major はグループから外れて 1 依存 1 PR で届くので、1 つずつ判断できる。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      # minor/patch はまとめて 1 PR にする。個別に来ても判断材料は変わらない
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: "/"
+    # major が個別 PR で届くぶん本数が増える。5 だと初回(major 4 本 + グループ 1 本)で
+    # 上限に当たり、届かなかった更新が黙って消える
+    open-pull-requests-limit: 10
+    schedule:
+      interval: weekly
+    groups:
+      # wrangler はデプロイ経路そのものなので単独の PR で受ける
+      # (壊れたときに他の更新と切り分けられるように)
+      wrangler:
+        patterns: ["wrangler"]
+        update-types: ["minor", "patch"]
+      dev-dependencies:
+        dependency-type: development
+        exclude-patterns: ["wrangler"]
+        update-types: ["minor", "patch"]
