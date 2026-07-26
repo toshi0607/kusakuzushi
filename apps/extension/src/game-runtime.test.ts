@@ -86,6 +86,9 @@ function buildSyntheticGrass(live: { row: number; col: number }): SyntheticGrass
 }
 
 /** Real per-`td` geometry: 10x10 cells, 3px gap (stride 13), origin (67, 100) — matches the measured production values. */
+/** Shifts every cell sideways, standing in for the page reflowing under the overlay. Reset per test. */
+let layoutOffsetX = 0;
+
 /** The calendar wrapper's and overlay's bottoms, so board-space.ts has a real overhang to reserve. */
 const CALENDAR_WRAPPER_ID = "calendar-wrapper";
 const WRAPPER_BOTTOM = 400;
@@ -105,7 +108,7 @@ function stubGeometry(): void {
     }
     const row = Number(match[1]);
     const col = Number(match[2]);
-    const left = ORIGIN_X + col * STRIDE;
+    const left = ORIGIN_X + layoutOffsetX + col * STRIDE;
     const top = ORIGIN_Y + row * STRIDE;
     return {
       left,
@@ -209,6 +212,7 @@ describe("createGameRuntime (via mount)", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    layoutOffsetX = 0;
     stubCanvasContext();
     stubGeometry();
     raf = stubRaf();
@@ -290,6 +294,59 @@ describe("createGameRuntime (via mount)", () => {
     session = null;
     // #then the wrapper is byte-identical to how it was found
     expect(wrapper.getAttribute("style")).toBeNull();
+  });
+
+  describe("resize", () => {
+    /** Makes the wrapper clip horizontally, showing `clientWidth` px of the calendar. */
+    function clipCalendarTo(clientWidth: number): void {
+      const wrapper = document.getElementById(CALENDAR_WRAPPER_ID);
+      if (!wrapper) throw new Error("calendar wrapper missing");
+      wrapper.style.overflowX = "auto";
+      Object.defineProperty(wrapper, "scrollWidth", { value: 300, configurable: true });
+      Object.defineProperty(wrapper, "clientWidth", { value: clientWidth, configurable: true });
+    }
+
+    it("follows the grass to its new position instead of leaving the overlay behind", () => {
+      // #given a round in progress
+      buildSyntheticGrass({ row: 4, col: 3 });
+      session = mount(document, window);
+      launchButton().click();
+      const canvas = document.querySelector("canvas");
+      if (!canvas) throw new Error("overlay missing");
+      const before = canvas.style.left;
+
+      // #when the page reflows sideways under the absolutely-positioned overlay
+      layoutOffsetX = 40;
+      window.dispatchEvent(new Event("resize"));
+      raf.drain(100);
+
+      // #then the overlay moved with it, and the round is still going
+      expect(canvas.style.left).toBe(`${ORIGIN_X + 40 - GAP}px`);
+      expect(canvas.style.left).not.toBe(before);
+      expect(launchButton().textContent).toBe("やめる");
+      expect(document.querySelector("canvas")).not.toBeNull();
+    });
+
+    it("ends the round when the resize changes how many weeks are visible", () => {
+      // #given a round started while the whole calendar was on screen
+      buildSyntheticGrass({ row: 4, col: 3 });
+      clipCalendarTo(200);
+      session = mount(document, window);
+      launchButton().click();
+      expect(document.querySelector("canvas")).not.toBeNull();
+
+      // #when the window narrows enough to hide the last week. That is a
+      // different set of bricks with a different clear condition — not
+      // something the running board can be moved onto.
+      clipCalendarTo(150);
+      window.dispatchEvent(new Event("resize"));
+      raf.drain(100);
+
+      // #then the round is over, the overlay is gone, and it says why
+      expect(document.querySelector("canvas")).toBeNull();
+      expect(launchButton().textContent).toBe("🎮 崩す");
+      expect(document.getElementById("kusakuzushi-message")?.textContent).toContain("中断");
+    });
   });
 
   describe("teardown", () => {
