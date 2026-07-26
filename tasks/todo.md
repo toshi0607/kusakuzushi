@@ -1431,10 +1431,10 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 |---|---|---|---|
 | PR #32(`5b4dd96`) | `pnpm-lock.yaml` / `package.json` / `ci.yml` ほか | `web=true ogp=true` | 両方 success |
 | PR #35(`27d3c29`) | `tasks/todo.md` のみ | `web=false ogp=false` | 両方 **skipped** |
+| PR #47 | `apps/web/` 配下のみ | `web=true ogp=false` | **deploy-web のみ success / deploy-ogp skipped** |
 
-両端が実測できたので、`changes` ジョブは意図どおり動いている。
-残るのは選択側(片方だけ)で、これは**次に Worker を触る PR で自然に確認する** —
-検証のためだけに本番コードへ変更を入れるのは本末転倒。
+**3 パターンすべて実測できた。** 当初は「次に Worker を触る PR で自然に確認する」と
+していた選択側が、Dependabot 起点の型修正 PR (#47) で確認できた。判定は全か無かではない。
 
 ### セッション14 の完了状態
 
@@ -1442,7 +1442,7 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 |---|---|
 | main へのマージで自動デプロイ | **稼働中**(初回 run 30188384802 で両方 success) |
 | デプロイ後スモーク(Pages 全 8 ファイルの sha256 / Worker の 3 分岐) | **稼働中**。ネガティブテスト 5 種で赤くなることを実測済み |
-| パス判定 | **稼働中**。両端を main で実測 |
+| パス判定 | **稼働中**。3 パターン(両方 / 両方スキップ / 片方のみ)すべて main で実測 |
 | wrangler のバージョン固定 | 完了(devDependency + pnpm-lock) |
 | 公開耐性(permissions / SHA 固定 / pull_request_target 不使用 / 門番条件) | 完了 |
 | ブランチ保護 | 適用済み(required checks = `test` `dist` `slow`) |
@@ -1488,6 +1488,89 @@ v7 は `pull_request_target` / `workflow_run` での fork PR checkout を塞ぐ�
 `pnpm/action-setup` の SHA も更新され、固定運用が機能していることが確認できた。
 
 PR #34 はクローズした。設定修正後の次回実行で、major が個別 PR として立ち直る。
+
+#### 分割後の結果と、そこで見つかった宣言漏れ 2 件
+
+設定変更を Dependabot が検知して即座に再実行し、**意図どおり分割された**:
+
+| PR | 内容 | 分割前 | 分割後の結果 |
+|---|---|---|---|
+| #39 | dev-dependencies グループ(esbuild / @cloudflare/workers-types) | #34 に同居 | 緑 → マージ |
+| #38 | pnpm/action-setup 4.3.0 → 6.0.9(major) | #33 に同居 | 緑 → マージ |
+| #41 | jsdom 25 → 29(major) | #34 に同居 | 緑 → マージ |
+| #42 | vite 5 → 8(major) | #34 に同居 | 緑 → マージ |
+| #40 | vitest 2 → 4(major) | #34 に同居 | 赤 → **原因特定** → マージ |
+| #43 | typescript 5 → 7(major) | #34 に同居 | 赤 → **原因特定** → 緑(採否は保留) |
+
+束ねられていたときは 6 本まとめて赤で、どれが原因かを PR 単位で切り分けられなかった。
+分割したことで **4 本は無条件に安全、2 本は原因が別**と即座に分かった。
+
+赤かった 2 本はどちらも **Dependabot の更新が悪いのではなく、こちらの宣言漏れ**だった。
+どちらも「暗黙の挙動にたまたま乗っていた」もので、更新がその偶然を外して露見した:
+
+**(1) `@types/node` の宣言漏れ(PR #45 で修正)**
+
+`apps/web/src/shell.test.ts` は `node:fs` / `node:url` を import しているのに、
+`apps/web/package.json` は `@types/node` を宣言していなかった。`tsc` が通っていたのは
+**vitest 2 が transitive に連れてきた `@types/node` が pnpm のレイアウトで見えていたから**で、
+依存として成立してはいなかった。vitest 4 がその経路を外して露見:
+
+```
+apps/web build: src/shell.test.ts(15,30): error TS2307:
+  Cannot find module 'node:fs' or its corresponding type declarations.
+```
+
+`node:` 組み込みを import しているのは `apps/web` だけ
+(`grep -rl 'from "node:' apps packages workers --include='*.ts'`)なので、追加は 1 パッケージのみ。
+
+**(2) `vite/client` の型参照が無い + TS 7 は `@types/*` を自動 include しない(PR #47 で修正)**
+
+vite プロジェクトの定石である `src/vite-env.d.ts` が無く、`import "./style.css"` の型が
+どこからも来ていなかった。TS 5 は未知モジュールの side-effect import を黙認するので
+表面化していなかっただけ:
+
+```
+src/main.ts(1,8): error TS2882: Cannot find module or type declarations
+  for side-effect import of './style.css'.
+```
+
+あわせて TS 7 は `@types/*` を自動 include しないため、tsconfig に `"types": ["node"]` を明示した。
+`apps/web/node_modules/@types` の中身は `node` だけなので、**現行 TS 5 の自動 include と等価**
+(制限ではなく明示化)。
+
+いずれも手元で該当バージョンに上げた状態で `pnpm -r test` / `pnpm -r build` の exit 0 を
+確認してから PR にした(推測でマージしていない)。
+
+#### ここで初めて観測できたこと
+
+**パス判定の選択側(積み残しだった項目)。** PR #47 は `apps/web/` 配下しか触らないので:
+
+```
+deploy-web  success
+deploy-ogp  skipped
+```
+
+これまで実測できていたのは「両方走る」(shared パターン)と「両方スキップ」(docs のみ)の
+両端だけで、**片方だけ走る**のは初めて。判定が全か無かではないことが本番で確認できた。
+
+**スモークのリトライが初めて効いた場面。** vite 8 のデプロイ(run 30190998280)で:
+
+```
+✅ 本番が手元の成果物を配信している(8 回目で一致、8 件すべて sha256 一致)
+```
+
+エッジ伝播に約 44 秒かかっており、1 回目で諦める実装なら**デプロイは成功しているのに
+CI が赤**になっていた。レビュー指摘 H1(リトライループが fetch 例外で即死する)の修正が
+効く条件が実際に存在することの裏付けでもある。
+
+#### TypeScript 7 の扱い(未決)
+
+PR #43 は #47 のマージ後に rebase して **全ゲート緑**(test / build / Lighthouse dist / slow)。
+手元でも build 4 パッケージ・test 36 ファイルすべて通過。技術的にはマージ可能。
+
+ただし TypeScript 7 は Go 実装への置き換えであり、型検査の実装そのものが変わる。
+本番バンドルを作るのは vite なので**成果物への影響は無い**(tsc は `--noEmit`)が、
+「型検査をどの実装で回すか」はツール方針の判断なので、**ユーザーの選択待ちとして開けてある**。
 
 ### 今回やらないこと
 
@@ -1599,3 +1682,4 @@ tip 確認とデプロイの間にはまだ窓が残る(数秒)。ここを閉�
 - 狭幅は「オーバーレイ = 盤面」を外して解決(ユーザー判断 2026-07-26: パネルを盤面の下へはみ出させる)。これで幅による出し分けは無くなり、0.1px 単位で高さを詰める調整も不要になった
 - **セッション14 のデプロイ判定の前提を 1 つ壊したので、同じ PR で直した**。`ci.yml` の `changes` ジョブは「`workers/ogp` は `packages/core` に依存していない」を根拠に `ogp='^workers/ogp/'` としていたが、この変更で Worker が `@kusakuzushi/core` の文言表(`clear-message.ts`)を引くようになった。放置すると **core だけ直したときに web しか出し直されず、Worker が古い文言とフォントサブセットのカードを配り続ける**。`ogp='^(workers/ogp/|packages/core/)'` に変更済み
 - セッション14 に残っていた「パス判定の選択側を次に Worker を触る PR で確認する」は、**この PR では確認できない**(web / ogp / `pnpm-lock.yaml` を同時に触るので両方 true が正しい挙動)。引き続き次の機会に持ち越し
+  - → **決着**。Dependabot 起点の型修正 PR #47(`apps/web/` 配下のみ)で `web=true ogp=false` を実測し、`deploy-web` だけが走った。3 パターンすべて確認済み(セッション14 の「パス判定の実測」表)
