@@ -101,10 +101,11 @@ jobs:
 
           # 両方に効く土台。ロックファイルや tsconfig の変更はビルド結果を変えうる
           shared='^(pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|package\.json|\.github/workflows/ci\.yml|tools/verify-.*\.mjs)$'
-          # workers/ogp は packages/core に依存していない(deps は workers-og だけ)ので
-          # core の変更で Worker を出し直す必要は無い
+          # workers/ogp も packages/core に依存する(クリア時の文言表 clear-message.ts を
+          # web と共有している)。core だけ直したときに web しか出し直さないと、
+          # Worker が古い文言とフォントサブセットのカードを配り続ける
           web='^(apps/web/|packages/core/)'
-          ogp='^workers/ogp/'
+          ogp='^(workers/ogp/|packages/core/)'
 
           # パイプにしないこと: `grep -q` は一致した時点で終了するので、書き手が SIGPIPE で
           # 死ぬと pipefail のせいで「一致したのに失敗」になりうる
