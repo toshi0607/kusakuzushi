@@ -43,8 +43,10 @@
 | 10(2つ目) | ファビコン | 完了 |
 | 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
 | 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
+| 13 | Chrome ウェブストア公開 | 進行中 |
+| 14 | クリア時のひとことを草の量で出し分ける | 実装完了 / PR 未作成 |
 
-**未完了なし**(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
+セッション8 の実機確認はユーザーが実施して OK。残っているのは 13(ストア提出・ユーザー作業待ち)と 14(PR 未作成)。
 
 ## セッション1: リポジトリ + core エンジン
 
@@ -1144,9 +1146,9 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 |------------|--------|----------|
 | 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
-| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED | docs は "in the locales your extension supports" とのみ記載。`_locales` を入れて実地確認する |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED-ACCEPTED(2026-07-26) | docs は "in the locales your extension supports" としか書かず、真偽はデベロッパーコンソールの言語プルダウンを見るまで確定しない。そこは登録 + $5 決済(A-1、システム規約でエージェント不可)の後ろにあるため、こちら側からは検証不能。**緩和策として `_locales/{en,ja}` を先に同梱済み**(B-1・dist にも複写、B-2)なので、必要だった場合でも詰まらず、不要だった場合も害はない |
 | データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
-| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | UNVERIFIED | デプロイ後に curl で実測する |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | VERIFIED | 2026-07-26 実測: `curl -sI https://kusakuzushi.toshi0607.com/privacy` が 308 → `location: /privacy/`、追随して 200 + `<title>プライバシーポリシー | 草崩し</title>`。**末尾スラッシュへリダイレクトされる**ので、ストアに登録する URL は `https://kusakuzushi.toshi0607.com/privacy/` を使う |
 
 ### Phase A: ユーザー作業(エージェント不可)
 
@@ -1165,7 +1167,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
 - [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
 - [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
-- [~] B-8. `/privacy` ページ作成済み(`apps/web/public/privacy/index.html`、dev サーバーで表示確認)。**デプロイはユーザー承認待ち** — `curl -sI https://kusakuzushi.toshi0607.com/privacy` が 200 になったら完了
+- [x] B-8. `/privacy` ページ(`apps/web/public/privacy/index.html`)。**本番デプロイ済みを 2026-07-26 に実測** — `/privacy` は 308 で `/privacy/` へ、追随して 200 + `<title>プライバシーポリシー | 草崩し</title>`。ストアに入れる URL は末尾スラッシュ付きの `https://kusakuzushi.toshi0607.com/privacy/`
 - [x] B-9. `apps/extension/README.md` に公開手順を追記
 
 ### Phase C: 一緒に実施
@@ -1177,3 +1179,63 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 
 - 拡張 UI 文言(「🎮 崩す」ほか 6 文字列)の i18n。今回は manifest の name/description のみ英語化する。
   UI まで英語化するかは別途判断(content.ts に `chrome.i18n` が入ると jsdom テストにモックが要る)
+
+## セッション14: クリア時のひとことを草の量で出し分ける(実装完了 2026-07-26 / PR 未作成)
+
+ユーザー依頼: 「草を壊しきったときのメッセージを『地道に積み上げてきたものが崩れ去っていく気分はいかがですか?』みたいなのを草の量に応じて出し分けられますか」。
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 出すのは clear のときだけ(gameOver では出さない) | 文言が「全部消えた」前提なので壊し残しがあると嘘になる | session.test.ts の gameOver ケースで `.result-taunt` が無いこと |
+| 文言表は 1 か所(web / 拡張が同じ表を引く) | DESIGN.md §1 core = 表示ロジックの単一の源 | `clearMessageFor` の実装が core にのみ存在すること(grep) |
+| 絵文字を増やさない | DESIGN-VISUAL §6 | 追加文言に絵文字が無いこと |
+| 狭幅リザルトの 4 ブロックを落とさない | DESIGN-VISUAL §3 | 375px でパネルがスクロールしないこと(実測) |
+| 既存の挙動・スコアを変えない | 今回は文言追加であって仕様変更ではない | `pnpm -r test` / `pnpm -r build` |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| web の `grid.total` は実際の年間 contributions | VERIFIED | packages/core/src/model.ts:42(count の総和)、count は jogruber API の実数 |
+| 拡張の `grid.total` は contributions ではない | VERIFIED | apps/extension/src/adapter.ts の module doc + `levelToCount` = level²(GitHub の td に日別 count が無いため) |
+| 拡張は見出しから実数を読める | VERIFIED | `__fixtures__/contributions.html` の `#js-contribution-activity-description` = "2,988 contributions in the last year"、grass-dom.test.ts で 2988 を実測 |
+| 375px の 4 ブロックは 130px 盤面をちょうど埋めている | VERIFIED(訂正あり) | 2026-07-26 dev サーバー実測。**当初 `scrollHeight` で 128/128 と読んだのは誤り**(flex + center 寄せでは溢れが過小報告される)。子の高さ + gap + padding で測り直すと、一段詰め後で 4 ブロック 112.9px / 使える高さ 128px |
+
+### やったこと
+
+- [x] `packages/core/src/clear-message.ts`: 総 contributions で 5 段階に出し分ける `clearMessageFor`。しきい値 3000 / 1500 / 500 / 100、下回るぶんは疎な年用の 1 文
+  - 検証: core 58 tests pass(境界の切り替わり、負値・0 のフォールバック、空文字を返さないこと)
+- [x] web リザルトに `.result-taunt` を追加(clear のときだけ) — apps/web/src/session.ts / style.css
+  - 検証: web 59 tests pass(段が違えば文言も違うこと、gameOver では要素ごと出ないこと)。1280px light/dark で表示実測
+- [x] 拡張バナーにも同じひとこと。総数は `readYearlyTotal`(grass-dom.ts)が見出しから読む。読めなければ出さない
+  - 検証: extension 52 tests pass(実 fixture で 2988、日本語見出しで最大値を採る、見出し無し/数字無しで null)
+- [x] 狭幅対応: `gap` 4→3px / パネル padding 6→5px / スコア 1.05→1rem の一段詰め。そのうえで **`<560px` はパネルの高さを盤面に縛らない**(`bottom: auto` + `min-height: 100%` + `z-index: 1`)ので、**全幅で煽り文が出る**
+  - 検証(実測 2026-07-26): clear の必要高 146.3px に対し、使える高さ =(幅 − 34)× 0.375 が追いつくのは 424px 以上。はみ出しは 452px / 424px = 0px、375px = 18.4px、320px = 39px(レール 56px のうち 31px を覆う。ラウンド終了後のレールは無効化済み)。gameOver は 4 ブロックなのでどの幅でもはみ出さない。320px / 375px で疑似レールを置いてスクリーンショット実測
+  - **最初 `<560px` 一律非表示 → 次に `<390px` 非表示、と 2 回外した**。1 回目は溢れ判定に `scrollHeight` を使い、flex + center 寄せで過小報告された数字(「128/128 でぴったり」)を信じたため。2 回目は「盤面 = パネル」を動かせない前提だと思い込んだため。どちらもユーザー指摘で修正(lessons.md 参照)
+- [x] デザインレビュー(`/frontend-design`)を受けて主従を入れ替え: 状態名「完全刈り取り」をラベル(Plex faint 0.6875rem・字間 .22em)に降格し、**煽り文を DotGothic16 1.25rem の主役に昇格**。🌱 は落とす。見出し要素(`h2`)は状態名のままなので読み上げの意味は変わらない。拡張バナーも同じ主従(11px faint / 14px)
+  - 根拠: 「完全刈り取り」はどのブロック崩しでも言える汎用の一言で、この製品固有のものを注釈の書式(最小・最淡)で組んでいた。声の主はゲーム側なので書体も表示書体にする
+  - 検証: 1280px light/dark、452 / 424 / 375 / 320px、clear / gameOver 両方をスクリーンショット実測。web 60 tests(見出しが状態名のままであることの回帰テストを追加)
+- [x] DESIGN-VISUAL §3 / §6 を更新(パネル図・コピー表・段位表・拡張の総数の出どころ)
+- [x] 共有物にも煽り文を載せる(レビューで挙げた別件。ユーザー判断 2026-07-26「含めたい」)
+  - 保存画像(`composeResultImage`): 状態名 24px faint → 煽り文 34px → 数字 34px の順に積み、最下行の底は 605px(カード高 630px)。gameOver は従来の 2 行レイアウトのまま
+  - OGP カード(`/share/{user}/og.png`): `p=100` を clear と判定し、カード用に取っているグリッドから総数を合計して同じ表を引く
+  - X の投稿本文は**変えない**。煽り文はゲームがプレイヤーに言う二人称なので、本人の投稿に置くと主体がねじれる
+  - 検証: `wrangler dev` でカードを実レンダリングして clear / gameOver 両方を目視、保存画像は dev サーバー上で `composeResultImage` を実行して目視。web 66 tests(カードの行の高さと文字の大小)、ogp 72 tests
+- [x] **バグ 2 件を実レンダリングで検出して修正**(どちらもテストでは緑のまま出荷されうるもの)
+  - OGP カードの煽り文が**全部豆腐**だった。satori 用フォントを `text=` サブセットで取っており、煽り文の字が入っていなかった。→ `CLEAR_MESSAGES` を core から公開し、`fonts.ts` のサブセットをそこから組み立てる(`fonts.test.ts` が取りこぼしを検出)
+  - 保存画像の煽り文が**丸ゴシックにフォールバック**していた。web も DotGothic16 を `text=` サブセットで読んでおり、同じ取りこぼし。→ `index.html` の `text=` を 70 → 126 字に拡張(4,940 → 8,684 バイト、実測)+ 合成前に `document.fonts.load()`。`font-subset.test.ts` が取りこぼしを検出
+- [x] デザインレビュー第2弾(共有物)を受けて 3 点を適用。**実物のクリア盤面**(全ブロック破壊済み)で描いて初めて見えた問題
+  - A. 保存画像に数字が二重に出ていた(盤面に焼き込まれた HUD + キャプション)→ カード用の盤面は `render(..., { hud: false })` で描き直す
+  - A. クリア盤面は 6 割が空白 → 煽り文をその空白の中へ(34px 中央、盤面高の 56%)。空白が「更地」の絵になる
+  - B. OGP カードの主従をアプリと揃える(`{user} の草を {p}% 刈り取った` を 26px/0.7 に降格、煽り文 34px を主役、スコア 30px)
+  - C. OGP カードのグリッドを `p=100` のとき全 level 0 で描く。生きた緑の下に「100% 刈り取った」と書く矛盾を解消
+  - 検証: `wrangler dev` で clear / gameOver の OGP カードを実レンダリングして目視、保存画像も本物の Game を clear 状態にして合成し目視。ogp 76 tests / web 67 tests
+- [ ] PR → CI green → マージ → デプロイ → 本番確認
+
+### Notes
+
+- 拡張で `grid.total` をそのまま段位に使うと level² の合計(スコア用の重み)で判定してしまい、実際の contributions と 1.5〜2 倍ずれる。見出しから読み直すのはこのため
+- 見出しの数値は「最大の数」を採る。GitHub は見出しをローカライズするので、語順が変わると先頭の数が「1 年間」の 1 になりうる
+- 狭幅は「オーバーレイ = 盤面」を外して解決(ユーザー判断 2026-07-26: パネルを盤面の下へはみ出させる)。これで幅による出し分けは無くなり、0.1px 単位で高さを詰める調整も不要になった

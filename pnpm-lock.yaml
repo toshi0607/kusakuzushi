@@ -61,6 +61,9 @@ importers:
 
   workers/ogp:
     dependencies:
+      '@kusakuzushi/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       workers-og:
         specifier: ^0.0.27
         version: 0.0.27
