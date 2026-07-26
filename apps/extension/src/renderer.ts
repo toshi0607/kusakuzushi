@@ -64,6 +64,8 @@ const ITEM_BAR_LEFT_RATIOS: readonly number[] = [0.13, 0.41, 0.69];
 const HUD_FONT_SIZE_PX = 12;
 const HUD_FONT = `600 ${HUD_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
 const HUD_MARGIN_PX = 4;
+/** Clear air between the HUD plates and the paddle they sit above. */
+const HUD_PADDLE_CLEARANCE_PX = 3;
 /** Padding around the HUD text, inside its plate. */
 const HUD_PLATE_PADDING_X_PX = 5;
 const HUD_PLATE_PADDING_Y_PX = 3;
@@ -80,7 +82,6 @@ const HUD_PLATE_RADIUS_PX = 3;
 const GUIDE_TEXT = "クリック / Space で発射";
 const GUIDE_FONT_SIZE_PX = 13;
 const GUIDE_FONT = `600 ${GUIDE_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
-const GUIDE_Y_RATIO = 0.74;
 
 function clampLevelIndex(level: number): number {
   return Math.min(Math.max(level, 1), 4);
@@ -221,11 +222,18 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     ctx.fillText(text, x, baseline);
   }
 
-  /** Score bottom-left, life bottom-right — the paddle's half of the board, which real grass never occupies. */
+  /**
+   * Score left, life right, both sitting just above the paddle's row.
+   *
+   * Pinned to the canvas bottom instead, they shared a line with the paddle:
+   * the bar slid straight through "Score" on its way left and parked on top
+   * of "Life" at the right end (measured on the real board: paddle 179-186px,
+   * HUD plate 172-190px). The paddle's y never changes, so keying off it
+   * keeps the two apart whatever the grass geometry works out to.
+   */
   function drawHud(ctx: CanvasRenderingContext2D, game: Game): void {
-    const height = game.config.canvasHeight;
     const width = game.config.canvasWidth;
-    const baseline = height - HUD_MARGIN_PX - HUD_PLATE_PADDING_Y_PX;
+    const baseline = game.paddleState.y - HUD_PADDLE_CLEARANCE_PX - HUD_PLATE_PADDING_Y_PX;
 
     ctx.font = HUD_FONT;
     ctx.textBaseline = "bottom";
@@ -237,19 +245,23 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     drawHudLabel(ctx, lifeText, width - lifeWidth - HUD_MARGIN_PX - HUD_PLATE_PADDING_X_PX, baseline);
   }
 
-  /** Only while the ball is waiting to be launched — the same states the web version shows its guide in. */
+  /**
+   * Only while the ball is waiting to be launched — the same states the web
+   * version shows its guide in.
+   *
+   * Centred in the free band between the grass (which fills the board's top
+   * half) and the paddle, so it neither hides the bricks it is telling you
+   * to aim at nor lands on the HUD sitting above the paddle.
+   */
   function drawGuide(ctx: CanvasRenderingContext2D, game: Game): void {
     if (game.state !== "ready" && game.state !== "ballLost") return;
 
     ctx.font = GUIDE_FONT;
     ctx.textBaseline = "bottom";
     const width = ctx.measureText(GUIDE_TEXT).width;
-    drawHudLabel(
-      ctx,
-      GUIDE_TEXT,
-      (game.config.canvasWidth - width) / 2,
-      game.config.canvasHeight * GUIDE_Y_RATIO,
-    );
+    const grassBottom = game.config.canvasHeight / 2;
+    const centre = (grassBottom + game.paddleState.y) / 2;
+    drawHudLabel(ctx, GUIDE_TEXT, (game.config.canvasWidth - width) / 2, centre + GUIDE_FONT_SIZE_PX / 2);
   }
 
   function draw(ctx: CanvasRenderingContext2D, game: Game, dtSec: number): void {

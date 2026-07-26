@@ -209,6 +209,24 @@ describe("createOverlayRenderer", () => {
     expect(playingFrame.texts.some((call) => call.text.includes("Space"))).toBe(false);
   });
 
+  it("keeps the HUD clear of the paddle's row", () => {
+    // #given a game in play. Pinned to the canvas bottom the HUD shared a
+    // line with the paddle: the bar slid through "Score" and parked on "Life".
+    const game = playUntil(0, (g) => g.score > 0);
+    const fake = makeFakeContext();
+
+    // #when a frame is drawn
+    createOverlayRenderer(THEME).draw(fake.ctx, game, 0.016);
+
+    // #then every HUD plate ends above the paddle, whatever x it is at
+    const paddleTop = game.paddleState.y;
+    const plates = fake.fillRects.filter((call) => call.fillStyle === PAGE_BACKGROUND);
+    expect(plates).toHaveLength(2);
+    for (const plate of plates) {
+      expect(plate.y + plate.height).toBeLessThanOrEqual(paddleTop);
+    }
+  });
+
   it("keeps both HUD labels inside the board", () => {
     // #given a game in play
     const game = playUntil(0, (g) => g.score > 0);
