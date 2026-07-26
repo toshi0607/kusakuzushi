@@ -1325,7 +1325,8 @@ pnpm run deploy:ogp && pnpm run verify:ogp
 - [x] ブランチ保護(main)— PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人(1人メンテなので自分でマージできる)。`strict: false`(ブランチを最新に保つ強制はしない)
 - [ ] fork PR のワークフロー承認必須化 — **private では設定不可**。`gh api .../actions/permissions/fork-pr-contributor-approval` が 422 `Fork PR approval is not allowed for private repositories.`。**パブリック化時に実施**
 - [ ] Secret scanning + push protection — **private では利用不可**。`PATCH /repos/...` が 422 `Secret scanning is not available for this repository.`(private は GitHub Advanced Security が要る)。**パブリック化すれば無料で使えるのでそのとき実施**
-- [ ] 次に `workers/ogp` だけを触る PR で、`deploy-web` がスキップされることを確認(パス判定の陽性側の実証。陰性側はこの記録 PR(docs のみ)で確認する)
+- [x] パス判定の**陰性側**を本番の main で実測 — PR #35(`tasks/todo.md` のみ)のマージ(`27d3c29`、run 30189189953)で `変更ファイル: tasks/todo.md` → **`web=false ogp=false`**、`deploy-web` / `deploy-ogp` とも **skipped**
+- [ ] パス判定の**選択側**(`workers/ogp` だけ触ったとき `deploy-web` だけスキップ)— 検証のためだけに Worker を触るのは本末転倒なので、**次に Worker を変更する PR で自然に確認する**。ロジック自体は 11 ケースのローカル実行で確認済み
 
 ### 検証結果(2026-07-26、PR 段階)
 
@@ -1422,6 +1423,32 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 
 これでセッション10 の動機(「どの時点の main が本番か」が人間の記憶に依存していた)は
 **完全に解消**した。本番の実体 → デプロイ ID → コミット の 3 つが機械で辿れる。
+
+### パス判定の実測(main、2026-07-26)
+
+| マージ | 変更ファイル | 判定 | デプロイ |
+|---|---|---|---|
+| PR #32(`5b4dd96`) | `pnpm-lock.yaml` / `package.json` / `ci.yml` ほか | `web=true ogp=true` | 両方 success |
+| PR #35(`27d3c29`) | `tasks/todo.md` のみ | `web=false ogp=false` | 両方 **skipped** |
+
+両端が実測できたので、`changes` ジョブは意図どおり動いている。
+残るのは選択側(片方だけ)で、これは**次に Worker を触る PR で自然に確認する** —
+検証のためだけに本番コードへ変更を入れるのは本末転倒。
+
+### セッション14 の完了状態
+
+| 項目 | 状態 |
+|---|---|
+| main へのマージで自動デプロイ | **稼働中**(初回 run 30188384802 で両方 success) |
+| デプロイ後スモーク(Pages 全 8 ファイルの sha256 / Worker の 3 分岐) | **稼働中**。ネガティブテスト 5 種で赤くなることを実測済み |
+| パス判定 | **稼働中**。両端を main で実測 |
+| wrangler のバージョン固定 | 完了(devDependency + pnpm-lock) |
+| 公開耐性(permissions / SHA 固定 / pull_request_target 不使用 / 門番条件) | 完了 |
+| ブランチ保護 | 適用済み(required checks = `test` `dist` `slow`) |
+| fork PR のワークフロー承認必須化 | **public 化時**(private では API が拒否) |
+| Secret scanning + push protection | **public 化時**(private では GHAS が要る) |
+| LICENSE / ルート README / SECURITY.md | **別 PR**(公開の意思決定が要る) |
+| Dependabot が pnpm workspace 配下の wrangler を辿るか(レビュー L9) | 週次実行待ち |
 
 ### 今回やらないこと
 
