@@ -1153,7 +1153,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い(ユーザー実施 2026-07-26)。実測: コンソールにアクセス可、パブリッシャー ID `fe990368-036b-4a39-bb71-8e0aea1ce3e0`、表示名 `toshi0607`、メンバー登録日 2026/07/26、トレーダー申告は「非取引業者アカウント」
 - [x] A-2. 連絡先メール — 設定ページで `s.toshi0607@gmail.com` を登録し確認メールを送信(エージェント)→ メール内リンクのクリックはユーザー。**実測: リロード後も「s.toshi0607@gmail.com 確認済みのメールアドレス」**。このアドレスはアイテム詳細ページに公開される(ユーザー了承済み)
 - [x] A-3. Trusted Tester に `s.toshi0607@gmail.com` を追加(同じ設定ページの「管理」セクション)。**実測: 保存 → リロード後も値が残っている**。サービスアカウント欄は空のまま
-- [ ] A-4. `chrome://extensions` → デベロッパーモード ON → `apps/extension/dist` を読み込む(スクショ撮影の前提)
+- [x] A-4. 未パック拡張の読み込み(ユーザー実施 2026-07-26)。パスに `.claude` が含まれるため macOS のファイルダイアログでは辿れない — `Cmd+Shift+G` でパス貼り付け、または `~/Desktop/kusakuzushi-extension` のシンボリックリンク経由
 - [ ] A-5. 最終「審査に送信」クリック
 
 ### Phase B: エージェントが用意する提出物
@@ -1162,7 +1162,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] B-2. `_locales` を dist に写す(build.mjs)。ついでに毎回 dist を作り直して古い生成物を残さない
 - [x] B-3. zip パッケージ生成スクリプト `pnpm --filter @kusakuzushi/extension package` — `unzip -l` でルートに manifest.json / content.js / icons/ / _locales/ の 12 entries を実測
 - [x] B-4. 小プロモタイル 440x280 PNG — `apps/extension/store/promo-tile-440x280.png`(440x280 を `file` で実測)。生成元は `apps/web/tools/promo-tile.{html,ts}` + dev エンドポイント `/__save-card?target=promo-tile`
-- [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
+- [x] B-5. スクリーンショット 1280x800 を4枚 — `apps/extension/store/screenshots/`。①ボタン ②発射待ち(ガイド表示) ③プレイ中(Score 191・草が刈られている) ④アイテム効果。`magick identify` で 4 枚とも 1280x800 を実測。**組織名・個人情報は 0 件**(撮影中は `#user-activity-overview` と `#js-contribution-activity` を非表示にし、構図もその上で切った。撮影後に細工は撤収済み)
 - [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
 - [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
 - [x] B-8. `/privacy` ページ + デプロイ — PR #30 マージ(30a0dce)→ `wrangler pages deploy`(64f75928)。**実測: `/privacy` は 308 で `/privacy/` に寄り、`/privacy/` が 200 + `<title>プライバシーポリシー | 草崩し</title>`**。ストアに登録する URL はリダイレクトを挟まない `/privacy/` にした(b1342d8)
@@ -1191,6 +1191,22 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
   `__MSG_extName__` / `__MSG_extDescription__` が両ロケールで解決。名前 37 文字(上限 45)、
   簡単な説明 en 105 / ja 34 文字(上限 132)
 - [ ] C-2. ユーザーが最終送信 → 審査結果を待つ
+
+### 撮影中に見つかって直した拡張の不具合(2026-07-26)
+
+提出前にストア掲載画像を撮る過程で、実機でしか出ない不具合が 5 件出た。全て修正済み。
+
+| # | 症状 | 原因 | コミット |
+|---|---|---|---|
+| 1 | 崩したマスがライトページで真っ黒 | `readLevelColors` が「レベル0〜4が1つでも欠けたら null」の全か無かで、レベル0の日が無い草だと OS テーマ(ダーク)へフォールバック | c2fb179 |
+| 2 | 見えない草を壊していた | 草グラフの横クリップを見ておらず、盤面が表示枠の外へ 112px はみ出し、枠外の 50 セルが破壊対象になっていた | 3543b2c |
+| 3 | Score/Life が読めない | 11px の素の文字を透明キャンバスに直描き。影は黒固定でライトページに効かない | 3543b2c |
+| 4 | 起動ボタンが画面外 | `.js-yearly-contributions` に appendChild していたため activity-overview の下(草は見えているのにボタンだけ画面外) | d8ff17b |
+| 5 | 盤面がページのコンテンツに重なる / 発射方法が分からない | 盤面下半分のぶんの場所をページに確保していなかった。Web 版にある発射ガイドが拡張に無かった | d6e469b, 6602c9a |
+| 6 | リサイズで盤面が草から取り残される | オーバーレイは開始時のページ座標に absolute 固定。追従処理が無かった | a50b56f |
+
+いずれもネガティブテスト済み(修正を戻すと新テストが落ちることを実測)。
+apps/extension のテストは 49 → 70 件に増えた。
 
 ### 見送り(スコープ外・要green)
 
