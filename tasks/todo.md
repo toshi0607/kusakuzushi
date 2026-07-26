@@ -1448,7 +1448,45 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 | fork PR のワークフロー承認必須化 | **public 化時**(private では API が拒否) |
 | Secret scanning + push protection | **public 化時**(private では GHAS が要る) |
 | LICENSE / ルート README / SECURITY.md | **別 PR**(公開の意思決定が要る) |
-| Dependabot が pnpm workspace 配下の wrangler を辿るか(レビュー L9) | 週次実行待ち |
+| Dependabot が pnpm workspace 配下の wrangler を辿るか(レビュー L9) | **決着**(下記)。辿る。ただしグループ設定の誤りが露見したので修正した |
+
+#### Dependabot 初回実行の実測(2026-07-26)
+
+**L9 は解決。** 初回の週次実行で PR #33(github-actions)と PR #34(npm)が立った。
+PR #34 の変更ファイルは `apps/extension/package.json` / `apps/web/package.json` /
+`packages/core/package.json` / `workers/ogp/package.json` / `pnpm-lock.yaml` で、
+**`directory: "/"` のまま pnpm workspace 配下の各パッケージまで届いている**。
+`directories` に列挙する必要はない。
+
+wrangler 単独の PR が立たなかったのは、`npm view wrangler version` が `4.114.0` で
+固定中のバージョンと同じ = 更新が無いため。設定が効いていないのではない。
+
+**そのかわり別の設定ミスが出た。** PR #34 が dev-dependencies グループに
+TypeScript 5.9.3→**7.0.2** / vite 5.4.21→**8.1.5** / vitest 2.1.9→**4.1.10** /
+jsdom 25.0.1→**29.1.1** の major を 4 本まとめて入れており、CI が赤になった:
+
+```
+apps/web build: src/main.ts(1,8): error TS2882: Cannot find module or type
+  declarations for side-effect import of './style.css'.
+apps/web build: src/shell.test.ts(15,30): error TS2591: Cannot find name 'node:fs'.
+ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @kusakuzushi/web@0.0.1 build: `tsc && vite build`
+```
+
+TypeScript 7 の型解決の変更で落ちているが、**1 つの PR に無関係な破壊的変更が
+4 本入っているので、PR 単位で切り分けられない**。グループ化は「判断材料が変わらない
+更新をまとめる」ためのもので、major はそれに当たらない。
+
+対応: 全グループに `update-types: ["minor", "patch"]` を付け、major はグループから
+外して 1 依存 1 PR で届くようにした。あわせて npm の
+`open-pull-requests-limit` を 5 → 10 に上げた(major 4 本 + グループ 1 本で
+ちょうど上限に当たり、超えたぶんが黙って消えるため)。
+
+PR #33(github-actions)は緑だったのでそのままマージした。`actions/checkout` の
+v7 は `pull_request_target` / `workflow_run` での fork PR checkout を塞ぐ破壊的変更を
+含むが、このリポジトリはどちらのトリガーも使っていないので無影響(むしろ硬化側)。
+`pnpm/action-setup` の SHA も更新され、固定運用が機能していることが確認できた。
+
+PR #34 はクローズした。設定修正後の次回実行で、major が個別 PR として立ち直る。
 
 ### 今回やらないこと
 
@@ -1478,7 +1516,7 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 | L5 | Low | 公開リポジトリでは `persist-credentials: false` が定石(fork PR のコードが走るジョブで GITHUB_TOKEN を `.git/config` に残さない) | **修正**。ci.yml / lighthouse.yml の全 checkout に付与。tip 確認は `gh api` にしたのでこれと両立する |
 | L7 | Low | デプロイジョブに `timeout-minutes` が無い | **修正**。test 20分 / changes 10分 / deploy 15分 |
 | L8 | Low(未確認) | `wrangler pages deploy` にコミット情報のフラグを渡していない。ダッシュボードから「どの main が本番か」を引けるかは未確認 | **保留**。CI 上では `.git` があるので wrangler が自動検出する見込みだが未検証。初回デプロイ後にダッシュボードで確認する |
-| L9 | Low(未確認) | Dependabot の npm ecosystem が pnpm workspace 配下(`apps/web` / `workers/ogp`)の `wrangler` まで辿るかは未確認 | **保留**。マージ後の初回 Dependabot 実行で確認。辿らなければ `directories` に各パッケージを明示する |
+| L9 | Low(未確認) | Dependabot の npm ecosystem が pnpm workspace 配下(`apps/web` / `workers/ogp`)の `wrangler` まで辿るかは未確認 | **決着**(2026-07-26 の初回実行で実測)。`directory: "/"` のまま各パッケージに届く。`directories` は不要。詳細は「Dependabot 初回実行の実測」 |
 
 レビューが「問題なし」と確認した主な点: `changes` ジョブのシェル(`set -euo pipefail` 下の
 here-string と `grep` の終了ステータス扱い)、fork PR / ブランチ push からデプロイが走らないこと、
