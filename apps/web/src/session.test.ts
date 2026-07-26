@@ -9,7 +9,7 @@
  */
 
 import type { ContributionGrid } from "@kusakuzushi/core";
-import { DEFAULT_CONFIG, LIGHT_THEME, toGrid } from "@kusakuzushi/core";
+import { clearMessageFor, DEFAULT_CONFIG, LIGHT_THEME, toGrid } from "@kusakuzushi/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSession } from "./session";
@@ -116,8 +116,25 @@ type Harness = {
   destroy: () => void;
 };
 
-function mountSession(options: { railVisible?: boolean; coarsePointer?: boolean } = {}): Harness {
-  const { railVisible = true, coarsePointer = true } = options;
+/**
+ * A board with no live bricks but a stated year total: the game reaches
+ * `clear` on the first frame after launch (`bricks.every(...)` over an empty
+ * array), which is the only way to see the result overlay without simulating
+ * a whole play-through.
+ */
+function clearedGrid(total: number): ContributionGrid {
+  const cells = Array.from({ length: 28 }, (_, i) => ({
+    date: `2024-01-${String(i + 7).padStart(2, "0")}`,
+    count: 0,
+    level: 0 as const,
+  }));
+  return { ...toGrid("toshi0607", cells), total };
+}
+
+type MountOptions = { railVisible?: boolean; coarsePointer?: boolean; grid?: ContributionGrid };
+
+function mountSession(options: MountOptions = {}): Harness {
+  const { railVisible = true, coarsePointer = true, grid = grassGrid() } = options;
   stubCanvasContext();
   stubGeometry(railVisible);
   const raf = stubRaf();
@@ -126,7 +143,7 @@ function mountSession(options: { railVisible?: boolean; coarsePointer?: boolean 
 
   const container = document.createElement("div");
   document.body.appendChild(container);
-  const destroy = createSession(container, "toshi0607", grassGrid(), () => LIGHT_THEME, {
+  const destroy = createSession(container, "toshi0607", grid, () => LIGHT_THEME, {
     onRestart: () => {},
   });
   raf.drain(0);
@@ -285,5 +302,81 @@ describe("createSession input wiring", () => {
     // #then
     expect(harness.container.querySelector(".play-stack")).toBeNull();
     expect(document.body.querySelector(".paddle-rail")).toBeNull();
+  });
+});
+
+describe("createSession clear overlay", () => {
+  let harness: Harness | null = null;
+
+  beforeEach(() => {
+    document.body.replaceChildren();
+    harness = null;
+  });
+
+  afterEach(() => {
+    harness?.destroy();
+    vi.restoreAllMocks();
+  });
+
+  /** Plays one frame past launch on a board that clears immediately. */
+  function tauntTextFor(total: number): string {
+    harness = mountSession({ grid: clearedGrid(total) });
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    harness.raf.drain(16);
+    return harness.container.querySelector<HTMLElement>(".result-taunt")?.textContent ?? "";
+  }
+
+  it("shows the clear one-liner that matches the year's size", () => {
+    // #given a board cleared on a 3,000-contribution year
+    // #when
+    const text = tauntTextFor(3000);
+    // #then
+    expect(text).toBe(clearMessageFor(3000));
+  });
+
+  it("says something different for a sparse year than for a dense one", () => {
+    // #given the same clear on a 50-contribution year
+    // #when
+    const sparse = tauntTextFor(50);
+    harness?.destroy();
+    const dense = tauntTextFor(3000);
+    // #then
+    expect(sparse).not.toBe(dense);
+    expect(sparse).not.toBe("");
+  });
+
+  it("keeps the heading naming the state, even though the taunt is the loud part", () => {
+    // #given a cleared board (the taunt takes over visually — see style.css)
+    tauntTextFor(3000);
+    // #when
+    const heading = harness?.container.querySelector<HTMLElement>(".result-overlay h2");
+    // #then the accessible heading still says what happened
+    expect(heading?.textContent).toBe("完全刈り取り");
+  });
+
+  it("leaves the one-liner off the gameOver screen", () => {
+    // #given a real board, played so every ball is missed: the paddle parks
+    // at the left wall to launch, then runs to the right wall while the ball
+    // is in flight, so each life ends in a miss rather than a rally
+    harness = mountSession();
+    const canvas = harness.container.querySelector<HTMLCanvasElement>(".game-canvas");
+    const overlay = harness.container.querySelector<HTMLElement>(".result-overlay");
+
+    // #when
+    let now = 0;
+    for (let i = 0; i < 400 && overlay?.hidden !== false; i++) {
+      if (isLaunched(harness.container)) {
+        canvas?.dispatchEvent(pointer("pointermove", 470, "mouse"));
+      } else {
+        canvas?.dispatchEvent(pointer("pointermove", 10, "mouse"));
+        window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+      }
+      now += 50;
+      harness.raf.drain(now);
+    }
+
+    // #then
+    expect(overlay?.querySelector("h2")?.textContent).toBe("ゲームオーバー");
+    expect(overlay?.querySelector(".result-taunt")).toBeNull();
   });
 });

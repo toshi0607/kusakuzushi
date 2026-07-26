@@ -6,6 +6,10 @@
  * `buildOgImageHtml`) are the tested pure functions.
  */
 
+// Deliberately the `/clear-message` subpath, not the package root: the root
+// re-exports renderer.ts, whose `CanvasRenderingContext2D` types don't exist
+// in a Worker's lib (ES2022 + workers-types, no DOM).
+import { clearMessageFor } from "@kusakuzushi/core/clear-message";
 import { ImageResponse } from "workers-og";
 import { parseJogruberContributions } from "./jogruber";
 import { foldContributionsIntoWeeks } from "./contribution-grid";
@@ -17,29 +21,44 @@ const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v4";
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 630;
 
+type FetchedGrid = {
+  /** A `data:image/svg+xml` URI, or null when the grid could not be fetched. */
+  svgDataUri: string | null;
+  /** The year's contribution total, or null alongside a failed fetch. */
+  total: number | null;
+};
+
+const NO_GRID: FetchedGrid = { svgDataUri: null, total: null };
+
 /**
- * Fetches the contribution grid and renders it to a `data:image/svg+xml` URI.
- * Returns null on any failure (network error, non-2xx, malformed payload, or
+ * Fetches the contribution grid, rendering it to a `data:image/svg+xml` URI
+ * and summing the year's total on the way past (the total picks the taunt —
+ * the `s`/`p` query params carry the score and percentage, but not this).
+ *
+ * Returns nulls on any failure (network error, non-2xx, malformed payload, or
  * an empty grid) so the caller can fall back to a grid-less card — a broken
  * image is worse than one missing a decorative grid.
  */
-async function fetchGridSvgDataUri(user: string): Promise<string | null> {
+async function fetchGrid(user: string, emptied: boolean): Promise<FetchedGrid> {
   try {
     const response = await fetch(`${JOGRUBER_API_BASE}/${encodeURIComponent(user)}?y=last`);
     if (!response.ok) {
-      return null;
+      return NO_GRID;
     }
 
     const json: unknown = await response.json();
     const contributions = parseJogruberContributions(json);
     const weeks = foldContributionsIntoWeeks(contributions);
     if (weeks.length === 0) {
-      return null;
+      return NO_GRID;
     }
 
-    return svgToDataUri(buildContributionGridSvg(weeks));
+    return {
+      svgDataUri: svgToDataUri(buildContributionGridSvg(weeks, { emptied })),
+      total: contributions.reduce((sum, cell) => sum + cell.count, 0),
+    };
   } catch {
-    return null;
+    return NO_GRID;
   }
 }
 
@@ -53,10 +72,18 @@ export type OgImageRender = {
 
 /** Renders the 1200x630 OGP PNG for `user`'s share card. */
 export async function renderOgImage(user: string, score: number, percentage: number): Promise<OgImageRender> {
-  const [gridSvgDataUri, fonts] = await Promise.all([fetchGridSvgDataUri(user), loadOgFonts()]);
-  const html = buildOgImageHtml({ user, score, percentage, gridSvgDataUri });
+  // 100% は「1 個も残さず壊した」= clear と同値(刈り取り率は floor なので、
+  // 1 ブロックでも残れば 99% 以下になる)。グリッドも文もこの 1 つの事実から
+  // 決まる — 更地だと書いた下に生きた草を並べない(DESIGN-VISUAL §8)。
+  const cleared = percentage === 100;
+  const [grid, fonts] = await Promise.all([fetchGrid(user, cleared), loadOgFonts()]);
+
+  // 総数が取れなかった回は段位を当てずに黙る。
+  const taunt = cleared && grid.total !== null ? clearMessageFor(grid.total) : null;
+
+  const html = buildOgImageHtml({ user, score, percentage, gridSvgDataUri: grid.svgDataUri, taunt });
   return {
     response: new ImageResponse(html, { width: IMAGE_WIDTH, height: IMAGE_HEIGHT, fonts }),
-    gridIncluded: gridSvgDataUri !== null,
+    gridIncluded: grid.svgDataUri !== null,
   };
 }

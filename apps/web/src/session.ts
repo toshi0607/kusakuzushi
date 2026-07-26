@@ -5,7 +5,7 @@
  */
 
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
-import { DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
+import { clearMessageFor, DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
 
 import { createPaddleRail } from "./paddle-rail";
 import { buildIntentUrl, saveResultImage } from "./share";
@@ -177,12 +177,42 @@ export function createSession(
     game.movePaddle(paddleX);
   }
 
+  /**
+   * 共有カード用の盤面。画面の canvas をそのまま渡すと HUD(SCORE / LIFE)が
+   * 焼き込まれ、カードのキャプションと同じ数字が二重に出る(DESIGN-VISUAL §8)。
+   * 描画コンテキストが取れない環境では画面の canvas で妥協する — HUD が二重に
+   * 写るほうが、画像が保存できないよりましなので。
+   */
+  function boardSnapshotForCard(): HTMLCanvasElement {
+    const snapshot = document.createElement("canvas");
+    snapshot.width = DEFAULT_CONFIG.canvasWidth;
+    snapshot.height = DEFAULT_CONFIG.canvasHeight;
+    const snapshotCtx = snapshot.getContext("2d");
+    if (!snapshotCtx) return canvas;
+    render(snapshotCtx, game, getTheme(), { reveal: 1, hud: false });
+    return snapshot;
+  }
+
   function renderResult(state: ResultState): void {
     result.replaceChildren();
 
+    // クリア時は見出しの主役を煽り文に譲る。「完全刈り取り」はどのブロック
+    // 崩しでも言える汎用の一言で、この盤面にしか無いのは「消したのは自分の
+    // 1 年ぶんだ」と言い当てる側。見出し要素(h2)は状態を名乗ったまま残し、
+    // 視覚の主役だけを入れ替える(読み上げの順序と意味は変えない)。
     const heading = document.createElement("h2");
-    heading.textContent = state === "clear" ? "🌱 完全刈り取り！" : "ゲームオーバー";
+    heading.textContent = state === "clear" ? "完全刈り取り" : "ゲームオーバー";
+    if (state === "clear") heading.className = "result-state";
     result.appendChild(heading);
+
+    // 煽り文は clear のときだけ。壊し残しがある gameOver では
+    // 「全部消えました」系の文言がそのまま嘘になる。
+    if (state === "clear") {
+      const taunt = document.createElement("p");
+      taunt.className = "result-taunt";
+      taunt.textContent = clearMessageFor(grid.total);
+      result.appendChild(taunt);
+    }
 
     const pct = grid.total > 0 ? Math.floor((harvestedCount(game) / grid.total) * 100) : 0;
 
@@ -236,7 +266,12 @@ export function createSession(
     saveButton.textContent = "画像を保存";
     saveButton.addEventListener("click", () => {
       saveButton.disabled = true;
-      saveResultImage(canvas, username, { score: game.score, percentage: pct, cleared: state === "clear" })
+      saveResultImage(boardSnapshotForCard(), username, {
+        score: game.score,
+        percentage: pct,
+        cleared: state === "clear",
+        taunt: state === "clear" ? clearMessageFor(grid.total) : null,
+      })
         .catch(() => {
           saveButton.textContent = "保存に失敗しました";
         })
