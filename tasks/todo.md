@@ -1223,7 +1223,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 | `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
 | `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト4種(別アセット / 中身切り詰め / robots.txt 差し替え / 到達不能ホスト)で exit 1 を実測(下記) |
 | `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
-| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: トークンはまだ存在せず(作成はユーザー、Claude はクレデンシャルを扱わない)、スコープの十分性はトークンを持たずには確かめられない。緩和策: 不足時の失敗は wrangler の認証エラー(`Authentication error [code: 10000]`)として**デプロイ前に**出るので、現行の本番配信は落ちない。マージ後の初回 `deploy-*` が実際の検証になり、足りなければスコープを足して再実行する |
+| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | **VERIFIED**(2026-07-26) | 初回自動デプロイ(run 30188384802)で `deploy-web` / `deploy-ogp` とも success。テンプレート「Edit Cloudflare Workers」+ `Cloudflare Pages: Edit` で足りた |
 | private のままブランチ保護が設定できる(GitHub のプラン依存) | **VERIFIED**(2026-07-26) | `gh api -X PUT repos/toshi0607/kusakuzushi/branches/main/protection` が成功し、`required_status_checks.contexts = [test, dist, slow]` / `allow_force_pushes: false` / `allow_deletions: false` が設定された。**private のままで張れる** |
 
 ### main とのマージ(2026-07-26)
@@ -1319,13 +1319,13 @@ pnpm run deploy:ogp && pnpm run verify:ogp
 - [x] `ci.yml` に `changes` / `deploy-web` / `deploy-ogp`、artifact の受け渡し
 - [x] `permissions` / SHA 固定 / `concurrency` / `dependabot.yml`
 - [x] `pnpm -r test`(162件)/ `pnpm -r build` exit 0
-- [ ] ユーザーが Cloudflare API トークンを作成し、`CLOUDFLARE_API_TOKEN` として登録
+- [x] ユーザーが Cloudflare API トークンを作成し、`CLOUDFLARE_API_TOKEN` として登録(2026-07-26 04:47Z)
 - [x] PR → CI green(`deploy-*` が PR でスキップされることを確認)— https://github.com/toshi0607/kusakuzushi/pull/32 で `test` pass 37s / `Lighthouse dist` pass / `Lighthouse slow` pass、`changes` / `deploy-web` / `deploy-ogp` / `production` はすべて **skipping**(2026-07-26)。**門番条件が効いていることの実測**
-- [ ] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑
+- [x] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑 — 下記「初回自動デプロイ」
 - [x] ブランチ保護(main)— PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人(1人メンテなので自分でマージできる)。`strict: false`(ブランチを最新に保つ強制はしない)
 - [ ] fork PR のワークフロー承認必須化 — **private では設定不可**。`gh api .../actions/permissions/fork-pr-contributor-approval` が 422 `Fork PR approval is not allowed for private repositories.`。**パブリック化時に実施**
 - [ ] Secret scanning + push protection — **private では利用不可**。`PATCH /repos/...` が 422 `Secret scanning is not available for this repository.`(private は GitHub Advanced Security が要る)。**パブリック化すれば無料で使えるのでそのとき実施**
-- [ ] 次に `workers/ogp` だけを触る PR で、`deploy-web` がスキップされることを確認(パス判定の実証)
+- [ ] 次に `workers/ogp` だけを触る PR で、`deploy-web` がスキップされることを確認(パス判定の陽性側の実証。陰性側はこの記録 PR(docs のみ)で確認する)
 
 ### 検証結果(2026-07-26、PR 段階)
 
@@ -1391,6 +1391,37 @@ GitHub は `pull_request` のワークフローを起動しない。「CI が緑
 つまり**公開に向けた残りのリポジトリ設定は 2 つだけ**で、どちらも public にした直後に入れる。
 コード側(ワークフローの `permissions` / SHA 固定 / `pull_request_target` 不使用 / deploy の門番)は
 今回で完了している。
+
+### 初回自動デプロイ(2026-07-26、run 30188384802)
+
+PR #32 をマージ(`5b4dd96`)→ **全ジョブ success**。所要 約1分20秒。
+
+```
+changes     success   → web=true ogp=true      (pnpm-lock.yaml / package.json / ci.yml が shared に当たる)
+test        success
+deploy-web  success   ✨ Uploaded 0 files (8 already uploaded) → f247cffc
+                      ✅ 8 件すべて sha256 一致(1 回目)
+deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8324-4438120bef02
+                      ✅ 人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png
+```
+
+読み取れること:
+
+- **トークンのスコープは足りていた。** 「Edit Cloudflare Workers」テンプレート + `Cloudflare Pages: Edit` で
+  Pages と Worker の両方が通った(Assumptions の当該行を VERIFIED に更新)
+- **`Uploaded 0 files (8 already uploaded)`** — 中身が既存デプロイと同一だったため実アップロードは 0 件。
+  それでも新しいデプロイ(`f247cffc`)は作られ、verify は 8 件すべて一致を確認した
+- **スモークは 1 回目で通った。** エッジ伝播のリトライは今回は使われていない。
+  ただしこれは「毎回そうなる」という意味ではない(S12 の実測では旧/新が混ざる時間帯があった)
+
+#### レビュー L8(未確認だった項目)の決着
+
+**VERIFIED**: `wrangler pages deploy` は CI 上の `.git` からコミットを自動検出していた。
+`wrangler pages deployment list --project-name kusakuzushi` の **Source 列が `5b4dd96`**
+(= マージコミット)。ダッシュボードからも同じものが引ける。
+
+これでセッション10 の動機(「どの時点の main が本番か」が人間の記憶に依存していた)は
+**完全に解消**した。本番の実体 → デプロイ ID → コミット の 3 つが機械で辿れる。
 
 ### 今回やらないこと
 
