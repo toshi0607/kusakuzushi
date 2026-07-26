@@ -44,7 +44,7 @@
 | 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
 | 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
 | 13 | Chrome ウェブストア公開 | 進行中 |
-| 14 | PR マージで自動デプロイ + パブリック化の準備 | 進行中 |
+| 14 | PR マージで自動デプロイ + パブリック化の準備 | 準備は完了。残り 3 件は public 化と同時にしか実施できない |
 | 15 | クリア時のメッセージを草の量で出し分ける | 完了(本番確認済み) |
 
 セッション12 と 15 は完了(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
@@ -1326,6 +1326,7 @@ pnpm run deploy:ogp && pnpm run verify:ogp
 - [x] ブランチ保護(main)— PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人(1人メンテなので自分でマージできる)。`strict: false`(ブランチを最新に保つ強制はしない)
 - [ ] fork PR のワークフロー承認必須化 — **private では設定不可**。`gh api .../actions/permissions/fork-pr-contributor-approval` が 422 `Fork PR approval is not allowed for private repositories.`。**パブリック化時に実施**
 - [ ] Secret scanning + push protection — **private では利用不可**。`PATCH /repos/...` が 422 `Secret scanning is not available for this repository.`(private は GitHub Advanced Security が要る)。**パブリック化すれば無料で使えるのでそのとき実施**
+- [ ] 非公開の脆弱性報告を有効化 — `PUT /repos/toshi0607/kusakuzushi/private-vulnerability-reporting` が **404**(private リポジトリにはこのエンドポイント自体が無い)。**`SECURITY.md` はここを報告先に指定しているので、public にするのと同じ操作の中で有効化すること**
 - [x] パス判定の**陰性側**を本番の main で実測 — PR #35(`tasks/todo.md` のみ)のマージ(`27d3c29`、run 30189189953)で `変更ファイル: tasks/todo.md` → **`web=false ogp=false`**、`deploy-web` / `deploy-ogp` とも **skipped**
 - [ ] パス判定の**選択側**(`workers/ogp` だけ触ったとき `deploy-web` だけスキップ)— 検証のためだけに Worker を触るのは本末転倒なので、**次に Worker を変更する PR で自然に確認する**。ロジック自体は 11 ケースのローカル実行で確認済み
 
@@ -1389,8 +1390,9 @@ GitHub は `pull_request` のワークフローを起動しない。「CI が緑
 | main のブランチ保護 | **適用済み**。PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人。`strict: false` にしてあるので「main が進むたび再ビルド待ち」にはならない |
 | fork PR のワークフロー承認必須化 | **private では設定できない**(API が 422 で明示的に拒否)。パブリック化時に実施 |
 | Secret scanning + push protection | **private では利用できない**(GitHub Advanced Security が要る)。パブリック化すれば無料 |
+| 非公開の脆弱性報告(Private vulnerability reporting) | **private では有効化できない**。`PUT /repos/.../private-vulnerability-reporting` が **404**(エンドポイントが public リポジトリにしか存在しない)。パブリック化時に実施 — `SECURITY.md` の報告先がこれなので、**公開と同時に入れないと報告経路が無い状態になる** |
 
-つまり**公開に向けた残りのリポジトリ設定は 2 つだけ**で、どちらも public にした直後に入れる。
+つまり**公開に向けた残りのリポジトリ設定は 3 つだけ**で、どれも public にした直後に入れる。
 コード側(ワークフローの `permissions` / SHA 固定 / `pull_request_target` 不使用 / deploy の門番)は
 今回で完了している。
 
@@ -1448,7 +1450,7 @@ deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8
 | ブランチ保護 | 適用済み(required checks = `test` `dist` `slow`) |
 | fork PR のワークフロー承認必須化 | **public 化時**(private では API が拒否) |
 | Secret scanning + push protection | **public 化時**(private では GHAS が要る) |
-| LICENSE / ルート README / SECURITY.md | **別 PR**(公開の意思決定が要る) |
+| LICENSE / ルート README / SECURITY.md | **完了**(下記「公開向けドキュメント」)。ライセンスは MIT |
 | Dependabot が pnpm workspace 配下の wrangler を辿るか(レビュー L9) | **決着**(下記)。辿る。ただしグループ設定の誤りが露見したので修正した |
 
 #### Dependabot 初回実行の実測(2026-07-26)
@@ -1600,7 +1602,7 @@ sha256 一致は同一性の証明であって、動作の証明ではない)。
 
 | 項目 | 理由 |
 |---|---|
-| LICENSE / ルート README / SECURITY.md | 公開の意思決定(ライセンス選択、対外的な説明)が要るので別 PR |
+| LICENSE / ルート README / SECURITY.md | 当初は「公開の意思決定が要るので別 PR」としていたが、**同じセッションの中で別 PR として実施した**(下記「公開向けドキュメント」) |
 | Cloudflare Pages の Git 連携(Pages 側でビルド) | direct upload を維持。monorepo + pnpm のビルド設定を Pages 側に二重管理したくない |
 | プレビューデプロイ(PR ごとの `--branch` デプロイ) | 今回のスコープ外。PR の品質担保は Lighthouse の `slow` ゲートが担っている |
 | 自動ロールバック | 誤検知でロールバックするほうが危険 |
@@ -1707,3 +1709,53 @@ tip 確認とデプロイの間にはまだ窓が残る(数秒)。ここを閉�
 - **セッション14 のデプロイ判定の前提を 1 つ壊したので、同じ PR で直した**。`ci.yml` の `changes` ジョブは「`workers/ogp` は `packages/core` に依存していない」を根拠に `ogp='^workers/ogp/'` としていたが、この変更で Worker が `@kusakuzushi/core` の文言表(`clear-message.ts`)を引くようになった。放置すると **core だけ直したときに web しか出し直されず、Worker が古い文言とフォントサブセットのカードを配り続ける**。`ogp='^(workers/ogp/|packages/core/)'` に変更済み
 - セッション14 に残っていた「パス判定の選択側を次に Worker を触る PR で確認する」は、**この PR では確認できない**(web / ogp / `pnpm-lock.yaml` を同時に触るので両方 true が正しい挙動)。引き続き次の機会に持ち越し
   - → **決着**。Dependabot 起点の型修正 PR #47(`apps/web/` 配下のみ)で `web=true ogp=false` を実測し、`deploy-web` だけが走った。3 パターンすべて確認済み(セッション14 の「パス判定の実測」表)
+
+## セッション14(続き): 公開向けドキュメント — LICENSE / README / SECURITY.md(2026-07-26)
+
+セッション14 本体で「公開の意思決定が要る」として切り出していた 3 ファイル。依頼は「md 系進めてください」。
+
+### ユーザー決定(2026-07-26)
+
+| 論点 | 決定 | 補足 |
+|---|---|---|
+| ライセンス | **MIT** | 誰でも改変・再配布・商用利用できる。フォークが Chrome ウェブストアに別名で出すことも許諾範囲に入る点は説明したうえでの選択 |
+| ルート README の言語 | **日本語 + 英語の要約** | 他の md がすべて日本語なので本文は日本語。ストアの既定ロケールが en なので、冒頭に英語の短い要約を置いて導線にする |
+| 脆弱性の報告先 | **GitHub の非公開報告**(Private vulnerability reporting) | 公開リポジトリにメールアドレスを晒さずに済む |
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| README に書く事実は実物で裏を取る(コマンド・ポート・権限・URL) | `unknowns.md` 4(校正ラベル) | 下記「記述の裏取り」 |
+| クレデンシャルは扱わない | 安全ルール | 追加したファイルにトークン・メールアドレスを書いていない |
+| コード・設定は変えない(ドキュメントのみの PR) | このPRの性質 | `git diff --stat` が md / LICENSE / todo.md のみ |
+
+### 記述の裏取り(推測で書かない)
+
+README / SECURITY.md に書いた事実は、その場で実物を見て確認した:
+
+| 記述 | 確認方法 | 結果 |
+|---|---|---|
+| dev サーバは `http://localhost:5173` | 実際に `pnpm --filter @kusakuzushi/web dev` を起動 | vite 8.1.5 の既定は 5173(このとき 5173 が別プロセスに使われており 5174 にずれたが、既定値は 5173) |
+| 拡張の権限が最小 | `apps/extension/manifest.json` | `permissions` も `host_permissions` も**キー自体が無い**。content script の match が `https://github.com/*` だけ。「host permission のみ」という DESIGN.md の記述より更に狭いので、SECURITY.md は manifest の実物に合わせて書いた |
+| core が DOM/fetch 非依存 | `grep -rn "fetch(\|document\." packages/core/src` | 0 件 |
+| ルート `package.json` のスクリプト名 | 実ファイル | `deploy:web` / `deploy:ogp` / `verify:web` / `verify:ogp` / `lh` / `lh:prod` |
+| Worker のルートと分岐 | `workers/ogp/wrangler.toml` / `src/index.ts` / `tools/verify-worker.mjs` | `/share/*`、クローラー=200+OGP HTML / 人間=302 / `og.png`=200+image/png |
+| プライバシーポリシーの URL | セッション13 B-8 の本番実測 | 末尾スラッシュ付き `https://kusakuzushi.toshi0607.com/privacy/` |
+| フォントを同梱していない(ライセンス上の懸念が無い) | `find` でバイナリフォントを探索 | 0 件。Noto Sans JP / DotGothic16 はいずれも実行時に Google Fonts から取得 |
+
+### 決めたこと
+
+- **SECURITY.md の「対象外」に第三者サービスを明記した。** GitHub / Cloudflare / jogruber API そのものは
+  こちらでは直せない。ただし「このリポジトリのコードがそれらを危険に使っている」は対象、と線を引いた
+- **想定される攻撃面を SECURITY.md に書いた。** 認証もサーバー保存も無いので、報告が来るとすれば
+  XSS / DOM インジェクション(ユーザー名や URL パラメータが GitHub のページや OGP HTML に流れる経路)、
+  Worker のパラメータ処理、依存パッケージに寄る。報告者に無駄足を踏ませないための情報
+- **本番への負荷試験を禁止と書いた。** 共有ホスティングなので、善意の検証でも巻き添えが出る
+
+### 公開時に必ず一緒にやること
+
+`SECURITY.md` は報告先を GitHub の非公開報告に一本化している。この機能は
+**public リポジトリでしか有効化できない**(private では `PUT /repos/.../private-vulnerability-reporting`
+が 404 = エンドポイントが存在しない、2026-07-26 実測)。public にする操作と同じタイミングで
+有効化しないと、**SECURITY.md が案内するリンクの先が無い状態**になる。上の残タスクに追加済み。
