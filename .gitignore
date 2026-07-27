@@ -6,3 +6,6 @@ dist/
 .lighthouseci/
 # `pnpm --filter @kusakuzushi/extension package` の出力(ストア提出物。dist から毎回作れる)
 apps/extension/*.zip
+
+# wrangler dev のローカル状態(キャッシュ等。毎回作り直せる)
+.wrangler/

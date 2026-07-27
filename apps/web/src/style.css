@@ -407,6 +407,38 @@ button:disabled {
   letter-spacing: 0.06em;
 }
 
+/*
+ * クリア時の「完全刈り取り」は見出し要素のまま、状態ラベルの体裁に落とす
+ * (主役は下の煽り文)。ラベルはこの画面では Plex faint という規則
+ * (スコア / 刈り取り率のラベルと同じ)なので、表示書体を上書きする。
+ */
+.result-overlay h2.result-state {
+  font-family: var(--font-body);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  /* 字間を開けた分だけ右にずれるので、最後の 1 字ぶんを戻して光学的に中央へ */
+  text-indent: 0.22em;
+  color: var(--ink-faint);
+}
+
+/*
+ * 煽り文 = このパネルの主役。声の主はゲーム側なので、本文書体ではなく
+ * 表示書体(DotGothic16)で喋らせる。最長 30 字(§6)がぎりぎり 1 行に
+ * 収まる 34em を上限に: 日本語は語中でも改行できてしまうので、広い画面で
+ * わざわざ「崩れ / 去っていく」のような割れ方をさせない。
+ */
+.result-taunt {
+  margin: 0;
+  max-width: 34em;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-wrap: balance;
+}
+
 .result-stat-grid {
   display: flex;
   gap: 40px;
@@ -491,15 +523,38 @@ button:disabled {
    * 出さないため、余白・行間・草セルを一段ずつ小さくする。
    */
   .overlay {
-    gap: 4px;
+    gap: 3px;
   }
 
+  /*
+   * 狭幅ではパネルの高さを盤面に縛らない。5 ブロック(必須 4 + ひとこと)に
+   * 要るのは 127.9px、盤面は 8:3 なので使える高さは (幅 − 34) x 0.375 =
+   * 375px でようやく同値。`bottom: auto` + `min-height: 100%` にすると、
+   * 足りる幅では今までどおり盤面ぴったりで、足りない幅だけ下へ伸びる
+   * (実測: 375px は 0px、360px は 5.6px = 盤面とレールの 8px の隙間に収まる、
+   * 320px は 32.6px でレール上端に少し重なる)。ラウンドが終われば盤面下は
+   * 誰も操作しない(レールは無効化済み)ので、ここを借りるのが一番実害が
+   * 小さい。z-index は、後ろに並ぶレールに塗り負けないため。
+   */
   .result-overlay {
-    padding: 6px;
+    padding: 5px;
+    bottom: auto;
+    min-height: 100%;
+    z-index: 1;
   }
 
   .result-overlay h2 {
     font-size: 1rem;
+  }
+
+  /*
+   * 狭幅でも主役は主役。1 行に収める大きさ(10px 台)まで落とすと注釈に
+   * 逆戻りするので、字は 14px で保ったまま 2〜3 行に折る。伸びたぶんは
+   * パネルが下へ吸収する(次のブロック)。
+   */
+  .result-taunt {
+    font-size: 0.875rem;
+    line-height: 1.3;
   }
 
   .result-stat-grid {
@@ -516,7 +571,7 @@ button:disabled {
   }
 
   .result-stat-value {
-    font-size: 1.05rem;
+    font-size: 1rem;
   }
 
   /* 草セルの 10:3(セル:隙間)を保ったまま縮める */
@@ -535,3 +590,4 @@ button:disabled {
     font-size: 0.8125rem;
   }
 }
+

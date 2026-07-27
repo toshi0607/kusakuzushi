@@ -8,6 +8,7 @@ import {
   measureGeometry,
   readGrassCells,
   readLevelColors,
+  readYearlyTotal,
   visibleCells,
 } from "./grass-dom";
 
@@ -71,6 +72,36 @@ describe("readGrassCells", () => {
     const dates = cells.map((cell) => cell.date);
     const sortedDates = [...dates].sort();
     expect(dates).toEqual(sortedDates);
+  });
+});
+
+describe("readYearlyTotal", () => {
+  it("reads the comma-separated total off a real profile fragment", () => {
+    // #given the fixture's heading reads "2,988 contributions in the last year"
+    document.body.innerHTML = FIXTURE_HTML;
+    // #when
+    const total = readYearlyTotal(document);
+    // #then
+    expect(total).toBe(2988);
+  });
+
+  it("takes the largest number, so a localised heading isn't read as its year count", () => {
+    // #given GitHub's Japanese heading, where "1 年間" precedes the real total
+    document.body.innerHTML =
+      '<h2 id="js-contribution-activity-description">過去 1 年間に 2,988 コントリビューション</h2>';
+    // #when
+    const total = readYearlyTotal(document);
+    // #then
+    expect(total).toBe(2988);
+  });
+
+  it("returns null when the heading is missing or carries no number", () => {
+    // #given a page whose graph heading never rendered
+    document.body.innerHTML = "<div></div>";
+    expect(readYearlyTotal(document)).toBeNull();
+    // #and a heading with no digits at all (markup GitHub could ship next)
+    document.body.innerHTML = '<h2 id="js-contribution-activity-description">contributions</h2>';
+    expect(readYearlyTotal(document)).toBeNull();
   });
 });
 

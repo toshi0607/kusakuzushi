@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { LIGHT_THEME } from "@kusakuzushi/core";
+import { clearMessageFor, LIGHT_THEME } from "@kusakuzushi/core";
 
 import type { Session } from "./content";
 import { mount } from "./content";
@@ -346,6 +346,57 @@ describe("createGameRuntime (via mount)", () => {
       expect(document.querySelector("canvas")).toBeNull();
       expect(launchButton().textContent).toBe("🎮 崩す");
       expect(document.getElementById("kusakuzushi-message")?.textContent).toContain("中断");
+    });
+  });
+
+  describe("clear banner", () => {
+    /** Plays the one-brick board to its clear and returns the banner's text. */
+    function playToClear(): string {
+      session = mount(document, window);
+      launchButton().click();
+      const canvas = document.querySelector("canvas");
+      if (!canvas) throw new Error("canvas missing after starting the game");
+      canvas.dispatchEvent(new MouseEvent("click"));
+
+      let now = window.performance.now();
+      let banner: HTMLElement | null = null;
+      for (let i = 0; i < 60 && !banner; i++) {
+        now += 100;
+        raf.drain(now);
+        banner = document.getElementById(BANNER_ID);
+      }
+      if (!banner) throw new Error("the round never finished");
+      return banner.textContent ?? "";
+    }
+
+    it("adds the one-liner for the size of year the page's own heading reports", () => {
+      // #given a profile whose graph heading reports 2,988 contributions
+      buildSyntheticGrass({ row: 4, col: 3 });
+      const heading = document.createElement("h2");
+      heading.id = "js-contribution-activity-description";
+      heading.textContent = "2,988 contributions in the last year";
+      document.body.appendChild(heading);
+
+      // #when
+      const text = playToClear();
+
+      // #then
+      expect(text).toContain(clearMessageFor(2988));
+    });
+
+    it("stays silent when the heading is missing, rather than guessing a tier", () => {
+      // #given a page with no contribution heading at all (a markup change,
+      // or a Turbo visit that hasn't rendered it yet)
+      buildSyntheticGrass({ row: 4, col: 3 });
+
+      // #when
+      const text = playToClear();
+
+      // #then the heading is still there, but nothing was made up under it
+      expect(text).toContain("完全刈り取り");
+      for (const total of [50, 250, 900, 2000, 5000]) {
+        expect(text).not.toContain(clearMessageFor(total));
+      }
     });
   });
 

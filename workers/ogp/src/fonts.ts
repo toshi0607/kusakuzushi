@@ -9,17 +9,31 @@
  * Fonts are subset via the `text` param to keep the fetched TTF small, but the
  * subset must be independent of any single request's username so the module-
  * scope cache below can serve every request without re-fetching: it covers
- * the fixed Japanese phrase plus every character a GitHub username or the
+ * the fixed Japanese phrases plus every character a GitHub username or the
  * score/percentage/domain text could ever contain.
  */
 
+import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
+
 const FONT_FAMILY = "Noto Sans JP";
 
-const FONT_TEXT =
+/** The card's own fixed strings: the result phrase and the site label. */
+const CARD_TEXT =
   "の草を刈り取ったスコア草崩" +
   "kusakuzushi.toshi0607.com" +
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
   "%,.- ";
+
+/**
+ * Every character the card can print, deduplicated (the subset is a set of
+ * glyphs — repeats only make the request URL longer).
+ *
+ * The clear taunts come from core's own table rather than a copy pasted here:
+ * a character the copy uses but the subset misses renders as tofu, and that
+ * failure is invisible until someone looks at a real PNG (2026-07-26: it
+ * shipped exactly that way for one render).
+ */
+export const FONT_TEXT = [...new Set(CARD_TEXT + CLEAR_MESSAGES.join(""))].join("");
 
 // Google's css2 endpoint serves WOFF2 (which satori cannot parse) to modern
 // browsers; this old-Safari User-Agent makes it fall back to a TTF URL.

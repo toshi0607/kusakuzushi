@@ -8,6 +8,7 @@
 export const GRASS_TABLE_SELECTOR = "table.ContributionCalendar-grid";
 export const GRASS_DAY_SELECTOR = "td.ContributionCalendar-day";
 export const GRAPH_CONTAINER_SELECTOR = ".js-yearly-contributions";
+export const YEARLY_TOTAL_SELECTOR = "#js-contribution-activity-description";
 
 export type ContributionLevel = 0 | 1 | 2 | 3 | 4;
 
@@ -48,6 +49,33 @@ export function findGrassTable(root: ParentNode): HTMLElement | null {
 
 export function findGraphContainer(root: ParentNode): HTMLElement | null {
   return root.querySelector<HTMLElement>(GRAPH_CONTAINER_SELECTOR);
+}
+
+/**
+ * The real yearly contribution count, read off the graph's own heading
+ * ("2,988 contributions in the last year").
+ *
+ * The grid can't supply this: the calendar `td`s carry only a 0-4
+ * `data-level`, so adapter.ts fills every `count` with `level²` and
+ * `grid.total` is a scoring weight, not a contribution count. Returns
+ * `null` when the heading is absent or holds no number — callers must
+ * treat "unknown" as "say nothing" rather than substitute a guess.
+ *
+ * Takes the largest number in the heading rather than the first: GitHub
+ * localises this string, and word order moves the count around ("過去 1 年間
+ * に 2,988 コントリビューション" would otherwise parse as 1).
+ */
+export function readYearlyTotal(root: ParentNode): number | null {
+  const text = root.querySelector(YEARLY_TOTAL_SELECTOR)?.textContent;
+  if (!text) return null;
+
+  let largest: number | null = null;
+  for (const match of text.matchAll(/\d[\d,]*/g)) {
+    const value = Number(match[0].replaceAll(",", ""));
+    if (!Number.isFinite(value)) continue;
+    if (largest === null || value > largest) largest = value;
+  }
+  return largest;
 }
 
 function parseLevel(value: string | null): ContributionLevel | null {

@@ -8,7 +8,7 @@
 |------------|--------|-----------|
 | core は DOM/fetch 非依存の純粋 TS | DESIGN.md §1 | core/src に fetch/document 参照がないこと(grep) |
 | データ源はアダプタで差し替え可能 | DESIGN.md §2 | core が ContributionGrid 型のみに依存 |
-| リポジトリは private で作成 | セッション1判断(公開は明示指示待ち) | gh repo view |
+| リポジトリは private で作成。**将来 public にする**(時期は未定) | セッション1判断 + ユーザー方針 2026-07-26 | gh repo view。公開耐性のある CI 構成はセッション14 で用意済み |
 | モデルルーティング: scaffold=haiku, 実装=sonnet, レビュー=reviewer(opus) | ~/.claude/rules/behavior.md | 各 Agent 呼び出し |
 | 区切りごとにセッション分割(S1:core, S2:web, S3:OGP, S4:拡張) | ユーザー指示 2026-07-24 | 各セッション末尾でコミット+push済みであること |
 | コミットに Co-Authored-By: Claude | システム規約 | git log |
@@ -25,7 +25,7 @@
 
 ## セッションの索引
 
-並行セッションが同じ番号を取ってしまい、**8 と 10 が 2 回ずつ**使われている(番号での相互参照が本文・`lessons.md` に多数あるため、振り直さず索引で引けるようにする)。ファイル内の並び順も時系列とは一致しない。
+並行セッションが同じ番号を取ってしまい、**8 と 10 が 2 回ずつ**使われている(13 も一度衝突したが、こちらは相互参照が増える前に片方を 14 へ振り直した)(番号での相互参照が本文・`lessons.md` に多数あるため、振り直さず索引で引けるようにする)。ファイル内の並び順も時系列とは一致しない。
 
 | 番号 | 主題 | 状態 |
 |---|---|---|
@@ -36,15 +36,21 @@
 | 5 | Web 版ビジュアルデザイン改善 | 完了 |
 | 6 | 発射ガイドの重なり修正 | 完了 |
 | 7 | 残機表示の可読性修正 | 完了 |
-| 8(1つ目) | モバイル操作 — 盤面下のパドルレール | 実装・デプロイ完了。**実機(スマホ)確認のみユーザー待ち** |
+| 8(1つ目) | モバイル操作 — 盤面下のパドルレール | 完了(実機確認はユーザーが 2026-07-26 に実施) |
 | 8(2つ目) | トップページの OGP 画像 | 完了 |
 | 9 | Lighthouse によるパフォーマンス改善 + 継続計測 | 完了 |
 | 10(1つ目) | ブロック破壊時のアイテムドロップ | 完了 |
 | 10(2つ目) | ファビコン | 完了 |
 | 11 | ブロックを正方形にする(草グラフ実寸比) | 完了 |
 | 12 | 本番だけ Lighthouse が赤い件 | 完了(本番 green を実測) |
+| 13 | Chrome ウェブストア公開 | 進行中 |
+| 14 | PR マージで自動デプロイ + パブリック化の準備 | 準備は完了。残り 3 件は public 化と同時にしか実施できない |
+| 15 | クリア時のメッセージを草の量で出し分ける | 完了(本番確認済み) |
 
-未完了はこの 1 件だけ: セッション8(パドルレール)の実機確認。
+セッション12 と 15 は完了(2026-07-26 時点)。最後まで残っていたセッション8 の実機確認はユーザーが実施して OK。
+
+**デプロイの現行手順はセッション14 を見ること。** それ以前のセッションの引き継ぎに書いてある
+`npx wrangler pages deploy ...` はもう手順ではない(main へのマージで自動デプロイされる)。
 
 ## セッション1: リポジトリ + core エンジン
 
@@ -332,7 +338,7 @@ pnpm --filter @kusakuzushi/extension build
   - 検証: core 37 tests pass(HUD 行の円の個数/色/半径、ラベル、`hud:false` の非表示を回帰テスト化)、light/dark 実測、1 機喪失時に ●● へ減りラベルが再整列することも実測
 - [x] PR → CI green → マージ → デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/13(CI pass 38s → merge f626b05)、`wrangler pages deploy`(2d37dcd1)、本番スクリーンショットで `SCORE 0` / `LIFE ●●●` を確認
 - 拡張版(apps/extension)は元から HUD をパドル半分(草が絶対に来ない領域)に置いており同じ問題はない — renderer.ts:112 のコメントで確認済み。対応不要
-## セッション8: モバイル操作 — 盤面下のパドルレール(実装・デプロイ完了 2026-07-25 / 実機確認のみユーザー待ち)
+## セッション8: モバイル操作 — 盤面下のパドルレール(完了 2026-07-25 / 実機確認 2026-07-26)
 
 ユーザー指摘(2026-07-25): 「スマホだと全然できないので、描画領域下で触れる形でもバーを左右に動かせるようにしてください」
 
@@ -375,7 +381,7 @@ pnpm --filter @kusakuzushi/extension build
   - 本番確認(2026-07-25 実測): `https://kusakuzushi.toshi0607.com/assets/index-pr2ZC311.js` と `index-Cu7t7aJQ.css` が dist と shasum 一致。CSS に `@media (pointer: coarse)` の `paddle-rail{display:block}`、JS に「下のバーで発射」「触れた位置にパドルが動き、離すと発射」が入っていることを確認。デスクトップ UA では `paddle-rail` の computed display が `none`、ガイドは「クリック / Space で発射」= デスクトップ無変更も実測
   - ※デプロイ直後の1回目の curl は両アセットとも 5,476 バイトの別物が返った(数十秒後には正しい 28,152 バイトを返し shasum も一致)。セッション6 の切り分け手順どおり shasum 比較で判定すること
 - [x] main 取り込み時の確認 — 盤面が 960x480 → 960x360(正方ブロック化)になった影響でレールの説明文の高さ表記を更新。パドル幅 80 は不変なのでハンドル比率 8.33% も不変。アイテム「バーが増える」は `paddle.width` を変えず左右に別バーを生やす実装(items.ts / game.ts:450)なのでハンドル寸法にも影響しない。マージ後に実ブラウザで再実測(canvas 960x360 → CSS 343x130、レール幅一致、8px 間隔、レール 25% → パドル 239.5、盤面タッチ無視、離すと発射)
-- [ ] 実機(スマホ)で本番確認 — `@media (pointer: coarse)` は手元にタッチエミュレーション環境が無いため未実測。**ユーザーが実機で開く以外に消化手段がない項目**(エージェント側では永久に閉じられない)。https://kusakuzushi.toshi0607.com/?user=toshi0607 をスマホで開いて確認する
+- [x] 実機(スマホ)で本番確認 — **ユーザーが実機で確認して OK(2026-07-26)**。`@media (pointer: coarse)` はエージェント側にタッチ環境が無く実測できないため、確認はユーザーが実施した(この項目の検証者はユーザー)
 
 ### セッション8 検証記録(2026-07-25、375x812 / Vite dev)
 
@@ -1144,9 +1150,9 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 |------------|--------|----------|
 | 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
-| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | VERIFIED | developer.chrome.com/docs/webstore/cws-dashboard-listing(2026-07-26 取得)が「掲載情報の言語ドロップダウンの各ロケールは、拡張に含まれる `_locales/LOCALE_CODE` ディレクトリのいずれかに対応する」と明記。ja/en の `_locales` を入れたので ja と en の両方が選べるはず。コンソール上での実地確認は C-1 で行う |
-| データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
-| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | VERIFIED(条件付き) | 2026-07-26 実測: `/privacy` は **308** で `/privacy/` へ、`/privacy/` が 200。canonical とストア登録 URL を `/privacy/` に揃えた |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | **VERIFIED**(2026-07-27、コンソールで実地確認) | docs(cws-dashboard-listing)に「言語ドロップダウンの各ロケールは `_locales/LOCALE_CODE` に対応する」と明記があり、C-1 でコンソールを開いたところ実際に「英語 – en（デフォルト）」と「日本語 – ja」の 2 つが並んだ。`_locales/{en,ja}` を入れた効果が出ている |
+| データ収集ゼロならプライバシーポリシー URL は必須でない | **反証された**(2026-07-27) | プライバシータブの「プライバシー ポリシーの URL」に必須マーク `*` が付いていた。データ収集ゼロでも必須。**先に /privacy を用意しておいた緩和策が効いて、ここで詰まらずに済んだ** |
+| Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | **VERIFIED**(2026-07-26、セッション14 が実測) | `/privacy` は **308** で `/privacy/` へ、`/privacy/` が **200**。本文の sha256 は `2a8b2baf…` で手元の `dist/privacy/index.html` と一致。ルートの `index.html`(`ee82bf83…`)とは別物なので、Pages の「存在しないパスに index.html を 200」ではない。**B-8 の完了条件は満たされている** |
 
 ### Phase A: ユーザー作業(エージェント不可)
 
@@ -1154,7 +1160,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] A-2. 連絡先メール — 設定ページで `s.toshi0607@gmail.com` を登録し確認メールを送信(エージェント)→ メール内リンクのクリックはユーザー。**実測: リロード後も「s.toshi0607@gmail.com 確認済みのメールアドレス」**。このアドレスはアイテム詳細ページに公開される(ユーザー了承済み)
 - [x] A-3. Trusted Tester に `s.toshi0607@gmail.com` を追加(同じ設定ページの「管理」セクション)。**実測: 保存 → リロード後も値が残っている**。サービスアカウント欄は空のまま
 - [x] A-4. 未パック拡張の読み込み(ユーザー実施 2026-07-26)。パスに `.claude` が含まれるため macOS のファイルダイアログでは辿れない — `Cmd+Shift+G` でパス貼り付け、または `~/Desktop/kusakuzushi-extension` のシンボリックリンク経由
-- [ ] A-5. 最終「審査に送信」クリック
+- [x] A-5. 最終「審査に送信」クリック(ユーザー実施 2026-07-27)。**実測: ステータスが「ドラフト」→「審査待ち」、送信ボタンは無効化**
 
 ### Phase B: エージェントが用意する提出物
 
@@ -1165,7 +1171,7 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] B-5. スクリーンショット 1280x800 を4枚 — `apps/extension/store/screenshots/`。①ボタン ②発射待ち(ガイド表示) ③プレイ中(Score 191・草が刈られている) ④アイテム効果。`magick identify` で 4 枚とも 1280x800 を実測。**組織名・個人情報は 0 件**(撮影中は `#user-activity-overview` と `#js-contribution-activity` を非表示にし、構図もその上で切った。撮影後に細工は撤収済み)
 - [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
 - [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
-- [x] B-8. `/privacy` ページ + デプロイ — PR #30 マージ(30a0dce)→ `wrangler pages deploy`(64f75928)。**実測: `/privacy` は 308 で `/privacy/` に寄り、`/privacy/` が 200 + `<title>プライバシーポリシー | 草崩し</title>`**。ストアに登録する URL はリダイレクトを挟まない `/privacy/` にした(b1342d8)
+- [x] B-8. `/privacy` ページ + デプロイ — PR #30 マージ(30a0dce)→ `wrangler pages deploy`(64f75928)。**実測: `/privacy` は 308 で `/privacy/` に寄り、`/privacy/` が 200 + `<title>プライバシーポリシー | 草崩し</title>`**。ストアに登録する URL はリダイレクトを挟まない末尾スラッシュ付き `https://kusakuzushi.toshi0607.com/privacy/`(b1342d8)。**これは必須項目だった**(上の Assumptions 参照)
 - [x] B-9. `apps/extension/README.md` に公開手順を追記
 
 ### Phase C: 一緒に実施
@@ -1231,3 +1237,579 @@ apps/extension のテストは 49 → 70 件に増えた。
 
 - 拡張 UI 文言(「🎮 崩す」ほか 6 文字列)の i18n。今回は manifest の name/description のみ英語化する。
   UI まで英語化するかは別途判断(content.ts に `chrome.i18n` が入ると jsdom テストにモックが要る)
+
+## セッション14: PR マージで自動デプロイ + パブリック化の準備(2026-07-26)
+
+依頼: 「PR マージでデプロイされるようにしたい。ゆくゆくはパブリックリポジトリにするので、それも踏まえて」
+
+### なぜやるか
+
+セッション12 まで、デプロイは毎回人間が `wrangler` を叩いていた。その手動運用が実際に事故を生んでいる:
+
+- **S6**: デプロイ後に本番が真っ白。切り分けで「origin の実体は手元の dist と byte 一致か」を
+  `curl` + `shasum` で手作業確認した
+- **S12**: デプロイ直後の計測が旧ビルドと新ビルドを混ぜて引いた。判別はアセットのハッシュ名の目視
+  (`index-BpMi0tfA.js` か `index-pr2ZC311.js` か)
+- **S10(アイテムドロップ)**: 「ブランチ作成後に main へ入った別 PR の機能もこの配信に含まれる」—
+  どの時点の main が本番かが人間の記憶に依存していた
+
+いずれも「配信中の成果物 == 手元の成果物」が機械で言えれば消える手間。あわせて `npx wrangler` の
+浮動バージョン(実行時の latest)も固定する。
+
+### Constraints(セッション14)
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| デプロイ対象は apps/web(Pages)と workers/ogp(Worker)の両方。変更パスで出し分け | ユーザー選択 2026-07-26 | `changes` ジョブのログ |
+| デプロイのゲートは `ci.yml` の `test` のみ。Lighthouse は待たせない | ユーザー選択 2026-07-26 | `deploy-*` の `needs` |
+| 既存の `test` / `Lighthouse` ジョブの挙動を変えない | 既存 CI が退行ゲート | `lighthouserc.cjs` の diff が空、3 ジョブが従来どおり green |
+| デプロイは main への push のみ。fork PR から絶対に走らない | パブリック化前提 | `deploy-*` の `if` 条件 + PR でスキップされる実測 |
+| 新規のランタイム依存を増やさない | リポジトリの既存方針(`tools/*.mjs` は依存ゼロ) | 追加は devDependency の `wrangler` だけ。verify 系は Node 標準 API のみ |
+| クレデンシャルは Claude が扱わない | 安全ルール | トークン作成と secret 登録はユーザーが実施 |
+| LICENSE / README は今回入れない | ユーザー選択(公開の意思決定が要るため別 PR) | — |
+
+### Assumptions(セッション14)
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| コミット履歴にクレデンシャルは含まれない | VERIFIED | 追加された全ファイルを列挙して確認、`git grep` でトークン様の文字列 0 件 |
+| `workers/ogp` は `packages/core` に依存しない(core 変更で Worker を出し直す必要が無い) | VERIFIED | `workers/ogp/package.json` の deps は `workers-og` のみ |
+| wrangler 4.114.0 で Worker がバンドルできる | VERIFIED | `wrangler deploy --dry-run` が Total Upload 1974.86 KiB で成功(2026-07-26) |
+| `pnpm install` が build script を無視しても wrangler は動く | VERIFIED | `pnpm exec wrangler --version` → 4.114.0、上記 dry-run も成功。workerd の postinstall は `wrangler dev` 用で deploy には要らない |
+| `verify-deploy.mjs` は壊れたら実際に赤くなる | VERIFIED | ネガティブテスト4種(別アセット / 中身切り詰め / robots.txt 差し替え / 到達不能ホスト)で exit 1 を実測(下記) |
+| `verify-worker.mjs` は route が外れたら赤くなる | VERIFIED | route の無い `kusakuzushi.pages.dev` に向けると「人間 UA が 200」で exit 1(2026-07-26) |
+| API トークン(Pages Edit + Workers Scripts Edit + Workers Routes Edit)で両方のデプロイが通る | **VERIFIED**(2026-07-26) | 初回自動デプロイ(run 30188384802)で `deploy-web` / `deploy-ogp` とも success。テンプレート「Edit Cloudflare Workers」+ `Cloudflare Pages: Edit` で足りた |
+| private のままブランチ保護が設定できる(GitHub のプラン依存) | **VERIFIED**(2026-07-26) | `gh api -X PUT repos/toshi0607/kusakuzushi/branches/main/protection` が成功し、`required_status_checks.contexts = [test, dist, slow]` / `allow_force_pushes: false` / `allow_deletions: false` が設定された。**private のままで張れる** |
+
+### main とのマージ(2026-07-26)
+
+PR を出した後に main が進んでいたため(PR #30「Chrome ウェブストア公開」)、CI が
+**コンフリクト状態のワークフローを起動できず**、チェックが 1 つも走らない状態になっていた。
+`origin/main` をマージして解消。ぶつかったのは `tasks/todo.md` のみ。
+
+- **セッション番号の衝突**: 並行セッションが先に 13 を使っていたので、こちらを **14** に振り直した
+  (8 / 10 と違って相互参照が増える前だったため、索引で引かせるのではなく振り直せた)
+- main 側が追加した `apps/web/public/privacy/index.html` により dist が 7 → 8 ファイルになった。
+  `verify-deploy.mjs` は `*/index.html` をディレクトリ URL(`/privacy/`)として照合するよう修正
+- `/privacy/` は**既に本番へデプロイ済み**だった(セッション13 の B-8)。実測: 本番 `/privacy/` の
+  sha256 が手元の `dist/privacy/index.html` と一致(`2a8b2baf…`)。ルートの index.html
+  (`ee82bf83…`)とは別物なので、Pages の「存在しないパスに index.html」ではない
+
+### 変えたもの
+
+| ファイル | 内容 |
+|---|---|
+| `apps/web/package.json` / `workers/ogp/package.json` | devDependency に `wrangler@^4`、`deploy` スクリプトを追加。`npx wrangler`(浮動)をやめ、pnpm-lock で固定する |
+| `package.json`(ルート) | `deploy:web` / `deploy:ogp` / `verify:web` / `verify:ogp` |
+| `.github/workflows/ci.yml` | `test` に artifact upload、`changes`(パス判定)、`deploy-web`、`deploy-ogp` を追加。`permissions: contents: read`、`concurrency`、action の SHA 固定 |
+| `.github/workflows/lighthouse.yml` | `permissions: contents: read`、`pnpm/action-setup` を SHA 固定 |
+| `.github/dependabot.yml`(新規) | github-actions と npm の週次更新。wrangler は単独 PR |
+| `tools/verify-deploy.mjs`(新規) | Pages のスモーク。本番 HTML が今回のエントリ JS を指し、その sha256 が手元と一致するまでリトライ |
+| `tools/verify-worker.mjs`(新規) | Worker のスモーク。人間 UA→302 / クローラー UA→200+og:image / og.png→image/png |
+
+`deploy` スクリプトを叩くときは **`pnpm run` が要る** — `pnpm deploy` は pnpm 組み込みのコマンドで、
+`pnpm --filter X deploy` はスクリプトを実行しない。
+
+### 設計上の判断
+
+- **デプロイするのは test ジョブが上げた artifact**。deploy ジョブで build し直すと
+  「本番の中身 == テストしたもの」が状況証拠にしかならない。S6/S12 の切り分けコストはそこに由来した
+- **Lighthouse は待たせない**。`dist` / `slow` は PR で必ず走るゲートで、main に入る時点で通過済み。
+  ワークフローをまたぐ依存(`workflow_run`)は checkout する ref の指定を間違えやすく、
+  得られる保証に対して配線が重い
+- **paths-filter アクションを使わず `git diff` で判定**。パブリックリポジトリに増やす依存を減らす。
+  `github.event.before` を辿れないとき(force push / 初回 push)は**両方 true にフォールバック**する
+- **自動ロールバックは入れない**。スモークの誤検知でロールバックするほうが危険。
+  スモークが赤いときは人間が Cloudflare ダッシュボード / `wrangler pages deployment` で判断する
+- **サードパーティ action は SHA 固定、`actions/*` はメジャータグ**。前者はタグを書き換えられるため。
+  固定しっぱなしにしないために Dependabot を同時に入れた
+- **`pull_request_target` は使わない**。fork の PR コードを secret 付きで走らせる唯一の穴
+
+### account ID / zone ID の扱い
+
+`workers/ogp/wrangler.toml` の `zone_id` と、この todo.md にある Account ID
+(`5ee49b8e0983dc8fcf6d0eddb45ef5d8`)は**クレデンシャルではなく識別子**で、API トークン無しでは
+何もできない。よって**履歴の書き換えはしない**。
+
+当初は `CLOUDFLARE_ACCOUNT_ID` も GitHub secret に置く予定だったが、レビュー(L4)を受けて
+**ワークフローに平文で置く**ことにした。secret にすると GitHub がその文字列をログ全体でマスクし、
+`wrangler` の出力が `***` だらけになって切り分けの邪魔になる。秘匿する必要が無いものを
+secret にすると、得るものが無いのに読みにくさだけが増える。
+
+### 新しい運用
+
+- **通常**: main へマージすると `CI` が回り、変更パスに応じて `deploy-web` / `deploy-ogp` が走る。
+  デプロイ後にスモークが自動で通る。手でコマンドを叩く必要は無い
+- **手元から出したいとき**(緊急時):
+
+```bash
+pnpm -r build
+pnpm run deploy:web && pnpm run verify:web
+pnpm run deploy:ogp && pnpm run verify:ogp
+```
+
+- **本番の健康診断**: 従来どおり `Lighthouse` ワークフローの `production` ジョブ(毎日 06:00 JST /
+  `workflow_dispatch`)。ローカルからの `pnpm lh:prod` はばらつくので合否判定に使わない(S12)
+
+### ユーザー作業(Claude は触らない)
+
+1. Cloudflare ダッシュボードで API トークンを作成。テンプレート「Edit Cloudflare Workers」をベースに、
+   - Account → **Cloudflare Pages : Edit**
+   - Account → **Workers Scripts : Edit**
+   - Zone → **Workers Routes : Edit**(`wrangler.toml` の `routes` を張り直すのに要る)
+   - Account Resources: 当該アカウントのみ / Zone Resources: `toshi0607.com` のみ
+2. GitHub の repo secrets に **`CLOUDFLARE_API_TOKEN`** を登録(これ 1 つだけ)。
+   account ID はワークフローに平文で置いてある(レビュー L4 の対応。識別子であって
+   クレデンシャルではなく、secret にするとログでマスクされて切り分けの邪魔になる)
+
+**secret が無いと `deploy-*` は落ちる**(ワークフローは動くがデプロイが失敗する)。
+しかもこの PR 自身が `pnpm-lock.yaml` / `package.json` / `ci.yml` を触るので、
+マージ時の push は必ず両方のデプロイを起動する(レビュー M1)。**マージ前に登録しておくこと。**
+
+### タスク
+
+- [x] `wrangler` を devDependency として固定 + `deploy` スクリプト
+- [x] `tools/verify-deploy.mjs`(Pages スモーク)。ネガティブテスト2種で exit 1 を実測
+- [x] `tools/verify-worker.mjs`(Worker スモーク)。route の無いオリジンで exit 1 を実測
+- [x] `ci.yml` に `changes` / `deploy-web` / `deploy-ogp`、artifact の受け渡し
+- [x] `permissions` / SHA 固定 / `concurrency` / `dependabot.yml`
+- [x] `pnpm -r test`(162件)/ `pnpm -r build` exit 0
+- [x] ユーザーが Cloudflare API トークンを作成し、`CLOUDFLARE_API_TOKEN` として登録(2026-07-26 04:47Z)
+- [x] PR → CI green(`deploy-*` が PR でスキップされることを確認)— https://github.com/toshi0607/kusakuzushi/pull/32 で `test` pass 37s / `Lighthouse dist` pass / `Lighthouse slow` pass、`changes` / `deploy-web` / `deploy-ogp` / `production` はすべて **skipping**(2026-07-26)。**門番条件が効いていることの実測**
+- [x] マージ → `deploy-web` / `deploy-ogp` が成功しスモークが緑 — 下記「初回自動デプロイ」
+- [x] ブランチ保護(main)— PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人(1人メンテなので自分でマージできる)。`strict: false`(ブランチを最新に保つ強制はしない)
+- [ ] fork PR のワークフロー承認必須化 — **private では設定不可**。`gh api .../actions/permissions/fork-pr-contributor-approval` が 422 `Fork PR approval is not allowed for private repositories.`。**パブリック化時に実施**
+- [ ] Secret scanning + push protection — **private では利用不可**。`PATCH /repos/...` が 422 `Secret scanning is not available for this repository.`(private は GitHub Advanced Security が要る)。**パブリック化すれば無料で使えるのでそのとき実施**
+- [ ] 非公開の脆弱性報告を有効化 — `PUT /repos/toshi0607/kusakuzushi/private-vulnerability-reporting` が **404**(private リポジトリにはこのエンドポイント自体が無い)。**`SECURITY.md` はここを報告先に指定しているので、public にするのと同じ操作の中で有効化すること**
+- [x] パス判定の**陰性側**を本番の main で実測 — PR #35(`tasks/todo.md` のみ)のマージ(`27d3c29`、run 30189189953)で `変更ファイル: tasks/todo.md` → **`web=false ogp=false`**、`deploy-web` / `deploy-ogp` とも **skipped**
+- [ ] パス判定の**選択側**(`workers/ogp` だけ触ったとき `deploy-web` だけスキップ)— 検証のためだけに Worker を触るのは本末転倒なので、**次に Worker を変更する PR で自然に確認する**。ロジック自体は 11 ケースのローカル実行で確認済み
+
+### 検証結果(2026-07-26、PR 段階)
+
+パス判定ロジック(`changes` ジョブと同じスクリプト)を代表的な変更セットで実行:
+
+```
+web のみ            : web=true  ogp=false
+worker のみ         : web=false ogp=true
+core のみ           : web=true  ogp=false      # ogp は core に依存しない
+lockfile            : web=true  ogp=true
+docs のみ           : web=false ogp=false
+extension のみ      : web=false ogp=false      # 拡張はデプロイ対象外
+lighthouse.yml のみ : web=false ogp=false
+空                  : web=false ogp=false
+```
+
+`verify-deploy.mjs`(本番 https://kusakuzushi.toshi0607.com/ に対して):
+
+```
+正常   : 期待 /assets/index-SQEC_6xV.js / sha256 14a678da… → 1 回目で一致、exit 0
+異常1  : HTML が別アセットを指す        → 「本番 HTML がまだ …-SQEC_6xV.js を指している」exit 1
+異常2  : 名前一致・中身が切り詰め(1535B)→ 「sha256 不一致(配信 27756B、手元 1535B)」exit 1
+```
+
+異常2 は S6 の白画面(切り詰められた JS はパースが通り、console エラーを出さずに何もしない)の形。
+**名前の一致だけでは中身を保証できない**ので、sha256 まで見る設計にしてある。
+
+`verify-worker.mjs`:
+
+```
+正常 : 人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png、exit 0
+異常 : route の無い kusakuzushi.pages.dev → 「人間 UA が 200(302 のはず。200 なら route が外れている)」exit 1
+```
+
+異常側が意味を持つのは、Pages が**存在しないパスに index.html を 200 で返す**から(S9 の robots.txt)。
+つまり `/share/*` が 200 であることは route の証明にならず、302 であることが証明になる。
+
+### CI 実測(PR 段階、2026-07-26)
+
+```
+test        pass     37s
+dist        pass              (Lighthouse)
+slow        pass              (Lighthouse)
+changes     skipping          github.event_name == 'push' でないため
+deploy-web  skipping          needs: changes がスキップ + if 条件
+deploy-ogp  skipping          同上
+production  skipping          schedule / workflow_dispatch のみ
+```
+
+**PR がコンフリクトしているとチェックが 1 件も走らない。** マージ ref を計算できないと
+GitHub は `pull_request` のワークフローを起動しない。「CI が緑」ではなく「CI が無い」状態は
+一見すると同じに見える(`gh pr checks` は "no checks reported" としか言わない)ので、
+**チェックが 0 件のときは緑ではなくコンフリクトを疑うこと**。
+
+### リポジトリ設定(2026-07-26 実施)
+
+| 設定 | 結果 |
+|---|---|
+| main のブランチ保護 | **適用済み**。PR 必須 / required checks = `test` `dist` `slow` / force push・削除禁止 / 承認レビュー 0 人。`strict: false` にしてあるので「main が進むたび再ビルド待ち」にはならない |
+| fork PR のワークフロー承認必須化 | **private では設定できない**(API が 422 で明示的に拒否)。パブリック化時に実施 |
+| Secret scanning + push protection | **private では利用できない**(GitHub Advanced Security が要る)。パブリック化すれば無料 |
+| 非公開の脆弱性報告(Private vulnerability reporting) | **private では有効化できない**。`PUT /repos/.../private-vulnerability-reporting` が **404**(エンドポイントが public リポジトリにしか存在しない)。パブリック化時に実施 — `SECURITY.md` の報告先がこれなので、**公開と同時に入れないと報告経路が無い状態になる** |
+
+つまり**公開に向けた残りのリポジトリ設定は 3 つだけ**で、どれも public にした直後に入れる。
+コード側(ワークフローの `permissions` / SHA 固定 / `pull_request_target` 不使用 / deploy の門番)は
+今回で完了している。
+
+### 初回自動デプロイ(2026-07-26、run 30188384802)
+
+PR #32 をマージ(`5b4dd96`)→ **全ジョブ success**。所要 約1分20秒。
+
+```
+changes     success   → web=true ogp=true      (pnpm-lock.yaml / package.json / ci.yml が shared に当たる)
+test        success
+deploy-web  success   ✨ Uploaded 0 files (8 already uploaded) → f247cffc
+                      ✅ 8 件すべて sha256 一致(1 回目)
+deploy-ogp  success   Total Upload 1974.86 KiB / Version ID b4cd4597-9965-41ee-8324-4438120bef02
+                      ✅ 人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png
+```
+
+読み取れること:
+
+- **トークンのスコープは足りていた。** 「Edit Cloudflare Workers」テンプレート + `Cloudflare Pages: Edit` で
+  Pages と Worker の両方が通った(Assumptions の当該行を VERIFIED に更新)
+- **`Uploaded 0 files (8 already uploaded)`** — 中身が既存デプロイと同一だったため実アップロードは 0 件。
+  それでも新しいデプロイ(`f247cffc`)は作られ、verify は 8 件すべて一致を確認した
+- **スモークは 1 回目で通った。** エッジ伝播のリトライは今回は使われていない。
+  ただしこれは「毎回そうなる」という意味ではない(S12 の実測では旧/新が混ざる時間帯があった)
+
+#### レビュー L8(未確認だった項目)の決着
+
+**VERIFIED**: `wrangler pages deploy` は CI 上の `.git` からコミットを自動検出していた。
+`wrangler pages deployment list --project-name kusakuzushi` の **Source 列が `5b4dd96`**
+(= マージコミット)。ダッシュボードからも同じものが引ける。
+
+これでセッション10 の動機(「どの時点の main が本番か」が人間の記憶に依存していた)は
+**完全に解消**した。本番の実体 → デプロイ ID → コミット の 3 つが機械で辿れる。
+
+### パス判定の実測(main、2026-07-26)
+
+| マージ | 変更ファイル | 判定 | デプロイ |
+|---|---|---|---|
+| PR #32(`5b4dd96`) | `pnpm-lock.yaml` / `package.json` / `ci.yml` ほか | `web=true ogp=true` | 両方 success |
+| PR #35(`27d3c29`) | `tasks/todo.md` のみ | `web=false ogp=false` | 両方 **skipped** |
+| PR #47 | `apps/web/` 配下のみ | `web=true ogp=false` | **deploy-web のみ success / deploy-ogp skipped** |
+
+**3 パターンすべて実測できた。** 当初は「次に Worker を触る PR で自然に確認する」と
+していた選択側が、Dependabot 起点の型修正 PR (#47) で確認できた。判定は全か無かではない。
+
+### セッション14 の完了状態
+
+| 項目 | 状態 |
+|---|---|
+| main へのマージで自動デプロイ | **稼働中**(初回 run 30188384802 で両方 success) |
+| デプロイ後スモーク(Pages 全 8 ファイルの sha256 / Worker の 3 分岐) | **稼働中**。ネガティブテスト 5 種で赤くなることを実測済み |
+| パス判定 | **稼働中**。3 パターン(両方 / 両方スキップ / 片方のみ)すべて main で実測 |
+| wrangler のバージョン固定 | 完了(devDependency + pnpm-lock) |
+| 公開耐性(permissions / SHA 固定 / pull_request_target 不使用 / 門番条件) | 完了 |
+| ブランチ保護 | 適用済み(required checks = `test` `dist` `slow`) |
+| fork PR のワークフロー承認必須化 | **public 化時**(private では API が拒否) |
+| Secret scanning + push protection | **public 化時**(private では GHAS が要る) |
+| LICENSE / ルート README / SECURITY.md | **完了**(下記「公開向けドキュメント」)。ライセンスは MIT |
+| Dependabot が pnpm workspace 配下の wrangler を辿るか(レビュー L9) | **決着**(下記)。辿る。ただしグループ設定の誤りが露見したので修正した |
+
+#### Dependabot 初回実行の実測(2026-07-26)
+
+**L9 は解決。** 初回の週次実行で PR #33(github-actions)と PR #34(npm)が立った。
+PR #34 の変更ファイルは `apps/extension/package.json` / `apps/web/package.json` /
+`packages/core/package.json` / `workers/ogp/package.json` / `pnpm-lock.yaml` で、
+**`directory: "/"` のまま pnpm workspace 配下の各パッケージまで届いている**。
+`directories` に列挙する必要はない。
+
+wrangler 単独の PR が立たなかったのは、`npm view wrangler version` が `4.114.0` で
+固定中のバージョンと同じ = 更新が無いため。設定が効いていないのではない。
+
+**そのかわり別の設定ミスが出た。** PR #34 が dev-dependencies グループに
+TypeScript 5.9.3→**7.0.2** / vite 5.4.21→**8.1.5** / vitest 2.1.9→**4.1.10** /
+jsdom 25.0.1→**29.1.1** の major を 4 本まとめて入れており、CI が赤になった:
+
+```
+apps/web build: src/main.ts(1,8): error TS2882: Cannot find module or type
+  declarations for side-effect import of './style.css'.
+apps/web build: src/shell.test.ts(15,30): error TS2591: Cannot find name 'node:fs'.
+ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @kusakuzushi/web@0.0.1 build: `tsc && vite build`
+```
+
+TypeScript 7 の型解決の変更で落ちているが、**1 つの PR に無関係な破壊的変更が
+4 本入っているので、PR 単位で切り分けられない**。グループ化は「判断材料が変わらない
+更新をまとめる」ためのもので、major はそれに当たらない。
+
+対応: 全グループに `update-types: ["minor", "patch"]` を付け、major はグループから
+外して 1 依存 1 PR で届くようにした。あわせて npm の
+`open-pull-requests-limit` を 5 → 10 に上げた(major 4 本 + グループ 1 本で
+ちょうど上限に当たり、超えたぶんが黙って消えるため)。
+
+PR #33(github-actions)は緑だったのでそのままマージした。`actions/checkout` の
+v7 は `pull_request_target` / `workflow_run` での fork PR checkout を塞ぐ破壊的変更を
+含むが、このリポジトリはどちらのトリガーも使っていないので無影響(むしろ硬化側)。
+`pnpm/action-setup` の SHA も更新され、固定運用が機能していることが確認できた。
+
+PR #34 はクローズした。設定修正後の次回実行で、major が個別 PR として立ち直る。
+
+#### 分割後の結果と、そこで見つかった宣言漏れ 2 件
+
+設定変更を Dependabot が検知して即座に再実行し、**意図どおり分割された**:
+
+| PR | 内容 | 分割前 | 分割後の結果 |
+|---|---|---|---|
+| #39 | dev-dependencies グループ(esbuild / @cloudflare/workers-types) | #34 に同居 | 緑 → マージ |
+| #38 | pnpm/action-setup 4.3.0 → 6.0.9(major) | #33 に同居 | 緑 → マージ |
+| #41 | jsdom 25 → 29(major) | #34 に同居 | 緑 → マージ |
+| #42 | vite 5 → 8(major) | #34 に同居 | 緑 → マージ |
+| #40 | vitest 2 → 4(major) | #34 に同居 | 赤 → **原因特定** → マージ |
+| #43 | typescript 5 → 7(major) | #34 に同居 | 赤 → **原因特定** → 緑 → マージ(ユーザー判断 2026-07-26) |
+
+束ねられていたときは 6 本まとめて赤で、どれが原因かを PR 単位で切り分けられなかった。
+分割したことで **4 本は無条件に安全、2 本は原因が別**と即座に分かった。
+
+赤かった 2 本はどちらも **Dependabot の更新が悪いのではなく、こちらの宣言漏れ**だった。
+どちらも「暗黙の挙動にたまたま乗っていた」もので、更新がその偶然を外して露見した:
+
+**(1) `@types/node` の宣言漏れ(PR #45 で修正)**
+
+`apps/web/src/shell.test.ts` は `node:fs` / `node:url` を import しているのに、
+`apps/web/package.json` は `@types/node` を宣言していなかった。`tsc` が通っていたのは
+**vitest 2 が transitive に連れてきた `@types/node` が pnpm のレイアウトで見えていたから**で、
+依存として成立してはいなかった。vitest 4 がその経路を外して露見:
+
+```
+apps/web build: src/shell.test.ts(15,30): error TS2307:
+  Cannot find module 'node:fs' or its corresponding type declarations.
+```
+
+`node:` 組み込みを import しているのは `apps/web` だけ
+(`grep -rl 'from "node:' apps packages workers --include='*.ts'`)なので、追加は 1 パッケージのみ。
+
+**(2) `vite/client` の型参照が無い + TS 7 は `@types/*` を自動 include しない(PR #47 で修正)**
+
+vite プロジェクトの定石である `src/vite-env.d.ts` が無く、`import "./style.css"` の型が
+どこからも来ていなかった。TS 5 は未知モジュールの side-effect import を黙認するので
+表面化していなかっただけ:
+
+```
+src/main.ts(1,8): error TS2882: Cannot find module or type declarations
+  for side-effect import of './style.css'.
+```
+
+あわせて TS 7 は `@types/*` を自動 include しないため、tsconfig に `"types": ["node"]` を明示した。
+`apps/web/node_modules/@types` の中身は `node` だけなので、**現行 TS 5 の自動 include と等価**
+(制限ではなく明示化)。
+
+いずれも手元で該当バージョンに上げた状態で `pnpm -r test` / `pnpm -r build` の exit 0 を
+確認してから PR にした(推測でマージしていない)。
+
+#### ここで初めて観測できたこと
+
+**パス判定の選択側(積み残しだった項目)。** PR #47 は `apps/web/` 配下しか触らないので:
+
+```
+deploy-web  success
+deploy-ogp  skipped
+```
+
+これまで実測できていたのは「両方走る」(shared パターン)と「両方スキップ」(docs のみ)の
+両端だけで、**片方だけ走る**のは初めて。判定が全か無かではないことが本番で確認できた。
+
+**スモークのリトライが初めて効いた場面。** vite 8 のデプロイ(run 30190998280)で:
+
+```
+✅ 本番が手元の成果物を配信している(8 回目で一致、8 件すべて sha256 一致)
+```
+
+エッジ伝播に約 44 秒かかっており、1 回目で諦める実装なら**デプロイは成功しているのに
+CI が赤**になっていた。レビュー指摘 H1(リトライループが fetch 例外で即死する)の修正が
+効く条件が実際に存在することの裏付けでもある。
+
+#### TypeScript 7 の扱い(ユーザー判断 2026-07-26: 採用)
+
+PR #43 は #47 のマージ後に rebase して **全ゲート緑**(test / build / Lighthouse dist / slow)。
+手元でも build 4 パッケージ・test 36 ファイルすべて通過。
+
+TypeScript 7 は Go 実装への置き換えで型検査の実装そのものが変わるが、本番バンドルを
+作るのは vite なので**成果物への影響は無い**(`tsc` は `--noEmit` の型検査専用)。
+「型検査をどの実装で回すか」はツール方針の判断なのでユーザーに確認し、**採用**。
+
+マージ後のデプロイ(全ジョブ success)と本番の実測:
+
+```
+✅ 本番が手元の成果物を配信している(1 回目で一致、8 件すべて sha256 一致)
+✅ /share/* が Worker に届いている(1 回目で成功)
+```
+
+本番をブラウザで開いてデモプレイのループが回っていること、コンソールエラーが
+無いことも確認済み(セッション6 の「パースは通るが何もしない」形を潰すため。
+sha256 一致は同一性の証明であって、動作の証明ではない)。
+
+#### このセッションで上がった採用バージョン
+
+| | 前 | 後 |
+|---|---|---|
+| typescript | 5.9.3 | **7.0.2** |
+| vite | 5.4.21 | **8.1.5** |
+| vitest | 2.1.9 | **4.1.10** |
+| jsdom | 25.0.1 | **29.1.1** |
+| esbuild | 0.24.2 | 0.28.1 |
+| pnpm/action-setup | 4.3.0 | 6.0.9 |
+| actions/checkout ほか | v4 | v7 / v8 |
+| wrangler | 4.114.0 | 4.114.0(最新のため変更なし) |
+
+### 今回やらないこと
+
+| 項目 | 理由 |
+|---|---|
+| LICENSE / ルート README / SECURITY.md | 当初は「公開の意思決定が要るので別 PR」としていたが、**同じセッションの中で別 PR として実施した**(下記「公開向けドキュメント」) |
+| Cloudflare Pages の Git 連携(Pages 側でビルド) | direct upload を維持。monorepo + pnpm のビルド設定を Pages 側に二重管理したくない |
+| プレビューデプロイ(PR ごとの `--branch` デプロイ) | 今回のスコープ外。PR の品質担保は Lighthouse の `slow` ゲートが担っている |
+| 自動ロールバック | 誤検知でロールバックするほうが危険 |
+| `apps/extension` のデプロイ | Chrome Web Store は未申請、手動運用(`apps/extension/README.md`) |
+| git 履歴の書き換え | account/zone ID はクレデンシャルではない(上記) |
+
+### レビュー(フレッシュコンテキストの `reviewer`、2026-07-26)
+
+`aa628d5` に対して実施。**Request Changes**。指摘と対応:
+
+| # | 重大度 | 指摘 | 対応 |
+|---|---|---|---|
+| H1 | High | verify 系のリトライループが `fetch` の例外で即死する(リトライ 0 回で赤) | **修正**。`checkOnce` を try/catch で包み、例外を「理由の文字列」として既存の戻り値契約に乗せた |
+| M1 | Medium | この PR 自身が `shared` パターン(`pnpm-lock.yaml` / `package.json` / `ci.yml`)を触るので、マージすると必ず両方のデプロイが走る。secret 未登録なら初回から main が赤 | **運用で対応**。PR 説明と本節で「マージ前に secret 登録」を明記。コード修正は不要 |
+| M2 | Medium | `concurrency` は同時実行を防ぐだけで**順序を保証しない**。連続マージで先発 run が後から古い dist を上書きしうる。しかも verify は自分の artifact と比べるので**緑のまま退行する** | **修正**。デプロイ直前に `gh api` で main の tip を確認し、追い抜かれていたらデプロイ・verify とも skip する |
+| M3 | Medium | `verify-worker.mjs` の `property="og:image"` 判定が `og:image:width` にも部分一致し、画像本体のタグが消えても緑 | **修正**。`property="og:image" content="` まで含めて判定 |
+| L1 | Low | `--attempts abc` で `Number("abc")` が NaN になり、1 度も検証せずに「NaN 回試して駄目だった」と嘘の理由で落ちる | **修正**。`Number.isFinite` + 正数チェック。トップレベルの `.catch` で 1 行メッセージにして exit 1 |
+| L2 | Low | `upload-artifact@v4` は既定で隠しファイルを落とす。将来 `public/.well-known/...` を足すと artifact から静かに欠落 | **修正**。`include-hidden-files: true` |
+| L3 / L6 | Low | verify が index.html とエントリ JS しか見ておらず、`robots.txt` / `og.png` / favicon が欠けても緑(S9 と同種の事故) | **修正**。**dist の全ファイル**(現在 7 件)の sha256 を照合するようにした。エントリ JS も最初の 1 個ではなく全件を見る |
+| L4 | Low | account ID を secret にすると GitHub がログ全体でその文字列をマスクし、wrangler の出力が読みにくくなる | **修正**。`CLOUDFLARE_ACCOUNT_ID` を secret から外し、ワークフローに平文で置いた(識別子であってクレデンシャルではなく、zone_id と同様に既にコミット済み)。**ユーザーが登録する secret は `CLOUDFLARE_API_TOKEN` の 1 つだけになった** |
+| L5 | Low | 公開リポジトリでは `persist-credentials: false` が定石(fork PR のコードが走るジョブで GITHUB_TOKEN を `.git/config` に残さない) | **修正**。ci.yml / lighthouse.yml の全 checkout に付与。tip 確認は `gh api` にしたのでこれと両立する |
+| L7 | Low | デプロイジョブに `timeout-minutes` が無い | **修正**。test 20分 / changes 10分 / deploy 15分 |
+| L8 | Low(未確認) | `wrangler pages deploy` にコミット情報のフラグを渡していない。ダッシュボードから「どの main が本番か」を引けるかは未確認 | **保留**。CI 上では `.git` があるので wrangler が自動検出する見込みだが未検証。初回デプロイ後にダッシュボードで確認する |
+| L9 | Low(未確認) | Dependabot の npm ecosystem が pnpm workspace 配下(`apps/web` / `workers/ogp`)の `wrangler` まで辿るかは未確認 | **決着**(2026-07-26 の初回実行で実測)。`directory: "/"` のまま各パッケージに届く。`directories` は不要。詳細は「Dependabot 初回実行の実測」 |
+
+レビューが「問題なし」と確認した主な点: `changes` ジョブのシェル(`set -euo pipefail` 下の
+here-string と `grep` の終了ステータス扱い)、fork PR / ブランチ push からデプロイが走らないこと、
+script injection が無いこと(`${{ }}` を `run:` 本文に埋めていない)、artifact の受け渡し、
+`pnpm run` による組み込み `deploy` コマンドとの衝突回避、既存 CI(lighthouserc.cjs 無変更)。
+
+#### M2 の残余リスク
+
+tip 確認とデプロイの間にはまだ窓が残る(数秒)。ここを閉じるには Cloudflare 側の
+デプロイ API に楽観ロックが要るが無いので、**窓を最小化するに留める**。
+実運用では 1 人が順にマージするだけなので、ここが問題になる確率は極めて低い。
+
+## セッション15: クリア時のメッセージを草の量で出し分ける(完了 2026-07-26)
+
+(番号は 14 がセッション「PR マージで自動デプロイ」と衝突したため 15 に振り直した)
+
+ユーザー依頼: 「草を壊しきったときのメッセージを『地道に積み上げてきたものが崩れ去っていく気分はいかがですか?』みたいなのを草の量に応じて出し分けられますか」。
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 出すのは clear のときだけ(gameOver では出さない) | 文言が「全部消えた」前提なので壊し残しがあると嘘になる | session.test.ts の gameOver ケースで `.result-taunt` が無いこと |
+| 文言表は 1 か所(web / 拡張が同じ表を引く) | DESIGN.md §1 core = 表示ロジックの単一の源 | `clearMessageFor` の実装が core にのみ存在すること(grep) |
+| 絵文字を増やさない | DESIGN-VISUAL §6 | 追加文言に絵文字が無いこと |
+| 狭幅リザルトの 4 ブロックを落とさない | DESIGN-VISUAL §3 | 375px でパネルがスクロールしないこと(実測) |
+| 既存の挙動・スコアを変えない | 今回は文言追加であって仕様変更ではない | `pnpm -r test` / `pnpm -r build` |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| web の `grid.total` は実際の年間 contributions | VERIFIED | packages/core/src/model.ts:42(count の総和)、count は jogruber API の実数 |
+| 拡張の `grid.total` は contributions ではない | VERIFIED | apps/extension/src/adapter.ts の module doc + `levelToCount` = level²(GitHub の td に日別 count が無いため) |
+| 拡張は見出しから実数を読める | VERIFIED | `__fixtures__/contributions.html` の `#js-contribution-activity-description` = "2,988 contributions in the last year"、grass-dom.test.ts で 2988 を実測 |
+| 375px の 4 ブロックは 130px 盤面をちょうど埋めている | VERIFIED(訂正あり) | 2026-07-26 dev サーバー実測。**当初 `scrollHeight` で 128/128 と読んだのは誤り**(flex + center 寄せでは溢れが過小報告される)。子の高さ + gap + padding で測り直すと、一段詰め後で 4 ブロック 112.9px / 使える高さ 128px |
+
+### やったこと
+
+- [x] `packages/core/src/clear-message.ts`: 総 contributions で 5 段階に出し分ける `clearMessageFor`。しきい値 3000 / 1500 / 500 / 100、下回るぶんは疎な年用の 1 文
+  - 検証: core 58 tests pass(境界の切り替わり、負値・0 のフォールバック、空文字を返さないこと)
+- [x] web リザルトに `.result-taunt` を追加(clear のときだけ) — apps/web/src/session.ts / style.css
+  - 検証: web 59 tests pass(段が違えば文言も違うこと、gameOver では要素ごと出ないこと)。1280px light/dark で表示実測
+- [x] 拡張バナーにも同じひとこと。総数は `readYearlyTotal`(grass-dom.ts)が見出しから読む。読めなければ出さない
+  - 検証: extension 52 tests pass(実 fixture で 2988、日本語見出しで最大値を採る、見出し無し/数字無しで null)
+- [x] 狭幅対応: `gap` 4→3px / パネル padding 6→5px / スコア 1.05→1rem の一段詰め。そのうえで **`<560px` はパネルの高さを盤面に縛らない**(`bottom: auto` + `min-height: 100%` + `z-index: 1`)ので、**全幅で煽り文が出る**
+  - 検証(実測 2026-07-26): clear の必要高 146.3px に対し、使える高さ =(幅 − 34)× 0.375 が追いつくのは 424px 以上。はみ出しは 452px / 424px = 0px、375px = 18.4px、320px = 39px(レール 56px のうち 31px を覆う。ラウンド終了後のレールは無効化済み)。gameOver は 4 ブロックなのでどの幅でもはみ出さない。320px / 375px で疑似レールを置いてスクリーンショット実測
+  - **最初 `<560px` 一律非表示 → 次に `<390px` 非表示、と 2 回外した**。1 回目は溢れ判定に `scrollHeight` を使い、flex + center 寄せで過小報告された数字(「128/128 でぴったり」)を信じたため。2 回目は「盤面 = パネル」を動かせない前提だと思い込んだため。どちらもユーザー指摘で修正(lessons.md 参照)
+- [x] デザインレビュー(`/frontend-design`)を受けて主従を入れ替え: 状態名「完全刈り取り」をラベル(Plex faint 0.6875rem・字間 .22em)に降格し、**煽り文を DotGothic16 1.25rem の主役に昇格**。🌱 は落とす。見出し要素(`h2`)は状態名のままなので読み上げの意味は変わらない。拡張バナーも同じ主従(11px faint / 14px)
+  - 根拠: 「完全刈り取り」はどのブロック崩しでも言える汎用の一言で、この製品固有のものを注釈の書式(最小・最淡)で組んでいた。声の主はゲーム側なので書体も表示書体にする
+  - 検証: 1280px light/dark、452 / 424 / 375 / 320px、clear / gameOver 両方をスクリーンショット実測。web 60 tests(見出しが状態名のままであることの回帰テストを追加)
+- [x] DESIGN-VISUAL §3 / §6 を更新(パネル図・コピー表・段位表・拡張の総数の出どころ)
+- [x] 共有物にも煽り文を載せる(レビューで挙げた別件。ユーザー判断 2026-07-26「含めたい」)
+  - 保存画像(`composeResultImage`): 状態名 24px faint → 煽り文 34px → 数字 34px の順に積み、最下行の底は 605px(カード高 630px)。gameOver は従来の 2 行レイアウトのまま
+  - OGP カード(`/share/{user}/og.png`): `p=100` を clear と判定し、カード用に取っているグリッドから総数を合計して同じ表を引く
+  - X の投稿本文は**変えない**。煽り文はゲームがプレイヤーに言う二人称なので、本人の投稿に置くと主体がねじれる
+  - 検証: `wrangler dev` でカードを実レンダリングして clear / gameOver 両方を目視、保存画像は dev サーバー上で `composeResultImage` を実行して目視。web 66 tests(カードの行の高さと文字の大小)、ogp 72 tests
+- [x] **バグ 2 件を実レンダリングで検出して修正**(どちらもテストでは緑のまま出荷されうるもの)
+  - OGP カードの煽り文が**全部豆腐**だった。satori 用フォントを `text=` サブセットで取っており、煽り文の字が入っていなかった。→ `CLEAR_MESSAGES` を core から公開し、`fonts.ts` のサブセットをそこから組み立てる(`fonts.test.ts` が取りこぼしを検出)
+  - 保存画像の煽り文が**丸ゴシックにフォールバック**していた。web も DotGothic16 を `text=` サブセットで読んでおり、同じ取りこぼし。→ `index.html` の `text=` を 70 → 126 字に拡張(4,940 → 8,684 バイト、実測)+ 合成前に `document.fonts.load()`。`font-subset.test.ts` が取りこぼしを検出
+- [x] デザインレビュー第2弾(共有物)を受けて 3 点を適用。**実物のクリア盤面**(全ブロック破壊済み)で描いて初めて見えた問題
+  - A. 保存画像に数字が二重に出ていた(盤面に焼き込まれた HUD + キャプション)→ カード用の盤面は `render(..., { hud: false })` で描き直す
+  - A. クリア盤面は 6 割が空白 → 煽り文をその空白の中へ(34px 中央、盤面高の 56%)。空白が「更地」の絵になる
+  - B. OGP カードの主従をアプリと揃える(`{user} の草を {p}% 刈り取った` を 26px/0.7 に降格、煽り文 34px を主役、スコア 30px)
+  - C. OGP カードのグリッドを `p=100` のとき全 level 0 で描く。生きた緑の下に「100% 刈り取った」と書く矛盾を解消
+  - 検証: `wrangler dev` で clear / gameOver の OGP カードを実レンダリングして目視、保存画像も本物の Game を clear 状態にして合成し目視。ogp 76 tests / web 67 tests
+- [x] PR → CI green → マージ → 自動デプロイ → 本番確認 — https://github.com/toshi0607/kusakuzushi/pull/44(`test` pass 48s / `Lighthouse dist` pass 1m49s / `slow` pass 1m15s、`changes` / `deploy-*` / `production` は PR なので **skipping** = 門番条件が効いている)→ マージ `ac9f297`(2026-07-26 06:37 UTC)
+  - 自動デプロイ run [30191365486](https://github.com/toshi0607/kusakuzushi/actions/runs/30191365486): `changes` の判定は **`→ web=true ogp=true`**、`deploy-web`(06:38:24→06:39:30)/ `deploy-ogp`(06:38:24→06:38:57)とも success。スモーク(`verify:web` / `verify:ogp`)も同ジョブ内で通過
+  - 本番実測(2026-07-26):
+    - `https://kusakuzushi.toshi0607.com/` 200。配信 HTML の DotGothic16 サブセットは **2 リンクとも 126 字**で、煽り文の字が全部含まれることをスクリプトで確認(取りこぼすと無言で Plex にフォールバックする箇所)
+    - 配信バンドル `/assets/index-CLGXCjwr.js` に **5 文言すべて**、`result-taunt` / `result-state`、カード用の `hud:!1`(= `hud: false`)を確認
+    - OGP カード: `?s=13579&p=100` は**更地のグリッド + 煽り文**(豆腐なし)、`?p=64` は従来レイアウト。どちらも 200 / `image/png`
+  - 直後に vitest 4.1.10 への bump(PR #40、`4ddbfe3`)が main へ入り、その run でもこのセッションのテストが success。vitest 2 → 4 で壊れていない
+
+### Notes
+
+- 拡張で `grid.total` をそのまま段位に使うと level² の合計(スコア用の重み)で判定してしまい、実際の contributions と 1.5〜2 倍ずれる。見出しから読み直すのはこのため
+- 見出しの数値は「最大の数」を採る。GitHub は見出しをローカライズするので、語順が変わると先頭の数が「1 年間」の 1 になりうる
+- 狭幅は「オーバーレイ = 盤面」を外して解決(ユーザー判断 2026-07-26: パネルを盤面の下へはみ出させる)。これで幅による出し分けは無くなり、0.1px 単位で高さを詰める調整も不要になった
+- **セッション14 のデプロイ判定の前提を 1 つ壊したので、同じ PR で直した**。`ci.yml` の `changes` ジョブは「`workers/ogp` は `packages/core` に依存していない」を根拠に `ogp='^workers/ogp/'` としていたが、この変更で Worker が `@kusakuzushi/core` の文言表(`clear-message.ts`)を引くようになった。放置すると **core だけ直したときに web しか出し直されず、Worker が古い文言とフォントサブセットのカードを配り続ける**。`ogp='^(workers/ogp/|packages/core/)'` に変更済み
+- セッション14 に残っていた「パス判定の選択側を次に Worker を触る PR で確認する」は、**この PR では確認できない**(web / ogp / `pnpm-lock.yaml` を同時に触るので両方 true が正しい挙動)。引き続き次の機会に持ち越し
+  - → **決着**。Dependabot 起点の型修正 PR #47(`apps/web/` 配下のみ)で `web=true ogp=false` を実測し、`deploy-web` だけが走った。3 パターンすべて確認済み(セッション14 の「パス判定の実測」表)
+
+## セッション14(続き): 公開向けドキュメント — LICENSE / README / SECURITY.md(2026-07-26)
+
+セッション14 本体で「公開の意思決定が要る」として切り出していた 3 ファイル。依頼は「md 系進めてください」。
+
+### ユーザー決定(2026-07-26)
+
+| 論点 | 決定 | 補足 |
+|---|---|---|
+| ライセンス | **MIT** | 誰でも改変・再配布・商用利用できる。フォークが Chrome ウェブストアに別名で出すことも許諾範囲に入る点は説明したうえでの選択 |
+| ルート README の言語 | **日本語 + 英語の要約** | 他の md がすべて日本語なので本文は日本語。ストアの既定ロケールが en なので、冒頭に英語の短い要約を置いて導線にする |
+| 脆弱性の報告先 | **GitHub の非公開報告**(Private vulnerability reporting) | 公開リポジトリにメールアドレスを晒さずに済む |
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| README に書く事実は実物で裏を取る(コマンド・ポート・権限・URL) | `unknowns.md` 4(校正ラベル) | 下記「記述の裏取り」 |
+| クレデンシャルは扱わない | 安全ルール | 追加したファイルにトークン・メールアドレスを書いていない |
+| コード・設定は変えない(ドキュメントのみの PR) | このPRの性質 | `git diff --stat` が md / LICENSE / todo.md のみ |
+
+### 記述の裏取り(推測で書かない)
+
+README / SECURITY.md に書いた事実は、その場で実物を見て確認した:
+
+| 記述 | 確認方法 | 結果 |
+|---|---|---|
+| dev サーバは `http://localhost:5173` | 実際に `pnpm --filter @kusakuzushi/web dev` を起動 | vite 8.1.5 の既定は 5173(このとき 5173 が別プロセスに使われており 5174 にずれたが、既定値は 5173) |
+| 拡張の権限が最小 | `apps/extension/manifest.json` | `permissions` も `host_permissions` も**キー自体が無い**。content script の match が `https://github.com/*` だけ。「host permission のみ」という DESIGN.md の記述より更に狭いので、SECURITY.md は manifest の実物に合わせて書いた |
+| core が DOM/fetch 非依存 | `grep -rn "fetch(\|document\." packages/core/src` | 0 件 |
+| ルート `package.json` のスクリプト名 | 実ファイル | `deploy:web` / `deploy:ogp` / `verify:web` / `verify:ogp` / `lh` / `lh:prod` |
+| Worker のルートと分岐 | `workers/ogp/wrangler.toml` / `src/index.ts` / `tools/verify-worker.mjs` | `/share/*`、クローラー=200+OGP HTML / 人間=302 / `og.png`=200+image/png |
+| プライバシーポリシーの URL | セッション13 B-8 の本番実測 | 末尾スラッシュ付き `https://kusakuzushi.toshi0607.com/privacy/` |
+| フォントを同梱していない(ライセンス上の懸念が無い) | `find` でバイナリフォントを探索 | 0 件。Noto Sans JP / DotGothic16 はいずれも実行時に Google Fonts から取得 |
+
+### 決めたこと
+
+- **SECURITY.md の「対象外」に第三者サービスを明記した。** GitHub / Cloudflare / jogruber API そのものは
+  こちらでは直せない。ただし「このリポジトリのコードがそれらを危険に使っている」は対象、と線を引いた
+- **想定される攻撃面を SECURITY.md に書いた。** 認証もサーバー保存も無いので、報告が来るとすれば
+  XSS / DOM インジェクション(ユーザー名や URL パラメータが GitHub のページや OGP HTML に流れる経路)、
+  Worker のパラメータ処理、依存パッケージに寄る。報告者に無駄足を踏ませないための情報
+- **本番への負荷試験を禁止と書いた。** 共有ホスティングなので、善意の検証でも巻き添えが出る
+
+### 公開時に必ず一緒にやること
+
+`SECURITY.md` は報告先を GitHub の非公開報告に一本化している。この機能は
+**public リポジトリでしか有効化できない**(private では `PUT /repos/.../private-vulnerability-reporting`
+が 404 = エンドポイントが存在しない、2026-07-26 実測)。public にする操作と同じタイミングで
+有効化しないと、**SECURITY.md が案内するリンクの先が無い状態**になる。上の残タスクに追加済み。

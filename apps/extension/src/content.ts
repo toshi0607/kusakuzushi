@@ -7,7 +7,7 @@
  */
 
 import type { ContributionGrid, GameConfig, GameState } from "@kusakuzushi/core";
-import { DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@kusakuzushi/core";
+import { clearMessageFor, DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@kusakuzushi/core";
 
 import { deriveConfig, toExtensionGrid } from "./adapter";
 import { reserveBoardSpace } from "./board-space";
@@ -18,6 +18,7 @@ import {
   measureGeometry,
   readGrassCells,
   readLevelColors,
+  readYearlyTotal,
   visibleCells,
 } from "./grass-dom";
 import type { Overlay } from "./overlay";
@@ -199,6 +200,11 @@ function createGameRuntime(
 
   const game = new Game(grid, config);
 
+  // Read once, up front: the clear banner needs the *real* contribution
+  // count (grid.total is level², see adapter.ts), and by banner time a Turbo
+  // navigation may already have swapped the heading out.
+  const yearlyTotal = readYearlyTotal(doc);
+
   const themeBase = prefersDarkTheme(view) ? DARK_THEME : LIGHT_THEME;
   const pageColors = readPageColors(doc, view);
   const foreground = pageColors?.foreground ?? themeBase.paddleColor;
@@ -359,9 +365,29 @@ function createGameRuntime(
     banner.style.color = foreground;
     banner.style.font = "12px -apple-system, sans-serif";
 
+    // 煽り文が出るときは、web 版と同じで主役をそちらに譲る(「完全刈り取り」は
+    // どのブロック崩しでも言える汎用の一言)。出せないときは従来どおり見出し。
+    const taunt = state === "clear" && yearlyTotal !== null ? clearMessageFor(yearlyTotal) : null;
+
     const heading = doc.createElement("p");
-    heading.textContent = state === "clear" ? "🌱 完全刈り取り!" : "ゲームオーバー";
+    heading.textContent = state === "clear" ? "完全刈り取り" : "ゲームオーバー";
+    heading.style.margin = "0";
+    if (taunt) {
+      heading.style.fontSize = "11px";
+      heading.style.letterSpacing = "0.18em";
+      heading.style.opacity = "0.7";
+    }
     banner.appendChild(heading);
+
+    // 壊しきったときだけ、壊した草の量に応じたひとこと。総数が読めなかった
+    // ページでは黙る — 適当な段位を当てるより何も言わないほうがいい。
+    if (taunt) {
+      const tauntEl = doc.createElement("p");
+      tauntEl.style.margin = "0";
+      tauntEl.style.fontSize = "14px";
+      tauntEl.textContent = taunt;
+      banner.appendChild(tauntEl);
+    }
 
     const score = doc.createElement("p");
     score.textContent = `Score: ${game.score}`;
