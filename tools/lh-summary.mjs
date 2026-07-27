@@ -39,8 +39,20 @@ if (reports.length === 0) {
   process.exit(0);
 }
 
-console.log(`lh-summary: ${reports[0].finalDisplayedUrl} (${reports.length} runs, median)`);
-for (const [name, pick] of METRICS) {
-  const values = reports.map(pick);
-  console.log(`  ${name.padEnd(9)} ${String(median(values)).padStart(7)}   [${values.join(", ")}]`);
+// URL ごとに分けて出す。dist は staticDistDir が HTML を自動発見して複数 URL を
+// 測る(いまは / と /privacy/)ので、混ぜると別ページの run が同じ配列に並んで
+// 読み違える(セッション16 で TBT スパイクの切り分け中に実際に誤読した)
+const byUrl = new Map();
+for (const r of reports) {
+  const url = r.finalDisplayedUrl;
+  if (!byUrl.has(url)) byUrl.set(url, []);
+  byUrl.get(url).push(r);
+}
+
+for (const [url, runs] of byUrl) {
+  console.log(`lh-summary: ${url} (${runs.length} runs, median)`);
+  for (const [name, pick] of METRICS) {
+    const values = runs.map(pick);
+    console.log(`  ${name.padEnd(9)} ${String(median(values)).padStart(7)}   [${values.join(", ")}]`);
+  }
 }

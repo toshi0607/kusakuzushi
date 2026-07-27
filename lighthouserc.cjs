@@ -76,15 +76,27 @@ if (target === "production") {
   assertions["uses-long-cache-ttl"] = ["warn", {}];
 }
 
+/*
+ * numberOfRuns は 5(セッション16)。3 だと CI がだいたい落ちる:
+ * GitHub のランナーは起動直後の 1〜2 run で「Unattributable」な長タスク
+ * (実測 2044ms / 509ms、ページの JS ではなくランナー側の負荷)が main thread に
+ * 割り込み、TBT が [564, 1913, 0] / [601, 1171, 23] のように前半だけ跳ねる。
+ * median 判定でも 3 run 中 2 run 汚染だと中央値が汚染側になる。
+ * 5 run なら前半 2 run が汚れても中央値はクリーン側に落ちる
+ * (上の実測に 5 run を当てると中央値 0 / 23 で全部通る)。
+ * 3 run 目以降が汚れた例は観測していない(2026-07-26/27 の attempt 1 ログ)。
+ */
+const NUMBER_OF_RUNS = 5;
+
 const collectByTarget = {
-  dist: { staticDistDir: "apps/web/dist", numberOfRuns: 3 },
+  dist: { staticDistDir: "apps/web/dist", numberOfRuns: NUMBER_OF_RUNS },
   slow: {
     startServerCommand: `node tools/lh-slow-server.mjs apps/web/dist ${SLOW_TTFB_MS} ${SLOW_PORT}`,
     startServerReadyPattern: "lh-slow-server",
     url: [`http://localhost:${SLOW_PORT}/`],
-    numberOfRuns: 3,
+    numberOfRuns: NUMBER_OF_RUNS,
   },
-  production: { url: [PRODUCTION_URL], numberOfRuns: 3 },
+  production: { url: [PRODUCTION_URL], numberOfRuns: NUMBER_OF_RUNS },
 };
 
 const collect = collectByTarget[target];
