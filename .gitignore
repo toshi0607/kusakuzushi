@@ -4,3 +4,17 @@ dist/
 *.local
 .claude/settings.local.json
 .lighthouseci/
+
+# 動画プロジェクトの生成物。videos/*/tools/rebuild-clips.sh が録画から
+# 全クリップまで作り直す(ハーネスは仮想時計+シード付き乱数で決定的なので、
+# 同じ contributions.json なら同じテイクがフレーム単位で再現される)。
+# 完成した MP4 は GitHub Releases に置く。
+videos/*/assets/
+videos/*/renders/
+videos/*/snapshots/
+videos/*/capture/
+videos/*/.hyperframes/
+videos/*/.thumbnails/
+videos/*/.media/
+videos/*/tools/.frames/
+videos/*/tools/core-bundle.js
