@@ -15,6 +15,8 @@ export type OverlayTheme = {
   paddleColor: string;
   ballColor: string;
   textColor: string;
+  /** The page's own background, used as the plate behind the HUD text. */
+  backgroundColor: string;
   /**
    * Falling items, one hue per kind — neither the grass nor the ball, and
    * distinct from each other so the two power-ups are told apart by colour
@@ -59,10 +61,27 @@ const ITEM_BAR_HEIGHT_RATIO = 0.3;
 const ITEM_BAR_TOP_RATIO = 0.35;
 const ITEM_BAR_LEFT_RATIOS: readonly number[] = [0.13, 0.41, 0.69];
 
-const HUD_FONT = "11px -apple-system, sans-serif";
+const HUD_FONT_SIZE_PX = 12;
+const HUD_FONT = `600 ${HUD_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
 const HUD_MARGIN_PX = 4;
-const HUD_SHADOW_COLOR = "rgba(0, 0, 0, 0.6)";
-const HUD_SHADOW_BLUR_PX = 3;
+/** Clear air between the HUD plates and the paddle they sit above. */
+const HUD_PADDLE_CLEARANCE_PX = 3;
+/** Padding around the HUD text, inside its plate. */
+const HUD_PLATE_PADDING_X_PX = 5;
+const HUD_PLATE_PADDING_Y_PX = 3;
+/** Slightly see-through so the plate reads as part of the overlay, not a page element. */
+const HUD_PLATE_ALPHA = 0.85;
+const HUD_PLATE_RADIUS_PX = 3;
+
+/**
+ * Shown while the ball is still parked on the paddle, mirroring the web
+ * version's guide overlay so both halves of the game read the same. Placed
+ * in the empty band between the grass and the paddle — over the grass it
+ * would hide the very bricks it is telling you to aim at.
+ */
+const GUIDE_TEXT = "クリック / Space で発射";
+const GUIDE_FONT_SIZE_PX = 13;
+const GUIDE_FONT = `600 ${GUIDE_FONT_SIZE_PX}px -apple-system, BlinkMacSystemFont, sans-serif`;
 
 function clampLevelIndex(level: number): number {
   return Math.min(Math.max(level, 1), 4);
@@ -165,24 +184,84 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     }
   }
 
-  /** Score bottom-left, life bottom-right — the paddle's half of the board, which real grass never occupies. */
+  /**
+   * One HUD label on a plate in the page's own background colour.
+   *
+   * The overlay canvas is transparent, so the label sits directly on
+   * whatever GitHub renders below the grass. Text alone lost that contest:
+   * a drop shadow only helps light text on dark, and half the readers have
+   * the opposite. The plate makes legibility independent of what's beneath.
+   */
+  function drawHudLabel(ctx: CanvasRenderingContext2D, text: string, x: number, baseline: number): void {
+    const metrics = ctx.measureText(text);
+    // jsdom's TextMetrics has neither ascent nor descent; the nominal font
+    // size is a good enough box there, and this is only ever cosmetic.
+    const ascent = metrics.actualBoundingBoxAscent || HUD_FONT_SIZE_PX;
+    const descent = metrics.actualBoundingBoxDescent || 0;
+
+    const plateX = x - HUD_PLATE_PADDING_X_PX;
+    const plateY = baseline - ascent - HUD_PLATE_PADDING_Y_PX;
+    const plateWidth = metrics.width + HUD_PLATE_PADDING_X_PX * 2;
+    const plateHeight = ascent + descent + HUD_PLATE_PADDING_Y_PX * 2;
+
+    ctx.globalAlpha = HUD_PLATE_ALPHA;
+    ctx.fillStyle = theme.backgroundColor;
+    // `roundRect` is Chrome 99+ and the extension targets chrome120, so the
+    // rounded plate is what ships; the square fallback is for hosts (and
+    // the tests' canvas stubs) that only implement the 2D basics.
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(plateX, plateY, plateWidth, plateHeight, HUD_PLATE_RADIUS_PX);
+      ctx.fill();
+    } else {
+      ctx.fillRect(plateX, plateY, plateWidth, plateHeight);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = theme.textColor;
+    ctx.fillText(text, x, baseline);
+  }
+
+  /**
+   * Score left, life right, both sitting just above the paddle's row.
+   *
+   * Pinned to the canvas bottom instead, they shared a line with the paddle:
+   * the bar slid straight through "Score" on its way left and parked on top
+   * of "Life" at the right end (measured on the real board: paddle 179-186px,
+   * HUD plate 172-190px). The paddle's y never changes, so keying off it
+   * keeps the two apart whatever the grass geometry works out to.
+   */
   function drawHud(ctx: CanvasRenderingContext2D, game: Game): void {
-    const height = game.config.canvasHeight;
     const width = game.config.canvasWidth;
+    const baseline = game.paddleState.y - HUD_PADDLE_CLEARANCE_PX - HUD_PLATE_PADDING_Y_PX;
 
     ctx.font = HUD_FONT;
     ctx.textBaseline = "bottom";
-    ctx.fillStyle = theme.textColor;
-    ctx.shadowColor = HUD_SHADOW_COLOR;
-    ctx.shadowBlur = HUD_SHADOW_BLUR_PX;
 
-    ctx.fillText(`Score: ${game.score}`, HUD_MARGIN_PX, height - HUD_MARGIN_PX);
+    drawHudLabel(ctx, `Score: ${game.score}`, HUD_MARGIN_PX + HUD_PLATE_PADDING_X_PX, baseline);
 
     const lifeText = `Life: ${game.life}`;
     const lifeWidth = ctx.measureText(lifeText).width;
-    ctx.fillText(lifeText, width - lifeWidth - HUD_MARGIN_PX, height - HUD_MARGIN_PX);
+    drawHudLabel(ctx, lifeText, width - lifeWidth - HUD_MARGIN_PX - HUD_PLATE_PADDING_X_PX, baseline);
+  }
 
-    ctx.shadowBlur = 0;
+  /**
+   * Only while the ball is waiting to be launched — the same states the web
+   * version shows its guide in.
+   *
+   * Centred in the free band between the grass (which fills the board's top
+   * half) and the paddle, so it neither hides the bricks it is telling you
+   * to aim at nor lands on the HUD sitting above the paddle.
+   */
+  function drawGuide(ctx: CanvasRenderingContext2D, game: Game): void {
+    if (game.state !== "ready" && game.state !== "ballLost") return;
+
+    ctx.font = GUIDE_FONT;
+    ctx.textBaseline = "bottom";
+    const width = ctx.measureText(GUIDE_TEXT).width;
+    const grassBottom = game.config.canvasHeight / 2;
+    const centre = (grassBottom + game.paddleState.y) / 2;
+    drawHudLabel(ctx, GUIDE_TEXT, (game.config.canvasWidth - width) / 2, centre + GUIDE_FONT_SIZE_PX / 2);
   }
 
   function draw(ctx: CanvasRenderingContext2D, game: Game, dtSec: number): void {
@@ -197,6 +276,7 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     drawPaddles(ctx, game);
     drawBalls(ctx, game);
     drawHud(ctx, game);
+    drawGuide(ctx, game);
   }
 
   return { spawnBurst, draw };

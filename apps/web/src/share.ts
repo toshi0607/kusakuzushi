@@ -47,6 +47,12 @@ export type ShareResult = {
   score: number;
   percentage: number;
   cleared: boolean;
+  /**
+   * The clear screen's taunt, or null when the round ended in a gameOver.
+   * Passed in rather than derived here so the card always prints the exact
+   * line the player just read on the panel.
+   */
+  taunt: string | null;
 };
 
 /**
@@ -63,6 +69,8 @@ export const SHARE_COLORS = {
 
 const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
+/** 最長 30 字(§6)が盤面幅 1080px に 1 行で収まる上限。 */
+const TAUNT_FONT_SIZE = 34;
 export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
 export const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
 
@@ -105,29 +113,69 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
     ctx.drawImage(source, boardX, boardY, boardWidth, boardHeight);
   }
 
-  const textTop = boardY + boardHeight + 44;
+  // 煽り文は盤面の**中**へ置く。クリアとは全ブロックを壊すことなので、この
+  // スナップショットは 6 割が空白 — その空白こそが「更地になった」という絵
+  // なのだから、文をそこに置けば「草があった場所」を文が占める(§8)。
+  // 34px なら最長 30 字が 1020px、盤面幅 1080px に左右 30px 残して 1 行。
+  if (result.taunt) {
+    ctx.fillStyle = SHARE_COLORS.ink;
+    ctx.font = `${TAUNT_FONT_SIZE}px ${DISPLAY_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // 残骸の行(盤面上部)とパドル(下端)の間。中央よりわずかに下。
+    ctx.fillText(result.taunt, boardX + boardWidth / 2, boardY + boardHeight * 0.56);
+  }
+
   ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  let y = boardY + boardHeight + 40;
 
   ctx.fillStyle = SHARE_COLORS.faint;
-  ctx.font = `26px ${BODY_FONT}`;
-  ctx.textAlign = "left";
-  ctx.fillText(`@${username}${result.cleared ? " ― 完全刈り取り!" : ""}`, boardX, textTop);
+  ctx.font = `24px ${BODY_FONT}`;
+  ctx.fillText(`@${username}${result.cleared ? " ― 完全刈り取り" : ""}`, boardX, y);
+  y += 34;
 
   ctx.fillStyle = SHARE_COLORS.ink;
   ctx.font = `40px ${DISPLAY_FONT}`;
-  ctx.fillText(`スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`, boardX, textTop + 40);
+  ctx.fillText(`スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`, boardX, y);
 
   ctx.fillStyle = SHARE_COLORS.marquee;
   ctx.font = `36px ${DISPLAY_FONT}`;
   ctx.textAlign = "right";
-  ctx.fillText("草崩し", boardX + boardWidth, textTop + 44);
+  ctx.fillText("草崩し", boardX + boardWidth, y);
   ctx.textAlign = "left";
 
   return canvas;
 }
 
+/**
+ * カードが描く文字ぶんのグリフを先に読み込ませる。
+ *
+ * Google Fonts の DotGothic16 は unicode-range でサブセット分割されており、
+ * 画面に出ていない字のサブセットはまだ取得されていない。canvas は未読込の
+ * 字を**黙って別の書体にフォールバックして描く**(エラーにならない)ので、
+ * 合成前に明示的に要求しておかないと、煽り文だけ丸ゴシックで焼き付いた
+ * 画像が保存されうる(2026-07-26 に実物で確認)。
+ */
+async function loadCardGlyphs(texts: readonly string[]): Promise<void> {
+  if (!document.fonts?.load) return;
+  const text = texts.join("");
+  try {
+    await Promise.all([document.fonts.load(`34px ${DISPLAY_FONT}`, text), document.fonts.load(`24px ${BODY_FONT}`, text)]);
+  } catch {
+    // 取得に失敗しても、フォールバック書体で描いたカードのほうが無いよりよい
+  }
+}
+
 /** リザルトカードを合成して保存/共有する(リザルト画面の「画像を保存」)。 */
 export async function saveResultImage(source: HTMLCanvasElement, username: string, result: ShareResult): Promise<void> {
+  await loadCardGlyphs([
+    `@${username} ― 完全刈り取り`,
+    `スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`,
+    "草崩し",
+    result.taunt ?? "",
+  ]);
   await saveCanvasImage(composeResultImage(source, username, result), username);
 }
 

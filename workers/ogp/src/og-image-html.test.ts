@@ -47,4 +47,51 @@ describe("buildOgImageHtml", () => {
     expect(html).not.toContain("<b>");
     expect(html).toContain("&lt;b&gt;");
   });
+
+  it("adds the taunt line when the round was a full clear", () => {
+    // #given a 100% card carrying the app's own taunt
+    const taunt = "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？";
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 100, gridSvgDataUri: null, taunt });
+    // #then
+    expect(html).toContain(taunt);
+  });
+
+  it("omits the taunt line when there is none (gameOver, or an unknown total)", () => {
+    // #given / #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 64, gridSvgDataUri: null, taunt: null });
+    // #then only the two existing text blocks remain
+    expect(html).toContain("64%");
+    expect(html).not.toContain("font-size:34px");
+  });
+
+  it("escapes the taunt like every other caller-supplied string", () => {
+    // #given a taunt carrying markup (defence in depth: the table is ours today)
+    // #when
+    const html = buildOgImageHtml({ user: "u", score: 1, percentage: 100, gridSvgDataUri: null, taunt: "<b>x</b>" });
+    // #then
+    expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+    expect(html).not.toContain("<b>x</b>");
+  });
+
+  it("demotes the who/how-much line below the taunt on a clear card", () => {
+    // #given a cleared card (the taunt is the line that is specific to this game)
+    const taunt = "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？";
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 100, gridSvgDataUri: null, taunt });
+    // #then the context line is smaller than the taunt, and the taunt beats the score
+    expect(html).toContain("font-size:26px");
+    expect(html).toContain("font-size:34px");
+    expect(html).toContain("font-size:30px");
+    expect(html).not.toContain("font-size:48px");
+  });
+
+  it("keeps the original hierarchy when there is no taunt", () => {
+    // #given a gameOver card
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: null, taunt: null });
+    // #then
+    expect(html).toContain("font-size:48px");
+    expect(html).toContain("font-size:40px");
+  });
 });

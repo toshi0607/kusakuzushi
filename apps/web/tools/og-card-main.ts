@@ -7,7 +7,7 @@
 
 import { composeOgCard } from "./og-card";
 
-const SAVE_ENDPOINT = "/__save-og-card";
+const SAVE_ENDPOINT = "/__save-card?target=og";
 
 // フォント未ロードのまま描くと sans-serif で焼き込まれてしまうため、
 // 使用する字面をすべて指定して load を待ってから合成する。

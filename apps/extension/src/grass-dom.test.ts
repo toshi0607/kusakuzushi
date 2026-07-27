@@ -2,7 +2,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import FIXTURE_HTML from "./__fixtures__/contributions.html?raw";
 import type { CellRect, ContributionLevel, GrassCell } from "./grass-dom";
-import { findGrassTable, GRASS_TABLE_SELECTOR, measureGeometry, readGrassCells, readLevelColors } from "./grass-dom";
+import {
+  findGrassTable,
+  GRASS_TABLE_SELECTOR,
+  measureGeometry,
+  readGrassCells,
+  readLevelColors,
+  readYearlyTotal,
+  visibleCells,
+} from "./grass-dom";
 
 /** Builds a synthetic 7-row x `cols`-col rect grid: 10x10 cells, 3px gap, 13px stride. */
 function makeCellGrid(cols: number): CellRect[] {
@@ -67,6 +75,36 @@ describe("readGrassCells", () => {
   });
 });
 
+describe("readYearlyTotal", () => {
+  it("reads the comma-separated total off a real profile fragment", () => {
+    // #given the fixture's heading reads "2,988 contributions in the last year"
+    document.body.innerHTML = FIXTURE_HTML;
+    // #when
+    const total = readYearlyTotal(document);
+    // #then
+    expect(total).toBe(2988);
+  });
+
+  it("takes the largest number, so a localised heading isn't read as its year count", () => {
+    // #given GitHub's Japanese heading, where "1 年間" precedes the real total
+    document.body.innerHTML =
+      '<h2 id="js-contribution-activity-description">過去 1 年間に 2,988 コントリビューション</h2>';
+    // #when
+    const total = readYearlyTotal(document);
+    // #then
+    expect(total).toBe(2988);
+  });
+
+  it("returns null when the heading is missing or carries no number", () => {
+    // #given a page whose graph heading never rendered
+    document.body.innerHTML = "<div></div>";
+    expect(readYearlyTotal(document)).toBeNull();
+    // #and a heading with no digits at all (markup GitHub could ship next)
+    document.body.innerHTML = '<h2 id="js-contribution-activity-description">contributions</h2>';
+    expect(readYearlyTotal(document)).toBeNull();
+  });
+});
+
 describe("measureGeometry", () => {
   it("returns null for an empty rect list", () => {
     // #given no rects
@@ -115,6 +153,93 @@ describe("measureGeometry", () => {
   });
 });
 
+describe("visibleCells", () => {
+  const CELL_SIZE = 10;
+
+  function stubRect(el: HTMLElement, left: number, width: number): void {
+    // jsdom has no layout, so every rect is zeros unless it's spelled out.
+    el.getBoundingClientRect = (): DOMRect =>
+      ({ left, right: left + width, top: 0, bottom: CELL_SIZE, width, height: CELL_SIZE }) as DOMRect;
+  }
+
+  /**
+   * A row of `count` cells inside a container that shows `clientWidth` px of
+   * `scrollWidth` px — GitHub's own `overflow-x: auto` calendar on a narrow
+   * window. `scrollLeft` only shifts where the cells are drawn.
+   */
+  function makeClippedRow(count: number, clientWidth: number, scrollLeft = 0): GrassCell[] {
+    const container = document.createElement("div");
+    container.style.overflowX = "auto";
+    Object.defineProperty(container, "clientWidth", { value: clientWidth, configurable: true });
+    Object.defineProperty(container, "scrollWidth", { value: count * CELL_SIZE, configurable: true });
+    container.getBoundingClientRect = (): DOMRect =>
+      ({ left: 0, right: clientWidth, top: 0, bottom: CELL_SIZE, width: clientWidth, height: CELL_SIZE }) as DOMRect;
+    document.body.appendChild(container);
+
+    return Array.from({ length: count }, (_, index) => {
+      const el = document.createElement("td");
+      el.setAttribute("data-level", "1");
+      container.appendChild(el);
+      stubRect(el, index * CELL_SIZE - scrollLeft, CELL_SIZE);
+      return { date: `2026-01-${String(index + 1).padStart(2, "0")}`, level: 1 as ContributionLevel, el };
+    });
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("drops the cells a clipped container is hiding off the right edge", () => {
+    // #given 10 cells of 10px in a container showing only 60px of them
+    const cells = makeClippedRow(10, 60);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then only the six fully-visible cells survive, and they stay contiguous
+    // and date-ascending so the grid still folds
+    expect(visible.map((c) => c.date)).toEqual([
+      "2026-01-01",
+      "2026-01-02",
+      "2026-01-03",
+      "2026-01-04",
+      "2026-01-05",
+      "2026-01-06",
+    ]);
+  });
+
+  it("drops cells scrolled off the left edge too", () => {
+    // #given the same row scrolled right by two cells
+    const cells = makeClippedRow(10, 60, 2 * CELL_SIZE);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then the run starts where the view does
+    expect(visible.map((c) => c.date)).toEqual([
+      "2026-01-03",
+      "2026-01-04",
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+    ]);
+  });
+
+  it("returns every cell when the container is wide enough to clip nothing", () => {
+    // #given a container as wide as its content — the ordinary case
+    const cells = makeClippedRow(10, 10 * CELL_SIZE);
+    // #when
+    const visible = visibleCells(cells, window);
+    // #then nothing is dropped (and the same array comes back)
+    expect(visible).toBe(cells);
+  });
+
+  it("returns an empty list unchanged", () => {
+    // #given
+    // #when
+    const visible = visibleCells([], window);
+    // #then
+    expect(visible).toEqual([]);
+  });
+});
+
 describe("readLevelColors", () => {
   // GitHub's real 5-step green scale (see task context / DESIGN.md).
   const REAL_COLORS = [
@@ -140,6 +265,10 @@ describe("readLevelColors", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    // Drop the previous test's rules too — they are keyed on `data-level`
+    // alone, so a leftover sheet silently answers for a level this test
+    // deliberately left unstyled.
+    document.head.querySelectorAll("style").forEach((el) => el.remove());
     styleEl = document.createElement("style");
     document.head.appendChild(styleEl);
   });
@@ -155,13 +284,48 @@ describe("readLevelColors", () => {
     expect(colors).toEqual(REAL_COLORS);
   });
 
-  it("returns null when even one level (e.g. level 4) has no cell at all", () => {
-    // #given a user who has never had a level-4 day: levels 0-3 are present, 4 is not
-    styleEl.textContent = styleRuleFor([0, 1, 2, 3]);
-    const cells = [0, 1, 2, 3].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+  it("probes a level that has no cell, so a profile with no idle days still gets GitHub's real level-0 colour", () => {
+    // #given someone who contributed every single day: GitHub styles level 0,
+    // but the graph contains no level-0 cell to read it from
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
     // #when
     const colors = readLevelColors(cells, window);
-    // #then all-or-nothing: a single missing level falls back to a bundled theme entirely
+    // #then level 0 comes back from the page, not from a bundled theme.
+    // Before this, the whole read failed and destroyed cells were painted with
+    // the OS-derived theme — near-black on a light GitHub.
+    expect(colors).toEqual(REAL_COLORS);
+  });
+
+  it("leaves the DOM exactly as it found it after probing", () => {
+    // #given a graph missing level 0
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    const before = document.body.innerHTML;
+    // #when
+    readLevelColors(cells, window);
+    // #then the throwaway probe cell is gone
+    expect(document.body.innerHTML).toBe(before);
+    expect(document.body.querySelectorAll("td")).toHaveLength(cells.length);
+  });
+
+  it("returns null when the missing level has no rule to read either", () => {
+    // #given level 0 is neither present nor styled: probing yields a transparent
+    // background, which would paint nothing at all
+    styleEl.textContent = styleRuleFor([1, 2, 3, 4]);
+    const cells = [1, 2, 3, 4].map((level) => makeCell(level as ContributionLevel, `2026-01-0${level + 1}`));
+    // #when
+    const colors = readLevelColors(cells, window);
+    // #then the caller keeps its bundled-theme fallback
+    expect(colors).toBeNull();
+  });
+
+  it("returns null when there are no cells to read or probe from", () => {
+    // #given
+    styleEl.textContent = styleRuleFor([0, 1, 2, 3, 4]);
+    // #when
+    const colors = readLevelColors([], window);
+    // #then
     expect(colors).toBeNull();
   });
 });

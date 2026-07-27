@@ -4,6 +4,11 @@ dist/
 *.local
 .claude/settings.local.json
 .lighthouseci/
+# `pnpm --filter @kusakuzushi/extension package` の出力(ストア提出物。dist から毎回作れる)
+apps/extension/*.zip
+
+# wrangler dev のローカル状態(キャッシュ等。毎回作り直せる)
+.wrangler/
 
 # 動画プロジェクトの生成物。videos/*/tools/rebuild-clips.sh が録画から
 # 全クリップまで作り直す(ハーネスは仮想時計+シード付き乱数で決定的なので、
