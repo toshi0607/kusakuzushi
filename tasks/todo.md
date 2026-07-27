@@ -1150,17 +1150,17 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 |------------|--------|----------|
 | 登録料は $5(1回・返金不可・アカウント単位) | VERIFIED | developer.chrome.com/docs/webstore/register(2026-07-26 取得) |
 | 必須画像はストアアイコン128x128・スクショ1280x800(最低1枚)・小プロモタイル440x280 | VERIFIED | developer.chrome.com/docs/webstore/images(2026-07-26 取得) |
-| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | UNVERIFIED-ACCEPTED(2026-07-26) | **外形検証が不可能**: 確かめる場所がデベロッパーコンソールの掲載情報タブしかなく、そこはユーザーのアカウント(登録・$5 決済が前提、A-1 が未完)。緩和策として `_locales/{en,ja}` は既に入れてあるので、必要だった場合でも詰まらない。不要だった場合の損は「使われないロケールファイルが2 つある」だけ。C-1 のコンソール入力時に判明する |
-| データ収集ゼロならプライバシーポリシー URL は必須でない | UNVERIFIED-ACCEPTED(2026-07-26) | docs に明記が無い。**緩和策として /privacy を先に用意する**ので、必須であっても詰まらない |
+| 掲載文のロケール追加には拡張が `_locales` でそのロケールを持つ必要がある | **VERIFIED**(2026-07-27、コンソールで実地確認) | docs(cws-dashboard-listing)に「言語ドロップダウンの各ロケールは `_locales/LOCALE_CODE` に対応する」と明記があり、C-1 でコンソールを開いたところ実際に「英語 – en（デフォルト）」と「日本語 – ja」の 2 つが並んだ。`_locales/{en,ja}` を入れた効果が出ている |
+| データ収集ゼロならプライバシーポリシー URL は必須でない | **反証された**(2026-07-27) | プライバシータブの「プライバシー ポリシーの URL」に必須マーク `*` が付いていた。データ収集ゼロでも必須。**先に /privacy を用意しておいた緩和策が効いて、ここで詰まらずに済んだ** |
 | Cloudflare Pages は `public/privacy/index.html` を `/privacy` で配信する | **VERIFIED**(2026-07-26、セッション14 が実測) | `/privacy` は **308** で `/privacy/` へ、`/privacy/` が **200**。本文の sha256 は `2a8b2baf…` で手元の `dist/privacy/index.html` と一致。ルートの `index.html`(`ee82bf83…`)とは別物なので、Pages の「存在しないパスに index.html を 200」ではない。**B-8 の完了条件は満たされている** |
 
 ### Phase A: ユーザー作業(エージェント不可)
 
-- [ ] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い — https://chrome.google.com/webstore/devconsole
-- [ ] A-2. Account タブで連絡先メールを確認済みにする(未確認だと提出できない)
-- [ ] A-3. Private 配布用に「信頼できるテスター」に自分の Google アカウントを追加
-- [ ] A-4. `chrome://extensions` → デベロッパーモード ON → `apps/extension/dist` を読み込む(スクショ撮影の前提)
-- [ ] A-5. 最終「審査に送信」クリック
+- [x] A-1. Chrome ウェブストア デベロッパー登録 + $5 支払い(ユーザー実施 2026-07-26)。実測: コンソールにアクセス可、パブリッシャー ID `fe990368-036b-4a39-bb71-8e0aea1ce3e0`、表示名 `toshi0607`、メンバー登録日 2026/07/26、トレーダー申告は「非取引業者アカウント」
+- [x] A-2. 連絡先メール — 設定ページで `s.toshi0607@gmail.com` を登録し確認メールを送信(エージェント)→ メール内リンクのクリックはユーザー。**実測: リロード後も「s.toshi0607@gmail.com 確認済みのメールアドレス」**。このアドレスはアイテム詳細ページに公開される(ユーザー了承済み)
+- [x] A-3. Trusted Tester に `s.toshi0607@gmail.com` を追加(同じ設定ページの「管理」セクション)。**実測: 保存 → リロード後も値が残っている**。サービスアカウント欄は空のまま
+- [x] A-4. 未パック拡張の読み込み(ユーザー実施 2026-07-26)。パスに `.claude` が含まれるため macOS のファイルダイアログでは辿れない — `Cmd+Shift+G` でパス貼り付け、または `~/Desktop/kusakuzushi-extension` のシンボリックリンク経由
+- [x] A-5. 最終「審査に送信」クリック(ユーザー実施 2026-07-27)。**実測: ステータスが「ドラフト」→「審査待ち」、送信ボタンは無効化**
 
 ### Phase B: エージェントが用意する提出物
 
@@ -1168,16 +1168,70 @@ main の成果物(FCP 1394ms)も共通しきい値 1800ms を通る。`slow` は
 - [x] B-2. `_locales` を dist に写す(build.mjs)。ついでに毎回 dist を作り直して古い生成物を残さない
 - [x] B-3. zip パッケージ生成スクリプト `pnpm --filter @kusakuzushi/extension package` — `unzip -l` でルートに manifest.json / content.js / icons/ / _locales/ の 12 entries を実測
 - [x] B-4. 小プロモタイル 440x280 PNG — `apps/extension/store/promo-tile-440x280.png`(440x280 を `file` で実測)。生成元は `apps/web/tools/promo-tile.{html,ts}` + dev エンドポイント `/__save-card?target=promo-tile`
-- [ ] B-5. スクリーンショット 1280x800 を最大5枚(A-4 の後、claude-in-chrome で本物の GitHub プロフィールを撮影 → 整形)
+- [x] B-5. スクリーンショット 1280x800 を4枚 — `apps/extension/store/screenshots/`。①ボタン ②発射待ち(ガイド表示) ③プレイ中(Score 191・草が刈られている) ④アイテム効果。`magick identify` で 4 枚とも 1280x800 を実測。**組織名・個人情報は 0 件**(撮影中は `#user-activity-overview` と `#js-contribution-activity` を非表示にし、構図もその上で切った。撮影後に細工は撤収済み)
 - [x] B-6. 掲載文(詳細説明 ja/en・カテゴリ・言語) — `apps/extension/store/listing.md`
 - [x] B-7. プライバシータブ回答文 — `store/listing.md` §4。データ収集ゼロは grep で実測(src に fetch/storage/chrome. の参照なし、dist/content.js に http(s) URL が 0 件)
-- [x] B-8. `/privacy` ページ(`apps/web/public/privacy/index.html`)。**本番デプロイ済みを 2026-07-26 に実測** — `/privacy` は 308 で `/privacy/` へ、追随して 200 + `<title>プライバシーポリシー | 草崩し</title>`。ストアに入れる URL は末尾スラッシュ付きの `https://kusakuzushi.toshi0607.com/privacy/`
+- [x] B-8. `/privacy` ページ + デプロイ — PR #30 マージ(30a0dce)→ `wrangler pages deploy`(64f75928)。**実測: `/privacy` は 308 で `/privacy/` に寄り、`/privacy/` が 200 + `<title>プライバシーポリシー | 草崩し</title>`**。ストアに登録する URL はリダイレクトを挟まない末尾スラッシュ付き `https://kusakuzushi.toshi0607.com/privacy/`(b1342d8)。**これは必須項目だった**(上の Assumptions 参照)
 - [x] B-9. `apps/extension/README.md` に公開手順を追記
 
 ### Phase C: 一緒に実施
 
-- [ ] C-1. デベロッパーコンソールへブラウザ操作で入力(zip アップロード・掲載文・画像・プライバシー・配布範囲)
+- [x] C-1. デベロッパーコンソールへ入力(2026-07-27) — アイテム ID `gbjockgldlkgpjdlnlbefgmnmfbhcbaf`。テキスト項目はすべてエージェントが入力、ファイル選択のみユーザー(ネイティブのファイルダイアログは自動化不可)。
+  実測した最終状態: 掲載文 en 1,327字 / ja 698字、カテゴリ「ゲーム」、ホームページ+サポート URL、
+  ショップアイコン 128x128 / スクショ4枚 / 小プロモタイル 440x280、単一用途 283字、ホスト権限の理由 451字、
+  リモートコード「いいえ」、データ収集9項目すべてオフ、証明3項目すべてオン、
+  ポリシー URL `https://kusakuzushi.toshi0607.com/privacy/`、料金なし、**非公開(Trusted Tester のみ)**、全155地域。
+  「送信できない理由」の問題リストは空、送信ボタン有効
+
+### コンソール操作で踏んだこと(次回のため)
+
+- **`_locales` の効果を実地確認**: 掲載情報の言語ドロップダウンに「英語 – en（デフォルト）」と「日本語 – ja」が並んだ。
+  Assumptions の該当行は VERIFIED 済みだったが、コンソール上でも確認できた
+- **画像アップロード後は必ず「下書きとして保存」する**。保存前に「送信できない理由」を見ると
+  「アイコン画像がありません／スクリーンショットが必要です」と出る。判定は保存済みの状態を見ている
+- **スクリーンショットの枠は2種類ある**。「ローカライズ版」に入れると*そのロケールだけ*に付く。
+  最初 en の枠に入れてしまい、日本語ロケールは 0 枚だった。「全言語向け」に入れると両方に出る
+- **ショップアイコンはアイテムごと**(manifest の `icons` とは別登録)。アカウント共通なのは
+  投稿者の表示名・パブリッシャー ID・連絡先メール・Trusted Tester・住所
+- **Browser ペーンの `computer` 座標系は呼び出しごとに揺れる**(CSS×0.625 と ×0.3125 が入れ替わる)。
+  Google の Material UI は `pointerdown`/`mousedown` で開くので、要素に直接イベントを送るほうが確実。
+  入力欄はネイティブ setter + `input`/`change` で埋める(文字数カウンタの更新で反映を確認できる)
+
+### 実施ログ
+
+- 2026-07-26: PR #30(https://github.com/toshi0607/kusakuzushi/pull/30)— CI green(test 36s / Lighthouse dist 1m49s / slow 1m10s、production は PR なので skip)→ マージ 30a0dce
+- 2026-07-26: `wrangler pages deploy`(64f75928)で `/privacy/` を本番公開。HTTP 200 実測
+- 2026-07-26: **Chrome 拡張(claude-in-chrome)ではウェブストアを操作できない**。`chrome.google.com/webstore` と
+  `chromewebstore.google.com` の両方で `The extensions gallery cannot be scripted.`(ブラウザ側の制限、回避不能)。
+  **Browser ペーン経由なら操作できる**(ログイン状態も共有されていた)
+- 2026-07-26: **Browser ペーンの `computer` の座標はスクリーンショット画像の座標系**で、CSS ピクセルではない。
+  このタブ(viewport 1280x800 / dpr 2 / 画像 800x500)では `shot = css * 800 / (innerWidth * devicePixelRatio)` = `css / 3.2`。
+  CSS 座標のまま押すと「クリックは trusted で届くが `HTML` に着弾する」状態になり、無反応に見える。
+  切り分けは `document.addEventListener('click', e => ..., true)` を仕込んで着弾要素を見るのが速い
+- 2026-07-26: 設定ページの Trusted Tester / サービスアカウントの入力欄は `<input>` ではなく `<textarea>`。
+  `querySelectorAll('input')` では見つからない
+- 2026-07-26: 住所は非取引業者なら必須ではない(必須マーク `*` が付くのは「投稿者の表示名」だけ、アラートも 0 件)。
+  入力するとアイテム詳細ページに公開されるので入れていない
+- dist の manifest 検証: `default_locale: en` に対応する `_locales/en/messages.json` が存在し、
+  `__MSG_extName__` / `__MSG_extDescription__` が両ロケールで解決。名前 37 文字(上限 45)、
+  簡単な説明 en 105 / ja 34 文字(上限 132)
 - [ ] C-2. ユーザーが最終送信 → 審査結果を待つ
+
+### 撮影中に見つかって直した拡張の不具合(2026-07-26)
+
+提出前にストア掲載画像を撮る過程で、実機でしか出ない不具合が 5 件出た。全て修正済み。
+
+| # | 症状 | 原因 | コミット |
+|---|---|---|---|
+| 1 | 崩したマスがライトページで真っ黒 | `readLevelColors` が「レベル0〜4が1つでも欠けたら null」の全か無かで、レベル0の日が無い草だと OS テーマ(ダーク)へフォールバック | c2fb179 |
+| 2 | 見えない草を壊していた | 草グラフの横クリップを見ておらず、盤面が表示枠の外へ 112px はみ出し、枠外の 50 セルが破壊対象になっていた | 3543b2c |
+| 3 | Score/Life が読めない | 11px の素の文字を透明キャンバスに直描き。影は黒固定でライトページに効かない | 3543b2c |
+| 4 | 起動ボタンが画面外 | `.js-yearly-contributions` に appendChild していたため activity-overview の下(草は見えているのにボタンだけ画面外) | d8ff17b |
+| 5 | 盤面がページのコンテンツに重なる / 発射方法が分からない | 盤面下半分のぶんの場所をページに確保していなかった。Web 版にある発射ガイドが拡張に無かった | d6e469b, 6602c9a |
+| 6 | リサイズで盤面が草から取り残される | オーバーレイは開始時のページ座標に absolute 固定。追従処理が無かった | a50b56f |
+
+いずれもネガティブテスト済み(修正を戻すと新テストが落ちることを実測)。
+apps/extension のテストは 49 → 70 件に増えた。
 
 ### 見送り(スコープ外・要green)
 

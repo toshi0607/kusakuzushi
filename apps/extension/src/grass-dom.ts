@@ -102,19 +102,120 @@ export function readGrassCells(table: HTMLElement): GrassCell[] {
   return cells;
 }
 
+/** Sub-pixel slack when deciding whether a cell falls inside the clipping box. */
+const VISIBILITY_TOLERANCE_PX = 0.5;
+
+/**
+ * The nearest ancestor that is actually cutting `el` off horizontally, or
+ * `null` when nothing is. `scrollWidth > clientWidth` is the test that
+ * matters: an `overflow-x: auto` box wide enough for its content clips
+ * nothing.
+ */
+function findHorizontalClipper(el: HTMLElement, view: Window): HTMLElement | null {
+  if (typeof view.getComputedStyle !== "function") return null;
+
+  for (let node = el.parentElement; node && node !== el.ownerDocument.body; node = node.parentElement) {
+    const { overflowX } = view.getComputedStyle(node);
+    const clips = overflowX === "auto" || overflowX === "scroll" || overflowX === "hidden";
+    if (clips && node.scrollWidth > node.clientWidth) return node;
+  }
+
+  return null;
+}
+
+/**
+ * Drops the cells that a horizontally-clipped container is hiding.
+ *
+ * GitHub gives the calendar `overflow-x: auto`, so on a narrow viewport the
+ * outer weeks are cut off. Those `td`s still report real page coordinates,
+ * so without this the board extends past the grass anyone can see and the
+ * ball flies off into blank page, destroying bricks nobody can watch break
+ * (measured on a 1122px viewport: 113px of the graph clipped, 50 cells
+ * outside the box).
+ *
+ * Columns run left-to-right in date order, so the kept cells are always a
+ * contiguous run and still fold into a valid grid. Returns `cells`
+ * unchanged when nothing is clipped, which is the common case.
+ */
+export function visibleCells(cells: GrassCell[], view: Window): GrassCell[] {
+  const first = cells[0];
+  if (!first) return cells;
+
+  const clipper = findHorizontalClipper(first.el, view);
+  if (!clipper) return cells;
+
+  const box = clipper.getBoundingClientRect();
+  // `clientWidth` excludes the scrollbar, so this is the edge of what the
+  // reader can actually see rather than the border box's edge.
+  const left = box.left - VISIBILITY_TOLERANCE_PX;
+  const right = box.left + clipper.clientWidth + VISIBILITY_TOLERANCE_PX;
+
+  return cells.filter((cell) => {
+    const rect = cell.el.getBoundingClientRect();
+    return rect.left >= left && rect.right <= right;
+  });
+}
+
+/** Rejects colours that would paint nothing: unset, or fully transparent. */
+function isPaintable(color: string | null | undefined): color is string {
+  if (!color) return false;
+  const alpha = /^rgba\(.*,\s*([\d.]+)\s*\)$/.exec(color)?.[1];
+  return alpha === undefined || Number(alpha) > 0;
+}
+
+/**
+ * Reads the colour GitHub *would* paint for `level` by momentarily
+ * inserting a `td` that matches its selectors next to a real cell.
+ *
+ * The probe copies the reference cell's classes and only overrides
+ * `data-level`, so whatever rule GitHub uses for that level applies. It is
+ * taken out of flow and hidden so it can't disturb the geometry measured
+ * elsewhere, and removed before this returns.
+ */
+function probeLevelColor(reference: HTMLElement, level: number, view: Window): string | null {
+  const parent = reference.parentElement;
+  if (!parent) return null;
+
+  const probe = reference.ownerDocument.createElement("td");
+  probe.className = reference.className;
+  probe.setAttribute("data-level", String(level));
+  probe.style.position = "absolute";
+  // `visibility: hidden` rather than `display: none` — the latter is still
+  // computed, but keeping the box avoids relying on that subtlety.
+  probe.style.visibility = "hidden";
+  parent.appendChild(probe);
+
+  try {
+    return view.getComputedStyle(probe).backgroundColor || null;
+  } finally {
+    probe.remove();
+  }
+}
+
 /**
  * Samples one `td` per contribution level (0-4) and reads its computed
- * `background-color`. Returns `null` if any level isn't represented in
- * `cells` — the caller falls back to a bundled theme in that case.
+ * `background-color`.
+ *
+ * A level with no cell of its own is ordinary, not exceptional: a profile
+ * with no idle days has no level-0 cell at all. Those levels are probed
+ * (see `probeLevelColor`) instead of failing the whole read, because the
+ * caller's fallback is a bundled theme picked from the *OS* colour scheme
+ * — which painted destroyed cells near-black on a light GitHub for anyone
+ * running a dark Mac.
+ *
+ * Returns `null` only when there is nothing to read or probe from, leaving
+ * the caller its theme fallback.
  */
 export function readLevelColors(cells: GrassCell[], view: Window): readonly string[] | null {
+  const reference = cells[0];
+  if (!reference) return null;
+
   const colors: string[] = [];
 
   for (let level = 0; level <= 4; level++) {
     const cell = cells.find((c) => c.level === level);
-    if (!cell) return null;
-    const color = view.getComputedStyle(cell.el).backgroundColor;
-    if (!color) return null;
+    const color = cell ? view.getComputedStyle(cell.el).backgroundColor : probeLevelColor(reference.el, level, view);
+    if (!isPaintable(color)) return null;
     colors.push(color);
   }
 

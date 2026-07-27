@@ -76,20 +76,39 @@ function buildSyntheticGrass(live: { row: number; col: number }): SyntheticGrass
     tbody.appendChild(tr);
   }
 
-  document.body.appendChild(table);
+  // Wrapped, like GitHub's own markup: the wrapper is what board-space.ts
+  // grows to make room for the paddle half of the board.
+  const wrapper = document.createElement("div");
+  wrapper.id = CALENDAR_WRAPPER_ID;
+  wrapper.appendChild(table);
+  document.body.appendChild(wrapper);
   return { tds, liveDate };
 }
 
 /** Real per-`td` geometry: 10x10 cells, 3px gap (stride 13), origin (67, 100) — matches the measured production values. */
+/** Shifts every cell sideways, standing in for the page reflowing under the overlay. Reset per test. */
+let layoutOffsetX = 0;
+
+/** The calendar wrapper's and overlay's bottoms, so board-space.ts has a real overhang to reserve. */
+const CALENDAR_WRAPPER_ID = "calendar-wrapper";
+const WRAPPER_BOTTOM = 400;
+const OVERLAY_BOTTOM = 500;
+export const EXPECTED_RESERVED_PX = OVERLAY_BOTTOM - WRAPPER_BOTTOM;
+
 function stubGeometry(): void {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const flat = (bottom: number): DOMRect =>
+      ({ left: 0, top: 0, width: 0, height: bottom, right: 0, bottom, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    if (this.tagName === "CANVAS") return flat(OVERLAY_BOTTOM);
+    if (this.id === CALENDAR_WRAPPER_ID) return flat(WRAPPER_BOTTOM);
+
     const match = /^contribution-day-component-(\d+)-(\d+)$/.exec(this.id);
     if (!match) {
-      return { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+      return flat(0);
     }
     const row = Number(match[1]);
     const col = Number(match[2]);
-    const left = ORIGIN_X + col * STRIDE;
+    const left = ORIGIN_X + layoutOffsetX + col * STRIDE;
     const top = ORIGIN_Y + row * STRIDE;
     return {
       left,
@@ -193,6 +212,7 @@ describe("createGameRuntime (via mount)", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    layoutOffsetX = 0;
     stubCanvasContext();
     stubGeometry();
     raf = stubRaf();
@@ -252,6 +272,80 @@ describe("createGameRuntime (via mount)", () => {
         if (key === "4:3") continue;
         expect(td.getAttribute("style")).toBe("width: 10px");
       }
+    });
+  });
+
+  it("makes room below the calendar for the paddle half of the board, and gives it back on stop()", () => {
+    // #given a running game whose overlay hangs below the calendar. Without
+    // the reservation the paddle, the HUD and the guide are all drawn over
+    // GitHub's own legend and organisation chips.
+    stubCanvasContext();
+    buildSyntheticGrass({ row: 4, col: 3 });
+    session = mount(document, window);
+    launchButton().click();
+
+    const wrapper = document.getElementById(CALENDAR_WRAPPER_ID);
+    if (!wrapper) throw new Error("calendar wrapper missing");
+    // #then the page below is pushed down by exactly the overhang
+    expect(wrapper.style.marginBottom).toBe(`${EXPECTED_RESERVED_PX}px`);
+
+    // #when the session ends
+    session?.stop();
+    session = null;
+    // #then the wrapper is byte-identical to how it was found
+    expect(wrapper.getAttribute("style")).toBeNull();
+  });
+
+  describe("resize", () => {
+    /** Makes the wrapper clip horizontally, showing `clientWidth` px of the calendar. */
+    function clipCalendarTo(clientWidth: number): void {
+      const wrapper = document.getElementById(CALENDAR_WRAPPER_ID);
+      if (!wrapper) throw new Error("calendar wrapper missing");
+      wrapper.style.overflowX = "auto";
+      Object.defineProperty(wrapper, "scrollWidth", { value: 300, configurable: true });
+      Object.defineProperty(wrapper, "clientWidth", { value: clientWidth, configurable: true });
+    }
+
+    it("follows the grass to its new position instead of leaving the overlay behind", () => {
+      // #given a round in progress
+      buildSyntheticGrass({ row: 4, col: 3 });
+      session = mount(document, window);
+      launchButton().click();
+      const canvas = document.querySelector("canvas");
+      if (!canvas) throw new Error("overlay missing");
+      const before = canvas.style.left;
+
+      // #when the page reflows sideways under the absolutely-positioned overlay
+      layoutOffsetX = 40;
+      window.dispatchEvent(new Event("resize"));
+      raf.drain(100);
+
+      // #then the overlay moved with it, and the round is still going
+      expect(canvas.style.left).toBe(`${ORIGIN_X + 40 - GAP}px`);
+      expect(canvas.style.left).not.toBe(before);
+      expect(launchButton().textContent).toBe("やめる");
+      expect(document.querySelector("canvas")).not.toBeNull();
+    });
+
+    it("ends the round when the resize changes how many weeks are visible", () => {
+      // #given a round started while the whole calendar was on screen
+      buildSyntheticGrass({ row: 4, col: 3 });
+      clipCalendarTo(200);
+      session = mount(document, window);
+      launchButton().click();
+      expect(document.querySelector("canvas")).not.toBeNull();
+
+      // #when the window narrows enough to hide the last week. That is a
+      // different set of bricks with a different clear condition — not
+      // something the running board can be moved onto.
+      clipCalendarTo(150);
+      window.dispatchEvent(new Event("resize"));
+      raf.drain(100);
+
+      // #then the round is over, the overlay is gone, and it says why
+      expect(document.querySelector("canvas")).toBeNull();
+      expect(launchButton().textContent).toBe("🎮 崩す");
+      expect(document.getElementById("kusakuzushi-message")?.textContent).toContain("中断");
     });
   });
 
@@ -380,13 +474,24 @@ describe("createGameRuntime (via mount)", () => {
   });
 
   describe("keyboard control", () => {
-    /** The paddle is the last `fillRect` of a frame that draws no particles, so its x is readable off the stubbed context. */
+    /**
+     * The paddle's x, read off the stubbed context.
+     *
+     * Picked as the widest `fillRect` of the frame rather than the last one:
+     * the paddle is at least `MIN_PADDLE_WIDTH_PX` (48) across, while every
+     * other rectangle the overlay draws — particles, items, the HUD plates —
+     * is a few px wide. Keying on draw order instead made this silently read
+     * the HUD once the HUD gained a background plate.
+     */
     function paddleXAfterFrame(ctx: FakeCtx2D, now: number): number {
       ctx.fillRect.mockClear();
       raf.drain(now);
-      const lastCall = ctx.fillRect.mock.calls.at(-1);
-      if (!lastCall) throw new Error("no paddle drawn this frame");
-      return Number(lastCall[0]);
+      const widest = ctx.fillRect.mock.calls.reduce<unknown[] | null>(
+        (best, call) => (best === null || Number(call[2]) > Number(best[2]) ? call : best),
+        null,
+      );
+      if (!widest) throw new Error("no paddle drawn this frame");
+      return Number(widest[0]);
     }
 
     it("an arrow key moves the paddle immediately after the pointer was far outside the board", () => {

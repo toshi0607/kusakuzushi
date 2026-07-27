@@ -10,7 +10,8 @@ import type { ContributionGrid, GameConfig, GameState } from "@kusakuzushi/core"
 import { clearMessageFor, DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@kusakuzushi/core";
 
 import { deriveConfig, toExtensionGrid } from "./adapter";
-import type { GrassCell, GrassGeometry } from "./grass-dom";
+import { reserveBoardSpace } from "./board-space";
+import type { CellRect, GrassCell, GrassGeometry } from "./grass-dom";
 import {
   findGraphContainer,
   findGrassTable,
@@ -18,6 +19,7 @@ import {
   readGrassCells,
   readLevelColors,
   readYearlyTotal,
+  visibleCells,
 } from "./grass-dom";
 import type { Overlay } from "./overlay";
 import { createOverlay } from "./overlay";
@@ -33,6 +35,7 @@ const BANNER_ID = "kusakuzushi-result-banner";
 const BUTTON_LABEL_IDLE = "🎮 崩す";
 const BUTTON_LABEL_ACTIVE = "やめる";
 const NO_BRICKS_MESSAGE = "崩す草がありません🌵";
+const RESIZED_MESSAGE = "表示幅が変わって盤面が変わったので中断しました";
 const RESULT_BANNER_Z_INDEX = 101;
 
 /** Fixed nudge, in px, per ArrowLeft/ArrowRight keydown — a constant step rather than held-key velocity, since the board is small enough that per-frame acceleration isn't needed. */
@@ -68,6 +71,32 @@ function buildDateLookup(grid: ContributionGrid): Map<string, string> {
     });
   });
   return lookup;
+}
+
+/**
+ * Puts `node` directly below the calendar rather than at the end of the
+ * whole yearly-contributions block.
+ *
+ * Appending to the block dropped the button under GitHub's activity-overview
+ * panel, ~440px below the grass: on an ordinary window the graph was on
+ * screen and its own button was not (measured: button at viewport y=893 in
+ * an 848px viewport), which reads as "the extension isn't working".
+ *
+ * Falls back to appending when the table isn't inside `container` at all —
+ * `mount` accepts a couple of looser containers when GitHub's markup
+ * doesn't match.
+ */
+function insertBelowCalendar(container: HTMLElement, table: HTMLElement, node: HTMLElement): void {
+  let block: HTMLElement = table;
+  while (block.parentElement && block.parentElement !== container) {
+    block = block.parentElement;
+  }
+
+  if (block.parentElement !== container) {
+    container.appendChild(node);
+    return;
+  }
+  block.after(node);
 }
 
 function buildElementLookup(cells: readonly GrassCell[]): Map<string, HTMLElement> {
@@ -118,7 +147,36 @@ function readPageColors(doc: Document, view: Window): PageColors | null {
 /** Everything created for a single play-through; `teardown` undoes all of it. */
 type GameRuntime = {
   teardown(): void;
+  /** What the board was built from, so a later re-measure can be compared against it. */
+  geometry: GrassGeometry;
+  /** Moves the overlay onto the grass's new position. Only valid while the board's shape is unchanged. */
+  reposition(geometry: GrassGeometry): void;
 };
+
+/** Page-coordinate rects (scroll-inclusive), which is what `measureGeometry` expects. */
+function readCellRects(cells: readonly GrassCell[], view: Window): CellRect[] {
+  return cells.map((cell) => {
+    const rect = cell.el.getBoundingClientRect();
+    return {
+      left: rect.left + view.scrollX,
+      top: rect.top + view.scrollY,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+}
+
+/**
+ * Whether two measurements describe the same board — the same bricks in the
+ * same arrangement, just possibly somewhere else on the page.
+ *
+ * Cell size never moves with the viewport (GitHub pins each `td` to an
+ * inline `width: 10px`), so in practice only `cols` differs, and only when a
+ * resize changes how much of the calendar its `overflow-x` box shows.
+ */
+function isSameBoard(a: GrassGeometry, b: GrassGeometry): boolean {
+  return a.cellWidth === b.cellWidth && a.cellHeight === b.cellHeight && a.gap === b.gap && a.cols === b.cols;
+}
 
 function createGameRuntime(
   doc: Document,
@@ -126,6 +184,8 @@ function createGameRuntime(
   grid: ContributionGrid,
   grassCells: readonly GrassCell[],
   geometry: GrassGeometry,
+  /** What the page must make room below — see board-space.ts. */
+  spacingAnchor: HTMLElement,
   onFinished: (restart: boolean) => void,
 ): GameRuntime | null {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...deriveConfig(geometry) };
@@ -136,6 +196,7 @@ function createGameRuntime(
   // doesn't reliably carry the narrowing of `maybeOverlay` itself into
   // nested closures) — same pattern apps/web/src/session.ts uses for `ctx`.
   const overlay: Overlay = maybeOverlay;
+  let boardSpace = reserveBoardSpace(spacingAnchor, overlay.canvas, view);
 
   const game = new Game(grid, config);
 
@@ -153,6 +214,9 @@ function createGameRuntime(
     paddleColor: foreground,
     ballColor: foreground,
     textColor: foreground,
+    // Level 0 is the emptiest the grass ever looks, so it is the closest
+    // stand-in for the page background when the body's own is transparent.
+    backgroundColor: pageColors?.background ?? levelColors[0],
     // The page's own colours are all we sample for the paddle/ball, but an
     // item has to stand apart from both the grass and the ball, so it keeps
     // core's blue/purple (GitHub's accents, in the variant that matches).
@@ -382,11 +446,27 @@ function createGameRuntime(
     overlay.canvas.removeEventListener("click", handleCanvasClick);
     overlay.canvas.removeEventListener("touchmove", handleTouchMove);
     overlay.destroy();
+    boardSpace.release();
     painter.restoreAll();
     removeBanner();
   }
 
-  return { teardown };
+  /**
+   * Re-pins the overlay to the grass after the page reflowed.
+   *
+   * Only the origin can have moved — the caller has already established the
+   * board's shape is unchanged — so the game itself, and everything already
+   * destroyed, carries on untouched. The reserved space is taken again from
+   * scratch because the overhang is measured against the new layout.
+   */
+  function reposition(next: GrassGeometry): void {
+    overlay.canvas.style.left = `${next.originX - next.gap}px`;
+    overlay.canvas.style.top = `${next.originY - next.gap}px`;
+    boardSpace.release();
+    boardSpace = reserveBoardSpace(spacingAnchor, overlay.canvas, view);
+  }
+
+  return { teardown, geometry, reposition };
 }
 
 /**
@@ -416,7 +496,7 @@ export function mount(doc: Document, view: Window): Session | null {
   launchButton.id = BUTTON_ID;
   launchButton.className = "btn btn-sm";
   launchButton.textContent = BUTTON_LABEL_IDLE;
-  container.appendChild(launchButton);
+  insertBelowCalendar(container, table, launchButton);
 
   let message: HTMLElement | null = null;
   let runtime: GameRuntime | null = null;
@@ -433,7 +513,8 @@ export function mount(doc: Document, view: Window): Session | null {
     el.id = MESSAGE_ID;
     el.style.marginLeft = "8px";
     el.textContent = text;
-    container.appendChild(el);
+    // Beside the button it explains, not at the end of the block.
+    launchButton.after(el);
     message = el;
   }
 
@@ -448,7 +529,9 @@ export function mount(doc: Document, view: Window): Session | null {
     clearMessage();
 
     const username = usernameFromPath(view.location.pathname);
-    const grassCells = readGrassCells(table);
+    // Only the grass the reader can actually see becomes a board — see
+    // `visibleCells`. On a wide enough window this is every cell.
+    const grassCells = visibleCells(readGrassCells(table), view);
     const grid = toExtensionGrid(username, grassCells);
 
     if (!hasLiveBricks(grid)) {
@@ -456,16 +539,7 @@ export function mount(doc: Document, view: Window): Session | null {
       return;
     }
 
-    const rects = grassCells.map((cell) => {
-      const rect = cell.el.getBoundingClientRect();
-      return {
-        left: rect.left + view.scrollX,
-        top: rect.top + view.scrollY,
-        width: rect.width,
-        height: rect.height,
-      };
-    });
-    const geometry = measureGeometry(rects);
+    const geometry = measureGeometry(readCellRects(grassCells, view));
     if (!geometry) return;
 
     if (geometry.cols !== grid.weeks.length) {
@@ -480,7 +554,11 @@ export function mount(doc: Document, view: Window): Session | null {
 
     // A retry re-enters `startGame` *after* teardown has restored every
     // repainted `td`, so the second round starts from the untouched grass.
-    const created = createGameRuntime(doc, view, grid, grassCells, geometry, (restart) => {
+    // The calendar's own wrapper: everything GitHub renders after it (the
+    // legend, then the organisation chips) is what has to move down.
+    const spacingAnchor = table.parentElement ?? table;
+
+    const created = createGameRuntime(doc, view, grid, grassCells, geometry, spacingAnchor, (restart) => {
       endGame();
       if (restart) startGame();
     });
@@ -499,11 +577,52 @@ export function mount(doc: Document, view: Window): Session | null {
   }
   launchButton.addEventListener("click", handleButtonClick);
 
+  /**
+   * Keeps the overlay on the grass when the page reflows mid-game.
+   *
+   * The canvas is absolutely positioned at the page coordinates measured
+   * when the round started, so a window resize slides the grass out from
+   * under it. Re-measuring and moving the canvas covers that.
+   *
+   * What it cannot cover is a change to the board's *shape*: resizing also
+   * changes how much of the calendar GitHub's `overflow-x` box shows, and
+   * a different number of weeks is a different set of bricks with a
+   * different clear condition. Rather than leave an overlay that lies about
+   * the board, the round ends and says why.
+   */
+  let resizeFrame: number | null = null;
+
+  function syncToLayout(): void {
+    resizeFrame = null;
+    if (!runtime) return;
+
+    const cells = visibleCells(readGrassCells(table), view);
+    const geometry = cells.length > 0 ? measureGeometry(readCellRects(cells, view)) : null;
+    if (!geometry) return;
+
+    if (!isSameBoard(geometry, runtime.geometry)) {
+      endGame();
+      showMessage(RESIZED_MESSAGE);
+      return;
+    }
+    runtime.reposition(geometry);
+  }
+
+  function handleResize(): void {
+    if (!runtime || resizeFrame !== null) return;
+    // A drag fires `resize` continuously; one re-measure per frame is plenty
+    // and keeps the reads out of the middle of a burst of layout writes.
+    resizeFrame = view.requestAnimationFrame(syncToLayout);
+  }
+  view.addEventListener("resize", handleResize);
+
   function stop(): void {
     if (stopped) return;
     stopped = true;
     endGame();
     clearMessage();
+    view.removeEventListener("resize", handleResize);
+    if (resizeFrame !== null) view.cancelAnimationFrame(resizeFrame);
     launchButton.removeEventListener("click", handleButtonClick);
     launchButton.remove();
     activeSession = null;

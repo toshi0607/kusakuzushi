@@ -157,8 +157,11 @@ grep -o "https\?://[a-zA-Z0-9./_-]*" dist/content.js
 ### プライバシーポリシー URL
 
 ```
-https://kusakuzushi.toshi0607.com/privacy
+https://kusakuzushi.toshi0607.com/privacy/
 ```
+
+末尾のスラッシュ付きが実体。`/privacy` は Pages が 308 で `/privacy/` に寄せる
+(2026-07-26 実測)ため、リダイレクトを挟まない側をストアに登録する。
 
 ## 5. 配布
 
