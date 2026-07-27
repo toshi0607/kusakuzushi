@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearMessageFor, LIGHT_THEME } from "@kusakuzushi/core";
+import { clearMessageFor, LIGHT_THEME, MARQUEE_COLOR } from "@kusakuzushi/core";
 
 import type { Session } from "./content";
 import { mount } from "./content";
@@ -133,16 +133,26 @@ type FakeCtx2D = CanvasRenderingContext2D & {
   fill: ReturnType<typeof vi.fn>;
   fillText: ReturnType<typeof vi.fn>;
   measureText: ReturnType<typeof vi.fn>;
+  /** The `fillStyle` in force at each `arc()` — the ball's colour, which the call arguments don't carry. */
+  arcStyles: string[];
+  /** The `fillStyle` in force at each `fillRect()`, same reason. */
+  fillRectStyles: string[];
 };
 
 /** jsdom canvases have no real 2D context; this stubs just the methods/properties `overlay.ts`/`renderer.ts` call. */
 function stubCanvasContext(): FakeCtx2D {
+  const arcStyles: string[] = [];
+  const fillRectStyles: string[] = [];
   const ctx = {
     scale: vi.fn(),
     clearRect: vi.fn(),
-    fillRect: vi.fn(),
+    fillRect: vi.fn(function (this: { fillStyle: string }): void {
+      fillRectStyles.push(String(this.fillStyle));
+    }),
     beginPath: vi.fn(),
-    arc: vi.fn(),
+    arc: vi.fn(function (this: { fillStyle: string }): void {
+      arcStyles.push(String(this.fillStyle));
+    }),
     fill: vi.fn(),
     fillText: vi.fn(),
     measureText: vi.fn(() => ({ width: 0 })),
@@ -152,6 +162,8 @@ function stubCanvasContext(): FakeCtx2D {
     textBaseline: "",
     shadowColor: "",
     shadowBlur: 0,
+    arcStyles,
+    fillRectStyles,
   } as unknown as FakeCtx2D;
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx);
   return ctx;
@@ -234,6 +246,27 @@ describe("createGameRuntime (via mount)", () => {
     // #then
     expect(launchButton().textContent).toBe(BUTTON_LABEL_ACTIVE);
     expect(document.querySelector("canvas")).not.toBeNull();
+  });
+
+  it("draws the ball in marquee amber while the paddle keeps the page's own colour", () => {
+    // #given a running game. Every other overlay colour is sampled off the
+    // page so the board blends into GitHub, but a page-coloured ball turns
+    // into a scatter of black dots once multiBall has split it a few times —
+    // and the ball is the one thing the web version and the extension draw
+    // identically, so it stays branded.
+    const ctx = stubCanvasContext();
+    buildSyntheticGrass({ row: 4, col: 3 });
+    session = mount(document, window);
+    launchButton().click();
+
+    // #when a frame is drawn
+    raf.drain(window.performance.now() + 16);
+
+    // #then the ball (the only arc the renderer draws) is amber, and the
+    // paddle is still the page's foreground colour
+    expect(ctx.arcStyles).toContain(MARQUEE_COLOR);
+    expect(ctx.arcStyles).not.toContain(LIGHT_THEME.paddleColor);
+    expect(ctx.fillRectStyles).toContain(LIGHT_THEME.paddleColor);
   });
 
   describe("onBrickHit -> real td resolution", () => {

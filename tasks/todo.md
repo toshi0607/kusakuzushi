@@ -1857,3 +1857,95 @@ README / SECURITY.md に書いた事実は、その場で実物を見て確認�
 
 再発したら「3 run 目以降も汚染される」ケースなので、run 数を増やすのではなく
 ランナー起因の長タスク(Unattributable)を除外できないかを検討すること。
+
+---
+
+## セッション17: 拡張の煽り文言と配色を Web に揃える(進行中 2026-07-27)
+
+### 依頼
+
+「Chrome拡張ってWebのような煽り文言だせないですか？そしてバーと玉黒でなくてWebのいろにそろえられないですか？」
+(クリア画面のスクリーンショット付き: 「🌱 完全刈り取り!」+ Score: 1407、草の上に黒い玉が多数)
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| 煽り文言のコピーは web / 拡張で同一(core の `clearMessageFor` 一本) | 既存実装 packages/core/src/clear-message.ts | 拡張が core から import していること |
+| 玉の色は明暗で変えないブランドの錨 | DESIGN-VISUAL.md §1 `--marquee` | 定数が 1 箇所で定義され web / 拡張が参照 |
+| 緑は草だけ。UI の操作系に緑を使わない | DESIGN-VISUAL.md 最重要ルール | 追加した色が緑でないこと |
+| 拡張は GitHub のページに溶け込む(独自デザインを持ち込まない) | DESIGN-VISUAL.md 冒頭 | ユーザー指示で一部上書き。doc に決定を記録する |
+| パドル / HUD / バナーは GitHub のテーマ(ページの実色)に追従 | apps/extension/src/content.ts:135 `readPageColors` | ページ色サンプリングを壊さない |
+| 既存テストを壊さない | rules (constraints.md) | `pnpm -r test` |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 煽り文言は main に実装済みで、ユーザーの手元のビルドが古い | VERIFIED | content.ts:370 に実装あり。「🌱 完全刈り取り!」は 40a92ab 以前にしか存在しない(`git log -S`)。dist/content.js の mtime 7/25 21:52 < 40a92ab の 7/26 15:19 |
+| manifest の version は初回コミットから 1.0.0 のまま | VERIFIED | `git log -- apps/extension/manifest.json` が 62d1800 / df619a0 のみ |
+| `#js-contribution-activity-description` は実ページに存在する | VERIFIED | apps/extension/src/__fixtures__/contributions.html:9(実ページのキャプチャ) |
+| Web の玉は #ffb224、パドルは角丸ピル型 | VERIFIED | apps/web/src/theme.ts:15、packages/core/src/renderer.ts:274-280、dev サーバのスクリーンショット実測 |
+| 拡張のパドルと玉は両方ページの文字色(ライトなら黒)で描いている | VERIFIED | apps/extension/src/content.ts:210-215 |
+| スクショの黒い粒は multiBall で増えた玉 | INFERRED | 玉は `foreground` 単色。クリア時は草が全部 level 0 になるので黒丸だけが残る |
+
+### 診断
+
+**煽り文言はコード修正不要。** すでに main に入っている(40a92ab)。ユーザーが動かしているのは
+それより前のビルドで、そのビルドの見出しは「🌱 完全刈り取り!」— 現行コードには存在しない文字列。
+成果物は「配色の修正 + version 上げ + 再リリース」になる。
+
+**配色。** 拡張は玉もパドルも `readPageColors` で拾ったページの文字色一色で描いていた。
+Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マーキーアンバー #ffb224。
+つまり「Web に揃える」= パドルは墨色のまま(ライトテーマでは Web も元々ほぼ黒)、
+**玉だけアンバー**が正しい解釈。形も Web は角丸ピル型なので合わせる。
+
+### 対応
+
+1. `MARQUEE_COLOR` を packages/core/src/renderer.ts に置き、web / 拡張の両方から参照
+2. 拡張の玉をアンバーに(パドル・HUD・バナーはページ色のまま = GitHub のテーマ追従を維持)
+3. 拡張のパドルを Web と同じ角丸ピル型に
+4. DESIGN-VISUAL.md に「玉のアンバーだけは拡張にも持ち込む」決定を記録
+5. manifest の version を 1.0.1 に
+
+### Notes
+
+- パドルまでアンバーにはしない。DESIGN-VISUAL §1 でアンバーは「CTA・フォーカス・ボール」の色と
+  決めてあり、パドルまで塗ると玉との区別が消える。Web と同じ関係(墨のバー + アンバーの玉)を保つ。
+
+### 検証
+
+- `pnpm -r test`: core 116 / web 67 / extension 76 / ogp 76 すべて pass(exit 0)
+  - 追加: game-runtime.test.ts「draws the ball in marquee amber while the paddle keeps the page's own colour」
+    — 実際の `mount()` を通して描画し、arc(玉)の fillStyle が `MARQUEE_COLOR`、fillRect(バー)が
+    ページ文字色であることを見る。変更前は arc も `#24292f` だったので落ちる回帰テストになっている
+  - 既存の「adds the one-liner for the size of year the page's own heading reports」が
+    `clearMessageFor(2988)` の文言そのものをバナー内に確認済み
+- `pnpm -r build`: 全パッケージ exit 0
+- 再ビルドした `apps/extension/dist/content.js` を unicode エスケープ復号して検査:
+  「完全刈り取り」「更地」を含み、旧ビルドの「🌱 完全刈り取り!」は**含まない**(= ユーザーの手元が古い証拠)
+- 実ブラウザ検証: GitHub の実マークアップ(`__fixtures__/contributions.html`)を dev サーバ経由で開き、
+  ビルド済み content.js を読ませて起動。**玉がアンバー、バーが角丸ピル型**で描かれることをスクリーンショットで確認。
+  クリアバナーまでは到達できず(ブラウザペインが `document.visibilityState === "hidden"` を返し rAF が止まる。
+  rAF を差し替えて手動でフレームを送ったが、盤面中央のブロックに当てられず決着せず)— バナーはユニットテストの証跡に留める
+
+### 自己クイズ
+
+1. **この diff で一番危ういのは?** `drawPaddles` の `ctx.roundRect`。安全な理由: 同ファイルの
+   `drawHudLabel` が既に同じガード付きパターンで出荷済みで、core の `fillRoundRect` も同型。
+   ターゲットは chrome120 で `roundRect` は Chrome 99+
+2. **何が壊す?** `roundRect` の無いホストでは従来どおり角丸なしの矩形に落ちるだけ(挙動は変更前と同じ)
+3. **試していないこと** テストの canvas スタブに `roundRect` が無いので、テストが通るのは
+   フォールバック側。角丸パスは実ブラウザのスクリーンショットで目視確認した(推測ではなく実測)
+4. **プラン/前提と矛盾する箇所** なし
+
+### 残タスク(ユーザー操作が必要)
+
+**Chrome ウェブストアへの再提出。** 煽り文言はコードとしては 40a92ab で入っているが、
+公開中のビルドは v1.0.0(それ以前)。この PR で manifest / package.json を **1.1.0** に上げてあるので、
+`pnpm --filter @kusakuzushi/extension package` で zip を作って提出すれば、煽り文言と新しい配色が同時に届く。
+
+### 別件(この PR ではやらない)
+
+`packages/core` に `vitest.config.ts` が無いため、`build` 後に `pnpm test` すると
+`dist/*.test.js` も拾って**テスト数が倍(58 → 116)**になる。既存の問題で今回の変更とは無関係。

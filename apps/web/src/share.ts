@@ -1,5 +1,7 @@
 /** Result-screen sharing: the X post intent link and the canvas-image save/share flow. */
 
+import { MARQUEE_COLOR } from "@kusakuzushi/core";
+
 const SITE_URL = "https://kusakuzushi.toshi0607.com";
 
 /**
@@ -64,7 +66,7 @@ export const SHARE_COLORS = {
   ridge: "#28332a",
   ink: "#e4ede2",
   faint: "#8da08c",
-  marquee: "#ffb224",
+  marquee: MARQUEE_COLOR,
 } as const;
 
 const SHARE_WIDTH = 1200;

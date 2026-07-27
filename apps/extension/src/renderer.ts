@@ -13,6 +13,7 @@ import type { Game, ItemKind } from "@kusakuzushi/core";
 export type OverlayTheme = {
   levelColors: readonly string[];
   paddleColor: string;
+  /** Marquee amber, not a page colour — see the note where content.ts builds this. */
   ballColor: string;
   textColor: string;
   /** The page's own background, used as the plate behind the HUD text. */
@@ -138,11 +139,24 @@ export function createOverlayRenderer(theme: OverlayTheme): {
     ctx.globalAlpha = 1;
   }
 
-  /** All of them: `extraPaddle` puts a side bar on each side of the paddle. */
+  /**
+   * All of them: `extraPaddle` puts a side bar on each side of the paddle.
+   *
+   * Pill-shaped, matching core's `render()` — the paddle is one of the two
+   * moving parts the web version and this extension share, so it is drawn
+   * the same shape in both. `roundRect` is Chrome 99+ (the extension targets
+   * chrome120); the sharp fallback is for the tests' canvas stubs.
+   */
   function drawPaddles(ctx: CanvasRenderingContext2D, game: Game): void {
     ctx.fillStyle = theme.paddleColor;
     for (const paddle of game.paddleStates) {
-      ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+      }
     }
   }
 

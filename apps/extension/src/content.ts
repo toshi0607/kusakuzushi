@@ -7,7 +7,15 @@
  */
 
 import type { ContributionGrid, GameConfig, GameState } from "@kusakuzushi/core";
-import { clearMessageFor, DARK_THEME, DEFAULT_CONFIG, Game, LIGHT_THEME, MAX_FRAME_DT } from "@kusakuzushi/core";
+import {
+  clearMessageFor,
+  DARK_THEME,
+  DEFAULT_CONFIG,
+  Game,
+  LIGHT_THEME,
+  MARQUEE_COLOR,
+  MAX_FRAME_DT,
+} from "@kusakuzushi/core";
 
 import { deriveConfig, toExtensionGrid } from "./adapter";
 import { reserveBoardSpace } from "./board-space";
@@ -212,7 +220,12 @@ function createGameRuntime(
   const overlayTheme: OverlayTheme = {
     levelColors,
     paddleColor: foreground,
-    ballColor: foreground,
+    // 玉だけはページの色ではなく web 版と同じマーキーアンバー。ページに溶け込ませる
+    // 方針の唯一の例外で、理由は 2 つ: multiBall で増えた玉が刈り取り済みの薄い草の
+    // 上に十数個並ぶと、ページ文字色一色では「黒い粒がばら撒かれた」ようにしか見えない。
+    // そして玉は web / 拡張で唯一同じ形で動くものなので、ここを揃えると両者が
+    // 同じゲームだと分かる(DESIGN-VISUAL §1 の `--marquee`)。
+    ballColor: MARQUEE_COLOR,
     textColor: foreground,
     // Level 0 is the emptiest the grass ever looks, so it is the closest
     // stand-in for the page background when the body's own is transparent.
