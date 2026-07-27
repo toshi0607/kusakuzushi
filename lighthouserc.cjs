@@ -110,7 +110,7 @@ module.exports = {
   ci: {
     collect,
     assert: {
-      // 3 回の中央値で判定する(既定の optimistic は最良回だけを見るので回帰を見逃す)
+      // 5 回(NUMBER_OF_RUNS)の中央値で判定する(既定の optimistic は最良回だけを見るので回帰を見逃す)
       aggregationMethod: "median",
       assertions,
     },
