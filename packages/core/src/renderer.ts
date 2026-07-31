@@ -30,6 +30,14 @@ export type Theme = {
 };
 
 /**
+ * DESIGN-VISUAL §1 の `--marquee`(アーケード筐体の電飾の色)。明暗で変えない
+ * ブランドの錨で、玉の色はこれ一色。web と拡張の両方がここを参照する — 拡張は
+ * 他の色を GitHub のページから採ってページに溶け込ませるが、玉だけは例外にして
+ * 「草崩しの玉はアンバー」を両方で成立させる。
+ */
+export const MARQUEE_COLOR = "#ffb224";
+
+/**
  * GitHub's own accent blue and purple, per colour scheme — two hues that
  * are neither grass nor ball, and that stay apart from each other at the
  * ~10px the extension's items are drawn at.
