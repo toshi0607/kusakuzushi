@@ -1949,3 +1949,65 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
 
 `packages/core` に `vitest.config.ts` が無いため、`build` 後に `pnpm test` すると
 `dist/*.test.js` も拾って**テスト数が倍(58 → 116)**になる。既存の問題で今回の変更とは無関係。
+
+---
+
+## セッション18: v1.1.0 のストア提出と一般公開(2026-08-01)
+
+### 依頼
+
+「chrome拡張を公開する準備を進めたい。テスターでのテストは終わったのでもう公開していい。
+拡張の実装更新も公開されている状態にしたい」
+
+つまり **(a) パッケージを v1.1.0 に更新** と **(b) 公開範囲を Trusted Tester → 一般公開** の 2 つ。
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|------------|--------|-----------|
+| zip のルートに manifest.json があること | skills/release-extension | `unzip -l` の出力 |
+| `_locales/{en,ja}` が zip に入ること | 同上(default_locale が en) | `unzip -l` の出力 |
+| 掲載画像が実物と一致すること | ユーザー選択(撮り直す) | 4 枚を目視 |
+| **組織名(legalforce)を写さない** | ユーザー指示(セッション中に 2 回) | 撮影前に左カラム等を DOM ごと非表示 |
+| 「審査のため送信」はユーザーが押す | skills/release-extension | — |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|------------|--------|----------|
+| 公開中は v1.0.0 で、1.1.0 は未提出 | VERIFIED | セッション17の残タスク。manifest/package.json とも 1.1.0 |
+| 拡張バンドルは `chrome.*` API を使わない | VERIFIED | `grep -o "chrome\.[a-zA-Z]*" dist/content.js` が 0 件 |
+| ストア画像の 4 枚は v1.0.0 時点の見た目 | VERIFIED | 02/03/04 の玉が黒・バーが角なし(目視) |
+| v1.1.0 の実機確認は済んでいる | UNVERIFIED-ACCEPTED (2026-08-01) | ユーザーが「確認済み・そのまま提出」を選択。撮影で使った実ページのプレイでも玉のアンバー・角丸バー・アイテム・破壊マスが動作 |
+
+### 対応
+
+1. `pnpm install` → `pnpm --filter @kusakuzushi/extension package` で
+   `kusakuzushi-extension-1.1.0.zip` を作成
+2. スクリーンショット 4 枚を v1.1.0 のビルドで撮り直し
+3. 撮影を `.claude/skills/release-extension/capture-screenshots.mjs` として自動化し、
+   スキルに手順を追記
+
+### Notes
+
+- **拡張として読み込ませる方式は捨てた。** Chrome 137 以降、自動化フラグ下では
+  `--load-extension` が効かない(ボタンが注入されなかった)。バンドルが `chrome.*` を
+  使っていないので、`page.evaluate(content.js)` で直接注入するほうが確実
+- **Primer のユーティリティクラスは `!important`。** 要素を隠すのに `style.display="none"` では
+  `d-md-block` に負けて、ナビの枠線が構図に残った。`setProperty(..., "important")` が必要
+- 玉のアンバー `#ffb224` をキャンバスから拾って重心 x にマウスを送ることで自動ラリーさせた。
+  アイテムが必ず落ちる 04 は `itemDropChance` を 1 に書き換えたコピーを注入して撮った
+- ビューポート 915x572 / dpr 1.4 が、既存 4 枚と同じセルサイズの 1280x800 になる
+
+### 検証
+
+- `pnpm -r test`: core 58 / web 67 / extension 76 / ogp 76 すべて pass(exit 0)
+- `unzip -l` 実測: ルートに `manifest.json`、`_locales/en`・`_locales/ja` あり、12 ファイル
+- スクリーンショット 4 枚とも `sips` で 1280x800 を実測。
+  **組織名・リポジトリ名・氏名は 0 件**(草グラフの見出しと表以外を DOM ごと非表示にして撮影)
+- コミットしたスクリプトを実行し直して 4 枚が再生成されることを確認(移植性の実測)
+
+### 残タスク(ユーザー操作が必要)
+
+- デベロッパーコンソールでの Google 再ログイン(パスワード入力)
+- 「パッケージ」に zip をアップロード、公開範囲を一般公開に変更、**「審査のため送信」を押す**

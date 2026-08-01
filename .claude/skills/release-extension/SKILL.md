@@ -63,6 +63,31 @@ cp "$SRC"/icons/icon-128.png "$DEST/store-icon-128.png"
 「審査のため送信」は**公開行為なのでユーザーが押す**。押す前に全項目を読み上げて確認する。
 押したあと、ステータスが「ドラフト」→「審査待ち」に変わることを実測する。
 
+## 見た目を変えたらスクリーンショットを撮り直す
+
+掲載画像は実物と一致していないといけない。玉の色やバーの形を変えたリリースでは、
+`store/screenshots/` の 4 枚が前の見た目のまま残る。**撮り直しは自動化してある。**
+
+```bash
+node .claude/skills/release-extension/capture-screenshots.mjs
+for f in apps/extension/store/screenshots/*.png; do sips -c 800 1280 "$f"; done
+```
+
+やっていること（`capture-screenshots.mjs`）:
+
+- 実物の GitHub プロフィールを開き、**草グラフの見出しと表の祖先でない要素をすべて `display:none`** にする。
+  これで所属組織・Pinned リポジトリ・アクティビティが構図から消える（**組織名は絶対に写さない**）
+- `dist/content.js` をページに直接 `evaluate` する。バンドルは `chrome.*` API を使っていないので、
+  拡張として読み込む必要がない（Chrome 137 以降 `--load-extension` は自動化フラグ下で効かない）
+- 玉のアンバー `#ffb224` をキャンバスから拾って重心 x を出し、そこへマウスを動かして**自動でラリーする**
+- 04 は `itemDropChance` を 1 に書き換えたコピーを注入して、アイテムが必ず落ちる状態を撮る
+
+**Primer のユーティリティクラスは `!important`** なので、要素を隠すときは
+`style.setProperty("display", "none", "important")` でないと効かない（`d-md-block` に負ける）。
+
+ビューポートは 915x572・`deviceScaleFactor` 1.4。これで既存 4 枚と同じセルサイズの
+1280x800 になる（出力は 1281x801 なので `sips` で 1 px 落とす）。
+
 ## 落とし穴（すべて 2026-07-27 に実際に踏んだ）
 
 ### 画像を上げたら必ず「下書きとして保存」する
