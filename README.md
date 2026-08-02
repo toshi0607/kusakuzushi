@@ -8,8 +8,10 @@ GitHub の contribution graph — いわゆる「草」— をブロック崩し
 崩したブロックは GitHub の緑 5 段階の色がそのまま薄くなっていくので、
 盤面が減る = 草を刈っている、が見た目で分かります。
 
-Chrome 拡張版もあり、そちらは **GitHub のプロフィールページ上の本物の草**を
-その場で崩します(キャンバスに描き直すのではなく、実際の `td` の背景色を差し替えます)。
+**Chrome 拡張版: https://chromewebstore.google.com/detail/gbjockgldlkgpjdlnlbefgmnmfbhcbaf**
+
+拡張版は **GitHub のプロフィールページ上の本物の草**をその場で崩します
+(キャンバスに描き直すのではなく、実際の `td` の背景色を差し替えます)。
 
 > **English** — Kusakuzushi turns a GitHub contribution graph into a playable game of
 > Breakout. Type a username on the web app and that person's last year of contributions
@@ -56,8 +58,8 @@ pnpm --filter @kusakuzushi/web dev   # http://localhost:5173
 | `pnpm lh` | ローカルの `apps/web/dist` に Lighthouse CI をかける |
 | `pnpm lh:prod` | 本番 URL に Lighthouse CI をかける |
 
-拡張版の読み込み手順(unpacked)は [`apps/extension/README.md`](apps/extension/README.md) にあります。
-Chrome ウェブストアにはまだ出していません。
+開発中の拡張を読み込む手順(unpacked)は [`apps/extension/README.md`](apps/extension/README.md) にあります。
+公開版は Chrome ウェブストアから入ります → [草崩し (Kusakuzushi)](https://chromewebstore.google.com/detail/gbjockgldlkgpjdlnlbefgmnmfbhcbaf)
 
 ## デプロイ
 
