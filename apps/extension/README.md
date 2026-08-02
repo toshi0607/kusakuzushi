@@ -21,6 +21,9 @@ pnpm --filter @kusakuzushi/extension build
 
 ## ウェブストアへの公開
 
+公開先: <https://chromewebstore.google.com/detail/gbjockgldlkgpjdlnlbefgmnmfbhcbaf>
+（アイテム ID `gbjockgldlkgpjdlnlbefgmnmfbhcbaf`）。
+
 ```bash
 pnpm --filter @kusakuzushi/extension package
 ```
