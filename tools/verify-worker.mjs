@@ -8,13 +8,16 @@
  *     これに化けた)。つまり *200 が返ってくること* は route の証明にならない
  *   - route が生きていても、UA 判定や画像生成だけが壊れることがある
  *
- * なので観測できる 3 つの分岐をそれぞれ叩く:
+ * なので観測できる 4 つの分岐をそれぞれ叩く:
  *
  *   1. 非クローラー UA → 302(人間はアプリ本体へ飛ばされる)
  *   2. クローラー UA   → 200 かつ og:image を含む HTML
  *   3. og.png          → 200 かつ image/png
+ *   4. `s` を持たない共有リンク(= 拡張から。DESIGN.md §5)→ スコアを一切名乗らない
  *
  * 1 が 200 なら Pages に食われている(= route が外れた)と一発で分かる。
+ * 4 は「`s` が無ければスコア行を出さない」を本番で確かめる。ここが壊れると、
+ * 拡張から共有されたリンクが「100% 刈り取ってスコア 0」のカードを配る。
  *
  *   node tools/verify-worker.mjs [--origin https://kusakuzushi.toshi0607.com]
  *                                [--user toshi0607] [--attempts 10] [--interval 6000]
@@ -68,8 +71,35 @@ function fetchAs(url, userAgent, redirect = "manual") {
   });
 }
 
+/**
+ * 拡張の共有リンク(`p` だけ)がスコアを名乗らないことを見る。駄目なら理由の文字列。
+ *
+ * 見るのはカード HTML 側:og:description と、クローラーが辿る og:image / og:url に
+ * `s=` が混じっていないこと。PNG 本体の文字は取り出せないので、`s` を落として
+ * いるかどうかは URL で見る(og.png?s= が付いていればカードにスコアが焼かれる)。
+ */
+async function checkScorelessShare(url) {
+  const response = await fetchAs(url, CRAWLER_USER_AGENT);
+  if (response.status !== 200) {
+    return `s なしの共有リンクが HTTP ${response.status}`;
+  }
+  const html = await response.text();
+  if (html.includes("スコア")) {
+    return "s を持たない共有リンクのカードがスコアを名乗っている";
+  }
+  const advertised = [...html.matchAll(/content="([^"]*\/share\/[^"]*)"/g)].map(([, value]) => value);
+  if (advertised.length === 0) {
+    return "s なしの共有リンクの HTML に /share/ を指す og タグが無い";
+  }
+  const withScore = advertised.find((value) => value.includes("s="));
+  if (withScore) {
+    return `s なしのはずの共有リンクが s 付き URL を広告している: ${withScore}`;
+  }
+  return null;
+}
+
 /** 全部通れば null、駄目なら理由の文字列を返す。 */
-async function checkOnce(shareUrl, imageUrl) {
+async function checkOnce(shareUrl, imageUrl, scorelessShareUrl) {
   const human = await fetchAs(shareUrl, HUMAN_USER_AGENT);
   if (human.status !== 302) {
     // 200 なら Pages の「存在しないパスに index.html」に食われている疑いが濃い
@@ -96,7 +126,7 @@ async function checkOnce(shareUrl, imageUrl) {
     return `og.png の content-type が ${contentType || "(無し)"}`;
   }
 
-  return null;
+  return await checkScorelessShare(scorelessShareUrl);
 }
 
 async function main() {
@@ -104,13 +134,15 @@ async function main() {
   const user = encodeURIComponent(options.user);
   const shareUrl = `${options.origin}/share/${user}?s=1234&p=56`;
   const imageUrl = `${options.origin}/share/${user}/og.png?s=1234&p=56`;
+  /** 拡張が作る形の共有リンク(スコアを載せない)。 */
+  const scorelessShareUrl = `${options.origin}/share/${user}?p=56`;
 
   console.log(`verify-worker: ${shareUrl}`);
 
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
     let reason;
     try {
-      reason = await checkOnce(shareUrl, imageUrl);
+      reason = await checkOnce(shareUrl, imageUrl, scorelessShareUrl);
     } catch (error) {
       // 伝播待ちの最中は DNS/TLS/ECONNRESET が単発で起きる。ここで例外を投げると
       // リトライが 1 度も回らずに赤くなる(= デプロイは済んでいるのに人間が呼ばれる)
@@ -119,6 +151,7 @@ async function main() {
     if (reason === null) {
       console.log(`✅ /share/* が Worker に届いている(${attempt} 回目で成功)`);
       console.log("   人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png");
+      console.log("   s なしの共有リンク(拡張)→ スコアを名乗らず、s 付き URL も広告しない");
       return;
     }
     console.log(`  [${attempt}/${options.attempts}] ${reason}`);
