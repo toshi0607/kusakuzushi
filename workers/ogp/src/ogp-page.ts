@@ -8,22 +8,35 @@ import { escapeHtml } from "./html-escape";
 
 const SITE_URL = "https://kusakuzushi.toshi0607.com";
 
-/** The canonical share URL for `user`'s result — matches `apps/web`'s `buildShareUrl`. */
-export function buildShareUrl(user: string, score: number, percentage: number): string {
-  const params = new URLSearchParams({ s: String(score), p: String(percentage) });
-  return `${SITE_URL}/share/${encodeURIComponent(user)}?${params.toString()}`;
+/**
+ * `s`/`p` のクエリ。`score` が null(このリンクはスコアを共有していない)なら
+ * `s` を落とす — 0 を書き足すと、受け取り側にはスコア 0 の共有と区別が付かない。
+ */
+function shareQuery(score: number | null, percentage: number): string {
+  const params = new URLSearchParams();
+  if (score !== null) params.set("s", String(score));
+  params.set("p", String(percentage));
+  return params.toString();
+}
+
+/** The canonical share URL for `user`'s result — matches core's `buildShareUrl`. */
+export function buildShareUrl(user: string, score: number | null, percentage: number): string {
+  return `${SITE_URL}/share/${encodeURIComponent(user)}?${shareQuery(score, percentage)}`;
 }
 
 /** The `/share/{user}/og.png` URL this Worker itself serves for the OGP image. */
-export function buildOgImageUrl(user: string, score: number, percentage: number): string {
-  const params = new URLSearchParams({ s: String(score), p: String(percentage) });
-  return `${SITE_URL}/share/${encodeURIComponent(user)}/og.png?${params.toString()}`;
+export function buildOgImageUrl(user: string, score: number | null, percentage: number): string {
+  return `${SITE_URL}/share/${encodeURIComponent(user)}/og.png?${shareQuery(score, percentage)}`;
 }
 
 /** Builds the crawler-facing OGP/Twitter-card HTML for `user`'s share card. */
-export function buildOgpHtml(user: string, score: number, percentage: number): string {
+export function buildOgpHtml(user: string, score: number | null, percentage: number): string {
   const title = `${user} の草を ${percentage}% 刈り取った🌱`;
-  const description = `スコア ${score.toLocaleString("en-US")} — 草崩し: GitHub の草ブロック崩し`;
+  // スコアを共有していないリンク(拡張から)では、説明文も名乗りだけにする。
+  const description =
+    score === null
+      ? "草崩し: GitHub の草ブロック崩し"
+      : `スコア ${score.toLocaleString("en-US")} — 草崩し: GitHub の草ブロック崩し`;
   const shareUrl = buildShareUrl(user, score, percentage);
   const imageUrl = buildOgImageUrl(user, score, percentage);
 

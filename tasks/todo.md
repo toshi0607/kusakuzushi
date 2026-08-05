@@ -2027,3 +2027,31 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
 フォールバックし、**ショップアイコンを削除**した。ユーザーに再アップロードを依頼して復旧
 （1532 バイト = `icons/icon-128.png` と一致を実測）。原因と再発防止は `tasks/lessons.md` と
 `.claude/skills/release-extension/SKILL.md` に記載。
+
+---
+
+## セッション: 拡張から X シェア(2026-08-05)
+
+拡張のリザルトバナーに「Xで共有」を追加した。設計判断は DESIGN.md §5「共有機能(拡張)」。
+
+### やったこと
+
+- `packages/core/src/share-link.ts` を新設し、web の `share.ts` にあった `buildShareUrl` /
+  `buildIntentUrl` を移設。拡張用に `buildHarvestIntentUrl`(率だけ)を追加 — ハッシュタグと
+  `/share/{user}` の形が 2 箇所に分かれると必ずずれる
+- `packages/core/src/harvest.ts` を新設。刈り取り率の式(web の session.ts にあった
+  `harvestedCount` + floor)を core に上げ、web と拡張が同じ式を使う
+- 拡張: バナーに `<a target="_blank" rel="noopener noreferrer">`。**権限追加なし**
+- Worker: `s` を任意にした(`parseScore` が 0 ではなく null を返す)。拡張の共有リンクは `s` を
+  持たないので、0 で埋めるとカードが「100% 刈り取ってスコア 0」と言ってしまう
+
+### 検証
+
+- `pnpm -r test`: core 70 / web 64 / extension 80 / ogp 80 すべて pass(exit 0)
+- `pnpm -r build`(tsc)exit 0。拡張バンドルに intent URL が 1 件含まれることを確認
+
+### 残タスク(ユーザー操作が必要)
+
+- **Worker のデプロイが先**(`pnpm deploy:ogp`)。これが出ていないうちに拡張から共有された
+  リンクは、カードに「スコア 0」と出る
+- 拡張の manifest バージョンを上げてストア再提出(`.claude/skills/release-extension`)

@@ -14,7 +14,8 @@ pnpm --filter @kusakuzushi/extension build
 3. 「パッケージ化されていない拡張機能を読み込む」→ `apps/extension/dist` を選択
 4. `https://github.com/{ユーザー名}` を開き、草グラフの下に出る「🎮 崩す」を押す
 5. マウスでパドルを動かし、クリックか Space で発射。破壊した日の草は実際に灰色になる
-6. 「やめる」か、他のページへ遷移すると原状復帰する
+6. 終わったら「Xで共有」で刈り取り率を投稿できる(`#草崩し`)
+7. 「やめる」か、他のページへ遷移すると原状復帰する
 
 開発中は `pnpm --filter @kusakuzushi/extension dev`(esbuild watch)。
 ビルドのたびに `chrome://extensions` で拡張のリロードが必要。
@@ -47,7 +48,7 @@ pnpm --filter @kusakuzushi/extension package
 |----------|------|
 | `src/main.ts` | エントリポイント。副作用を持つ唯一のモジュール(`autoMount` を呼ぶだけ) |
 | `src/grass-dom.ts` | **GitHub の DOM を知る唯一のファイル**。セレクタ・セル読み取り・幾何計測。GitHub のマークアップが変わったらここだけ直す |
-| `src/adapter.ts` | 草セル → core の `ContributionGrid` / `GameConfig`。DOM に contribution 数が無いため `count = level²` を投入する |
+| `src/adapter.ts` | 草セル → core の `ContributionGrid` / `GameConfig`。DOM に contribution 数が無いため `count = level²` を投入する(この合成値ゆえに X 共有はスコアを載せず刈り取り率だけを言う — DESIGN.md §5) |
 | `src/overlay.ts` | 草の上に重ねる透過キャンバス |
 | `src/renderer.ts` | 拡張専用の透過レンダラ(ボール・パドル・落下アイテム・パーティクル・HUD だけ描く) |
 | `src/td-paint.ts` | 実 `td` の背景差し替えと原状復帰 |

@@ -70,8 +70,8 @@ export type OgImageRender = {
   gridIncluded: boolean;
 };
 
-/** Renders the 1200x630 OGP PNG for `user`'s share card. */
-export async function renderOgImage(user: string, score: number, percentage: number): Promise<OgImageRender> {
+/** Renders the 1200x630 OGP PNG for `user`'s share card. `score` may be null — see `OgImageHtmlInput`. */
+export async function renderOgImage(user: string, score: number | null, percentage: number): Promise<OgImageRender> {
   // 100% は「1 個も残さず壊した」= clear と同値(刈り取り率は floor なので、
   // 1 ブロックでも残れば 99% 以下になる)。グリッドも文もこの 1 つの事実から
   // 決まる — 更地だと書いた下に生きた草を並べない(DESIGN-VISUAL §8)。

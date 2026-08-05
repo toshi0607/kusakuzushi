@@ -94,6 +94,8 @@ type ContributionGrid = {
 2. **リザルト画像**: ゲーム canvas をそのまま `toBlob()` → ダウンロード / Web Share API(モバイル)。サーバー不要
 3. **動的OGP**(Phase 2): `workers/ogp` で `og:image` を生成(satori / workers-og)。
    共有URLをWorker経由(`/share/{user}?s=…`)にし、クローラーにはOGP付きHTML、人間には本体へリダイレクト
+   `s`(スコア)は**任意**。無いリンク(= 拡張からの共有、§5)ではカードのスコア行を出さない —
+   0 で埋めると「100% 刈り取ってスコア 0」になる
 
 MVP は 1+2 まで。3 はリンクの見栄えが欲しくなったら。
 
@@ -107,6 +109,23 @@ MVP は 1+2 まで。3 はリンクの見栄えが欲しくなったら。
 - SPA遷移(turbo)対応: `turbo:load` イベントでボタン再注入
 
 リスク: GitHub の DOM 変更で壊れる(宿命)。セレクタとグリッド構築を1ファイルに隔離して修理しやすくする。
+
+### 共有機能(拡張)
+
+リザルトバナーに「Xで共有」。ページ内の `<a target="_blank">` なので、権限は増えない(content script のみのまま)。
+
+**載せるのは刈り取り率だけ**で、スコアと contributions 数は出さない。GitHub の DOM は日ごとの
+contribution 数を持たないため、拡張のブロックには `count = level²` を合成している(`adapter.ts`)。
+つまり拡張のスコアは実 contributions から出る web のスコアと桁が違い、`ContributionGrid.total` も
+contributions 数ではない。同じ `#草崩し` に比較できない数字が 2 種類流れるほうが、率だけを言うより悪い。
+率は分子・分母が同じ重みなので、両版で同じ意味を保つ。
+
+文面と共有 URL の組み立ては web と共有する(`packages/core/src/share-link.ts`)— ハッシュタグと
+`/share/{user}` の形を 1 箇所に閉じるため。
+
+「画像を保存」は移植していない: オーバーレイ canvas は透明で、ブロックは実 `td` が描いている
+(`td-paint.ts`)ので canvas を撮っても盤面が写らない。DOM ごと撮るには `chrome.tabs.captureVisibleTab`
+= 権限追加 + background が必要で、この機能のために払う額ではない。
 
 ## 6. 技術スタック
 

@@ -12,6 +12,17 @@ describe("buildOgImageHtml", () => {
     expect(html).toContain("kusakuzushi.toshi0607.com");
   });
 
+  it("omits the score line entirely when no score was shared", () => {
+    // #given 拡張からの共有(`s` なし)。「スコア 0」を焼き付けると、100%
+    // 刈り取ったカードに 0 点と書くことになる。
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: null, percentage: 87, gridSvgDataUri: null });
+    // #then 率と名前は残り、スコア行だけが消える
+    expect(html).not.toContain("スコア");
+    expect(html).toContain("87%");
+    expect(html).toContain('font-weight:700;">toshi0607</span>');
+  });
+
   it("uses the GitHub-dark background and accent colors", () => {
     // #given / #when
     const html = buildOgImageHtml({ user: "octocat", score: 0, percentage: 0, gridSvgDataUri: null });
