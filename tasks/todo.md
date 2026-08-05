@@ -2065,6 +2065,10 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
   スコアを名乗らず、og:image / og:url に `s=` を混ぜない)
   - 実コード(`ogp-page.ts` をバンドル)を返すスタブに対して、期待挙動で exit 0、
     「s が無ければ 0 に潰す」旧挙動を再現したスタブで exit 1 になることを実測
+  - **レビュー(#64)で穴を指摘された**: 「/share/ を含む content が 1 つでもあれば OK」だと、
+    og:url だけが消えても og:image が残っていて通る。og:image / og:url / twitter:image を
+    1 つずつ「あること」「`s` を持たないこと」で見るように直した。og:url 欠落・
+    twitter:image 欠落のスタブでそれぞれ exit 1 を実測
   - このサンドボックスからは `kusakuzushi.toshi0607.com` に出られない(プロキシが 403)ため、
     本番での確認は次のデプロイの `verify:ogp` に委ねる
 - 拡張 1.1.0 → **1.2.0**。`kusakuzushi-extension-1.2.0.zip`(12 ファイル、ルートに manifest.json、
