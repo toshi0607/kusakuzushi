@@ -2055,3 +2055,23 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
 - **Worker のデプロイが先**(`pnpm deploy:ogp`)。これが出ていないうちに拡張から共有された
   リンクは、カードに「スコア 0」と出る
 - 拡張の manifest バージョンを上げてストア再提出(`.claude/skills/release-extension`)
+
+### 結果(2026-08-05、マージ後)
+
+- PR #63 を main にマージ(`afa65b5`)。CI の deploy-ogp / deploy-web が自動で走り、
+  `deploy:ogp` → `verify:ogp` ともに success(run 31018041955)。**Worker の手動デプロイは不要だった**
+- ただし `verify:ogp` が叩いていたのは `?s=1234&p=56` だけで、**新しい「s なし」の経路は本番で
+  未検証**だった。`tools/verify-worker.mjs` に 4 つ目のチェックを足した(s なしの共有リンクが
+  スコアを名乗らず、og:image / og:url に `s=` を混ぜない)
+  - 実コード(`ogp-page.ts` をバンドル)を返すスタブに対して、期待挙動で exit 0、
+    「s が無ければ 0 に潰す」旧挙動を再現したスタブで exit 1 になることを実測
+  - **レビュー(#64)で穴を指摘された**: 「/share/ を含む content が 1 つでもあれば OK」だと、
+    og:url だけが消えても og:image が残っていて通る。og:image / og:url / twitter:image を
+    1 つずつ「あること」「`s` を持たないこと」で見るように直した。og:url 欠落・
+    twitter:image 欠落のスタブでそれぞれ exit 1 を実測
+  - このサンドボックスからは `kusakuzushi.toshi0607.com` に出られない(プロキシが 403)ため、
+    本番での確認は次のデプロイの `verify:ogp` に委ねる
+- 拡張 1.1.0 → **1.2.0**。`kusakuzushi-extension-1.2.0.zip`(12 ファイル、ルートに manifest.json、
+  `_locales/{en,ja}` あり)を `unzip -l` で実測
+- **掲載スクリーンショットの撮り直しは不要**。4 枚はボタン / ready / プレイ中 / アイテムで、
+  リザルトバナー(今回ボタンが増えた場所)は写っていない

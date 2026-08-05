@@ -8,13 +8,17 @@
  *     これに化けた)。つまり *200 が返ってくること* は route の証明にならない
  *   - route が生きていても、UA 判定や画像生成だけが壊れることがある
  *
- * なので観測できる 3 つの分岐をそれぞれ叩く:
+ * なので観測できる 4 つの分岐をそれぞれ叩く:
  *
  *   1. 非クローラー UA → 302(人間はアプリ本体へ飛ばされる)
  *   2. クローラー UA   → 200 かつ og:image を含む HTML
  *   3. og.png          → 200 かつ image/png
+ *   4. `s` を持たない共有リンク(= 拡張から。DESIGN.md §5)→ スコアを一切名乗らない
  *
  * 1 が 200 なら Pages に食われている(= route が外れた)と一発で分かる。
+ * 4 は「`s` が無ければスコア行を出さない」を本番で確かめる。ここが壊れると、
+ * 拡張から共有されたリンクが「100% 刈り取ってスコア 0」のカードを配る。
+ * og:image / og:url / twitter:image は 1 つずつ見る(まとめると片方が消えても通る)。
  *
  *   node tools/verify-worker.mjs [--origin https://kusakuzushi.toshi0607.com]
  *                                [--user toshi0607] [--attempts 10] [--interval 6000]
@@ -68,8 +72,68 @@ function fetchAs(url, userAgent, redirect = "manual") {
   });
 }
 
+/**
+ * `s` なしのカードで、1 つずつ「あること」と「s を持たないこと」を見るタグ。
+ *
+ * まとめて「/share/ を指す content が 1 つでもあれば OK」にしてはいけない:
+ * og:url だけが落ちても og:image が残っていれば通ってしまい、**タグが消えた**
+ * という壊れ方を検知できない。X のカードは twitter:image を見るので、これも同列。
+ */
+const SCORELESS_CARD_TAGS = ["og:image", "og:url", "twitter:image"];
+
+/**
+ * `<meta property="og:image" content="…">` / `<meta name="twitter:image" content="…">` の
+ * content を取り出す。ogp-page.ts が出す形(属性は property|name → content の順)に合わせてある。
+ */
+function readMetaContent(html, key) {
+  const pattern = new RegExp(`<meta\\s+(?:property|name)="${key}"\\s+content="([^"]*)"`);
+  return html.match(pattern)?.[1] ?? null;
+}
+
+/**
+ * 拡張の共有リンク(`p` だけ)がスコアを名乗らないことを見る。駄目なら理由の文字列。
+ *
+ * 見るのはカード HTML 側: 本文がスコアを名乗らないことと、クローラーが辿る
+ * og:image / og:url / twitter:image が**それぞれ存在して** `s` を持たないこと。
+ * PNG 本体の文字は取り出せないので、スコアを落としているかは URL で見る
+ * (og.png?s= が付いていればカードにスコアが焼かれる)。
+ */
+async function checkScorelessShare(url) {
+  const response = await fetchAs(url, CRAWLER_USER_AGENT);
+  if (response.status !== 200) {
+    return `s なしの共有リンクが HTTP ${response.status}`;
+  }
+  const html = await response.text();
+  if (html.includes("スコア")) {
+    return "s を持たない共有リンクのカードがスコアを名乗っている";
+  }
+
+  for (const key of SCORELESS_CARD_TAGS) {
+    const content = readMetaContent(html, key);
+    if (content === null) {
+      return `s なしの共有リンクの HTML に ${key} が無い`;
+    }
+    if (!content.includes("/share/")) {
+      return `${key} が /share/ を指していない: ${content}`;
+    }
+    // content は HTML エスケープ済み(`&` → `&amp;`)。そのまま URL に食わせると
+    // クエリが `amp;p` に化けて `s` の有無を読み違えるので、先に戻す
+    let parsed;
+    try {
+      parsed = new URL(content.replaceAll("&amp;", "&"));
+    } catch {
+      return `${key} が URL として読めない: ${content}`;
+    }
+    if (parsed.searchParams.has("s")) {
+      return `s なしのはずの共有リンクの ${key} に s= が混じっている: ${content}`;
+    }
+  }
+
+  return null;
+}
+
 /** 全部通れば null、駄目なら理由の文字列を返す。 */
-async function checkOnce(shareUrl, imageUrl) {
+async function checkOnce(shareUrl, imageUrl, scorelessShareUrl) {
   const human = await fetchAs(shareUrl, HUMAN_USER_AGENT);
   if (human.status !== 302) {
     // 200 なら Pages の「存在しないパスに index.html」に食われている疑いが濃い
@@ -96,7 +160,7 @@ async function checkOnce(shareUrl, imageUrl) {
     return `og.png の content-type が ${contentType || "(無し)"}`;
   }
 
-  return null;
+  return await checkScorelessShare(scorelessShareUrl);
 }
 
 async function main() {
@@ -104,13 +168,15 @@ async function main() {
   const user = encodeURIComponent(options.user);
   const shareUrl = `${options.origin}/share/${user}?s=1234&p=56`;
   const imageUrl = `${options.origin}/share/${user}/og.png?s=1234&p=56`;
+  /** 拡張が作る形の共有リンク(スコアを載せない)。 */
+  const scorelessShareUrl = `${options.origin}/share/${user}?p=56`;
 
   console.log(`verify-worker: ${shareUrl}`);
 
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
     let reason;
     try {
-      reason = await checkOnce(shareUrl, imageUrl);
+      reason = await checkOnce(shareUrl, imageUrl, scorelessShareUrl);
     } catch (error) {
       // 伝播待ちの最中は DNS/TLS/ECONNRESET が単発で起きる。ここで例外を投げると
       // リトライが 1 度も回らずに赤くなる(= デプロイは済んでいるのに人間が呼ばれる)
@@ -119,6 +185,7 @@ async function main() {
     if (reason === null) {
       console.log(`✅ /share/* が Worker に届いている(${attempt} 回目で成功)`);
       console.log("   人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png");
+      console.log("   s なしの共有リンク(拡張)→ スコアを名乗らず、s 付き URL も広告しない");
       return;
     }
     console.log(`  [${attempt}/${options.attempts}] ${reason}`);
