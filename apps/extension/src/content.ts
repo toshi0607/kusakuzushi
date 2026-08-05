@@ -8,10 +8,12 @@
 
 import type { ContributionGrid, GameConfig, GameState } from "@kusakuzushi/core";
 import {
+  buildHarvestIntentUrl,
   clearMessageFor,
   DARK_THEME,
   DEFAULT_CONFIG,
   Game,
+  harvestPercentage,
   LIGHT_THEME,
   MARQUEE_COLOR,
   MAX_FRAME_DT,
@@ -409,6 +411,10 @@ function createGameRuntime(
     const actions = doc.createElement("div");
     actions.style.display = "flex";
     actions.style.gap = "8px";
+    // 盤面の幅は見えている週の数で決まる(狭い窓では数百 px しかない)。3 つ
+    // 並べたボタンがはみ出すより折り返すほうがいい。
+    actions.style.flexWrap = "wrap";
+    actions.style.justifyContent = "center";
 
     const retryButton = doc.createElement("button");
     retryButton.type = "button";
@@ -427,6 +433,18 @@ function createGameRuntime(
       onFinished(false);
     });
     actions.appendChild(quitButton);
+
+    // 共有は最後。「もう一回 / やめる」は狭いバナーの同じ位置に居続けるほうが
+    // 押し間違えない。ページ内の普通のリンクなので、`tabs` 権限も background も
+    // 要らない(manifest は content script だけのまま)。
+    const shareLink = doc.createElement("a");
+    shareLink.className = "btn btn-sm";
+    // 率だけを共有する — スコアを載せない理由は core の `buildHarvestIntentUrl`。
+    shareLink.href = buildHarvestIntentUrl(grid.username, harvestPercentage(game, grid.total));
+    shareLink.target = "_blank";
+    shareLink.rel = "noopener noreferrer";
+    shareLink.textContent = "Xで共有";
+    actions.appendChild(shareLink);
 
     banner.appendChild(actions);
     bannerEl = banner;

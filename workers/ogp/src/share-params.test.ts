@@ -44,22 +44,22 @@ describe("parseScore", () => {
     expect(parseScore("0")).toBe(0);
   });
 
-  it("falls back to 0 when missing", () => {
-    // #given no `s` param
+  it("is null when missing, so the card omits the score line instead of showing 0", () => {
+    // #given no `s` param — 拡張からの共有リンクがこれ
     // #when / #then
-    expect(parseScore(null)).toBe(0);
+    expect(parseScore(null)).toBeNull();
   });
 
-  it("falls back to 0 for a negative number", () => {
-    expect(parseScore("-5")).toBe(0);
+  it("is null for a negative number", () => {
+    expect(parseScore("-5")).toBeNull();
   });
 
-  it("falls back to 0 for a non-numeric string", () => {
-    expect(parseScore("abc")).toBe(0);
+  it("is null for a non-numeric string", () => {
+    expect(parseScore("abc")).toBeNull();
   });
 
-  it("falls back to 0 for a decimal string", () => {
-    expect(parseScore("12.5")).toBe(0);
+  it("is null for a decimal string", () => {
+    expect(parseScore("12.5")).toBeNull();
   });
 });
 
@@ -104,8 +104,17 @@ describe("parseShareParams", () => {
     const search = new URLSearchParams();
     // #when
     const params = parseShareParams("toshi0607", search);
+    // #then スコアは「共有されていない」(null)、率は 0
+    expect(params).toEqual({ user: "toshi0607", score: null, percentage: 0 });
+  });
+
+  it("keeps the percentage when only `s` is absent (the extension's share link)", () => {
+    // #given 拡張の共有リンク: 率だけを載せる
+    const search = new URLSearchParams({ p: "87" });
+    // #when
+    const params = parseShareParams("toshi0607", search);
     // #then
-    expect(params).toEqual({ user: "toshi0607", score: 0, percentage: 0 });
+    expect(params).toEqual({ user: "toshi0607", score: null, percentage: 87 });
   });
 
   it("returns null for an invalid username", () => {

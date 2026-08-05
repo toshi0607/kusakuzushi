@@ -433,6 +433,80 @@ describe("createGameRuntime (via mount)", () => {
     });
   });
 
+  describe("X share link", () => {
+    /** Plays the one-brick board to its clear and returns the finished banner. */
+    function playToBanner(): HTMLElement {
+      session = mount(document, window);
+      launchButton().click();
+      const canvas = document.querySelector("canvas");
+      if (!canvas) throw new Error("canvas missing after starting the game");
+      canvas.dispatchEvent(new MouseEvent("click"));
+
+      let now = window.performance.now();
+      let banner: HTMLElement | null = null;
+      for (let i = 0; i < 60 && !banner; i++) {
+        now += 100;
+        raf.drain(now);
+        banner = document.getElementById(BANNER_ID);
+      }
+      if (!banner) throw new Error("the round never finished");
+      return banner;
+    }
+
+    /** The banner's share anchor. */
+    function shareLink(banner: HTMLElement): HTMLAnchorElement {
+      const link = banner.querySelector("a");
+      if (!link) throw new Error("the banner has no share link");
+      return link;
+    }
+
+    it("posts the profile's username and the harvest percentage, tagged #草崩し", () => {
+      // #given the one-brick board played to its clear on github.com/toshi0607
+      buildSyntheticGrass({ row: 4, col: 3 });
+
+      // #when
+      const link = shareLink(playToBanner());
+
+      // #then
+      const intent = new URL(link.href);
+      expect(intent.origin + intent.pathname).toBe("https://x.com/intent/post");
+      expect(intent.searchParams.get("text")).toBe("toshi0607 の草を GitHub 上で 100% 刈り取った🌱 #草崩し");
+      expect(intent.searchParams.get("url")).toBe("https://kusakuzushi.toshi0607.com/share/toshi0607?p=100");
+      expect(link.textContent).toBe("Xで共有");
+    });
+
+    it("opens in a new tab without handing the opener to x.com", () => {
+      // #given / #when
+      buildSyntheticGrass({ row: 4, col: 3 });
+      const link = shareLink(playToBanner());
+
+      // #then leaving GitHub mid-page would lose the board the player is
+      // looking at, and `noopener` keeps the new tab off `window.opener`
+      expect(link.target).toBe("_blank");
+      expect(link.rel).toBe("noopener noreferrer");
+    });
+
+    it("shares no score, since the extension's is level² and the web app's is not", () => {
+      // #given / #when
+      buildSyntheticGrass({ row: 4, col: 3 });
+      const link = shareLink(playToBanner());
+
+      // #then neither the text nor the card URL carries one (adapter.ts)
+      expect(link.href).not.toContain("s=");
+      expect(new URL(link.href).searchParams.get("text")).not.toContain("スコア");
+    });
+
+    it("leaves もう一回 / やめる where they were, so the new button can't be mis-clicked for them", () => {
+      // #given / #when
+      buildSyntheticGrass({ row: 4, col: 3 });
+      const banner = playToBanner();
+
+      // #then
+      const labels = [...banner.querySelectorAll("button")].map((b) => b.textContent);
+      expect(labels).toEqual(["もう一回", "やめる"]);
+    });
+  });
+
   describe("teardown", () => {
     it("stop() removes the canvas, cancels the pending rAF, and restores every painted td's original style", () => {
       // #given a game destroyed its one brick, so exactly one td was repainted

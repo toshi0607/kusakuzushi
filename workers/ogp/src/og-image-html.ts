@@ -14,7 +14,12 @@ const SITE_LABEL = "kusakuzushi.toshi0607.com";
 
 export type OgImageHtmlInput = {
   user: string;
-  score: number;
+  /**
+   * null のときはスコア行を描かない。拡張からの共有は `s` を持たない
+   * (apps/extension/src/adapter.ts — スコアの桁が web と揃わない)ので、
+   * 0 を焼き付けるより行そのものを落とす。
+   */
+  score: number | null;
   percentage: number;
   /** A `data:image/svg+xml` URI, or null when the contribution grid could not be fetched. */
   gridSvgDataUri: string | null;
@@ -28,7 +33,6 @@ export type OgImageHtmlInput = {
 /** Builds the OGP image's satori HTML. `gridSvgDataUri` may be null (fetch failure fallback: no grid). */
 export function buildOgImageHtml(input: OgImageHtmlInput): string {
   const user = escapeHtml(input.user);
-  const score = escapeHtml(input.score.toLocaleString("en-US"));
   const percentage = escapeHtml(String(input.percentage));
 
   // 53 weeks render at 739x95; scale proportionally to the 1088px content width.
@@ -54,11 +58,16 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   // No HTML entities (&nbsp; etc.): workers-og's HTMLRewriter parser passes
   // them to satori as literal text. Spacing between spans uses margins, and
   // spaces inside a text node are plain U+0020.
+  const scoreLine =
+    input.score === null
+      ? ""
+      : `<div style="display:flex; font-size:${input.taunt ? 30 : 40}px; color:${ACCENT_COLOR}; margin-top:20px;">スコア ${escapeHtml(input.score.toLocaleString("en-US"))}</div>`;
+
   return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
   <div style="display:flex;">${gridSection}</div>
   <div style="display:flex; flex-direction:column; flex:1; justify-content:center;">
     ${resultLine}
-    <div style="display:flex; font-size:${input.taunt ? 30 : 40}px; color:${ACCENT_COLOR}; margin-top:20px;">スコア ${score}</div>
+    ${scoreLine}
   </div>
   <div style="display:flex; justify-content:flex-end;">
     <span style="display:flex; font-size:22px; color:${TEXT_COLOR};">${SITE_LABEL}</span>

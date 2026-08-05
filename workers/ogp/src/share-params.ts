@@ -15,7 +15,8 @@ const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 
 export type ShareParams = {
   user: string;
-  score: number;
+  /** null = このリンクはスコアを共有していない(`parseScore` 参照)。 */
+  score: number | null;
   percentage: number;
 };
 
@@ -24,14 +25,21 @@ export function isValidGithubUsername(user: string): boolean {
   return GITHUB_USERNAME_PATTERN.test(user);
 }
 
-/** Parses the `s` (score) query param: any non-negative integer; missing or malformed falls back to 0. */
-export function parseScore(raw: string | null): number {
+/**
+ * Parses the `s` (score) query param: any non-negative integer.
+ *
+ * 欠けている / 壊れているときは 0 ではなく null を返し、カードはスコア行その
+ * ものを出さない。拡張の共有リンクは `s` を持たない(拡張のスコアは web と桁が
+ * 違うので載せない — apps/extension/src/adapter.ts)ので、0 で埋めると
+ * 「100% 刈り取ってスコア 0」という嘘のカードになる。
+ */
+export function parseScore(raw: string | null): number | null {
   if (raw === null || !NON_NEGATIVE_INTEGER_PATTERN.test(raw)) {
-    return 0;
+    return null;
   }
 
   const value = Number.parseInt(raw, 10);
-  return Number.isSafeInteger(value) ? value : 0;
+  return Number.isSafeInteger(value) ? value : null;
 }
 
 /** Parses the `p` (percentage) query param and clamps it to 0-100; missing or malformed falls back to 0. */

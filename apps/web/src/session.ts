@@ -5,10 +5,18 @@
  */
 
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
-import { clearMessageFor, DEFAULT_CONFIG, Game, MAX_FRAME_DT, render } from "@kusakuzushi/core";
+import {
+  buildIntentUrl,
+  clearMessageFor,
+  DEFAULT_CONFIG,
+  Game,
+  harvestPercentage,
+  MAX_FRAME_DT,
+  render,
+} from "@kusakuzushi/core";
 
 import { createPaddleRail } from "./paddle-rail";
-import { buildIntentUrl, saveResultImage } from "./share";
+import { saveResultImage } from "./share";
 import { watchTheme } from "./theme";
 
 /** Paddle speed, in px/sec, while an arrow key is held. */
@@ -23,15 +31,6 @@ export type SessionHandlers = {
   /** Invoked when the "もう一回" button is clicked. */
   onRestart: () => void;
 };
-
-/** Sum of `count` over bricks the player has already destroyed. */
-function harvestedCount(game: Game): number {
-  let sum = 0;
-  for (const brick of game.liveBricks) {
-    if (!brick.alive) sum += brick.count;
-  }
-  return sum;
-}
 
 export function createSession(
   container: HTMLElement,
@@ -214,7 +213,7 @@ export function createSession(
       result.appendChild(taunt);
     }
 
-    const pct = grid.total > 0 ? Math.floor((harvestedCount(game) / grid.total) * 100) : 0;
+    const pct = harvestPercentage(game, grid.total);
 
     const statGrid = document.createElement("div");
     statGrid.className = "result-stat-grid";

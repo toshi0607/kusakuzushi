@@ -55,11 +55,30 @@ describe("buildOgpHtml", () => {
     expect(html).toContain("スコア 1,234,567");
   });
 
-  it("renders 0% and score 0 when both are absent (defaulted upstream)", () => {
+  it("renders 0% and score 0 when both are zero", () => {
     // #given / #when
     const html = buildOgpHtml("octocat", 0, 0);
     // #then
     expect(html).toContain('content="octocat の草を 0% 刈り取った🌱"');
     expect(html).toContain("スコア 0");
+  });
+
+  it("says nothing about a score when the link doesn't carry one", () => {
+    // #given / #when 拡張からの共有(`s` なし)
+    const html = buildOgpHtml("octocat", null, 87);
+    // #then タイトルは率だけで成立し、説明文にスコアは出ない
+    expect(html).toContain('content="octocat の草を 87% 刈り取った🌱"');
+    expect(html).not.toContain("スコア");
+    expect(html).toContain('content="草崩し: GitHub の草ブロック崩し"');
+  });
+
+  it("drops `s` from the og:url and og:image it advertises when there is no score", () => {
+    // #given / #when
+    const html = buildOgpHtml("octocat", null, 87);
+    // #then クローラーが辿る先も `s` なしのまま(0 点のカードを作らせない)
+    expect(html).toContain('<meta property="og:url" content="https://kusakuzushi.toshi0607.com/share/octocat?p=87" />');
+    expect(html).toContain(
+      '<meta property="og:image" content="https://kusakuzushi.toshi0607.com/share/octocat/og.png?p=87" />',
+    );
   });
 });
