@@ -11,6 +11,11 @@ export type ContributionCell = {
   level: 0 | 1 | 2 | 3 | 4;
 };
 
+/** The contribution-grid renderer supports at most 53 weeks of 7 days. */
+const MAX_CONTRIBUTION_DAYS = 53 * 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -37,6 +42,19 @@ function parseCell(value: unknown): ContributionCell {
   return { date, count, level: level as 0 | 1 | 2 | 3 | 4 };
 }
 
+function parseDate(date: string): number {
+  if (!ISO_DATE.test(date)) {
+    throw new Error("invalid contribution cell: date");
+  }
+
+  const timestamp = Date.parse(`${date}T00:00:00.000Z`);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date) {
+    throw new Error("invalid contribution cell: date");
+  }
+
+  return timestamp;
+}
+
 /** Converts a jogruber `/v4/{user}` JSON payload into `ContributionCell[]`. Throws on any structural mismatch. */
 export function parseJogruberContributions(json: unknown): ContributionCell[] {
   if (!isRecord(json)) {
@@ -47,6 +65,24 @@ export function parseJogruberContributions(json: unknown): ContributionCell[] {
   if (!Array.isArray(contributions)) {
     throw new Error("invalid jogruber response: contributions");
   }
+  if (contributions.length > MAX_CONTRIBUTION_DAYS) {
+    throw new Error("invalid jogruber response: contributions");
+  }
+  if (contributions.length > 0) {
+    const firstDate = parseDate(parseCell(contributions[0]).date);
+    if (new Date(firstDate).getUTCDay() + contributions.length > MAX_CONTRIBUTION_DAYS) {
+      throw new Error("invalid jogruber response: contributions");
+    }
+  }
 
-  return contributions.map(parseCell);
+  let previousDate: number | undefined;
+  return contributions.map((value) => {
+    const cell = parseCell(value);
+    const date = parseDate(cell.date);
+    if (previousDate !== undefined && date !== previousDate + DAY_MS) {
+      throw new Error("invalid contribution cell: date");
+    }
+    previousDate = date;
+    return cell;
+  });
 }
