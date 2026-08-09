@@ -11,6 +11,14 @@ const VALID_RESPONSE = {
   ],
 };
 
+function consecutiveContributions(length: number, startDate = Date.UTC(2023, 0, 1)) {
+  return Array.from({ length }, (_, index) => ({
+    date: new Date(startDate + index * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    count: 0,
+    level: 0,
+  }));
+}
+
 describe("parseContributions", () => {
   it("converts a valid jogruber payload into Cell[]", () => {
     expect(parseContributions(VALID_RESPONSE)).toEqual([
@@ -18,6 +26,48 @@ describe("parseContributions", () => {
       { date: "2024-01-02", count: 2, level: 1 },
       { date: "2024-01-03", count: 1, level: 1 },
     ]);
+  });
+
+  it("accepts a complete 53-week Sunday-aligned calendar", () => {
+    const contributions = consecutiveContributions(53 * 7);
+
+    expect(parseContributions({ total: { lastYear: 0 }, contributions })).toEqual(contributions);
+  });
+
+  it("rejects a 371-day calendar starting on Monday because it folds into 54 weeks", () => {
+    expect(() =>
+      parseContributions({ total: { lastYear: 0 }, contributions: consecutiveContributions(53 * 7, Date.UTC(2023, 0, 2)) }),
+    ).toThrow();
+  });
+
+  it("accepts the largest Monday-starting calendar that folds into 53 weeks", () => {
+    const contributions = consecutiveContributions(53 * 7 - 1, Date.UTC(2023, 0, 2));
+
+    expect(parseContributions({ total: { lastYear: 0 }, contributions })).toEqual(contributions);
+  });
+
+  it("returns an empty array when contributions is empty", () => {
+    expect(parseContributions({ total: { lastYear: 0 }, contributions: [] })).toEqual([]);
+  });
+
+  it("throws when contributions exceed the 53-week calendar maximum", () => {
+    expect(() => parseContributions({ total: { lastYear: 0 }, contributions: consecutiveContributions(53 * 7 + 1) })).toThrow();
+  });
+
+  it("throws when contribution dates are malformed, duplicated, or not consecutive", () => {
+    for (const contributions of [
+      [{ date: "2024-02-30", count: 0, level: 0 }],
+      [
+        { date: "2024-01-01", count: 0, level: 0 },
+        { date: "2024-01-01", count: 0, level: 0 },
+      ],
+      [
+        { date: "2024-01-01", count: 0, level: 0 },
+        { date: "2024-01-03", count: 0, level: 0 },
+      ],
+    ]) {
+      expect(() => parseContributions({ total: { lastYear: 0 }, contributions })).toThrow();
+    }
   });
 
   it("throws when the payload is not an object", () => {
@@ -159,6 +209,31 @@ describe("fetchGrid", () => {
       }),
     );
     await expect(fetchGrid("someone")).rejects.toBeInstanceOf(ContributionFetchError);
+  });
+
+  it("throws ContributionFetchError when Content-Length exceeds the response limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(VALID_RESPONSE), { headers: { "content-length": String(64 * 1024 + 1) } })),
+    );
+
+    await expect(fetchGrid("someone")).rejects.toBeInstanceOf(ContributionFetchError);
+  });
+
+  it("cancels a header-less response that exceeds the response limit", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024 + 1));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
+
+    await expect(fetchGrid("someone")).rejects.toBeInstanceOf(ContributionFetchError);
+    expect(cancelled).toBe(true);
   });
 
   it("resolves to a ContributionGrid on a valid response", async () => {

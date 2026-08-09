@@ -5,3 +5,9 @@ compatibility_date = "2026-07-01"
 routes = [
   { pattern = "kusakuzushi.toshi0607.com/share/*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" }
 ]
+
+# namespace_id must be unique within this Cloudflare account.
+[[ratelimits]]
+name = "OGP_RENDER_RATE_LIMITER"
+namespace_id = "46802917"
+simple = { limit = 30, period = 60 }

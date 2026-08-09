@@ -2075,3 +2075,51 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
   `_locales/{en,ja}` あり)を `unzip -l` で実測
 - **掲載スクリーンショットの撮り直しは不要**。4 枚はボタン / ready / プレイ中 / アイテムで、
   リザルトバナー(今回ボタンが増えた場所)は写っていない
+
+## セキュリティスキャン修正 (2026-08-08)
+
+対象スキャン: `ab802aa9-68ad-4c4c-b43a-f82326f121c0`。実装は `gpt-5.6-terra` ワーカーに分割し、主エージェントが統合レビューと最終検証を行う。
+
+### Patch contract
+
+| Finding | 攻撃者入力 / 前提 | 守る不変条件 | 維持する正常系 | 最小の強制境界 |
+|---------|-------------------|--------------|----------------|----------------|
+| OGP cache miss amplification | 公開 `/share/{user}/og.png` の query/method と同時リクエスト | 同じ正規化済みカードは1つの cache key と1つの in-flight render を共有する | 正常な `s` / `p` の画像・短期 fallback cache | `parseShareParams` 後、`renderOgImage` 前 |
+| Unbounded contribution calendar | 固定 jogruber API の悪性・破損レスポンス | last-year calendar の件数・日付表現を downstream allocation 前に制限する | 空配列、通常年・閏年の正当な calendar | web / Worker 各レスポンス parser |
+| Dev writer body exhaustion | 到達可能な Vite dev endpoint への POST stream | body を上限内でのみ保持し、oversize/abort/error では書かない | 既存 OG-card tool の正当な PNG 保存 | `vite.config.ts` middleware の data event |
+| Dev writer unauthorized replacement | 到達可能な cross-origin/LAN POST | HTTP 到達性だけで tracked file を変更できない | 同一 dev origin の OG-card tool は保存可能 | write 前の Origin/content validation |
+
+### 実装・検証計画
+
+- [x] OGP cache key を正規化し、同一 key の concurrent render を single-flight 化。非 GET/HEAD は render しない回帰テストを追加
+- [x] web / Worker の contribution parser に calendar 上限と厳密な日付検証を追加。最大正常系と oversize/invalid date のテストを追加
+- [x] Vite writer に Origin、`image/png`、PNG signature、body size、abort/error のガードを追加。実 middleware 境界のテストを追加
+- [x] 主エージェントが差分の root-control、正常系互換、別 query/method/content-type/stream 迂回をレビュー
+- [x] `pnpm --filter @kusakuzushi/ogp test && pnpm --filter @kusakuzushi/ogp build`
+- [x] `pnpm --filter @kusakuzushi/web test && pnpm --filter @kusakuzushi/web build`
+- [x] `pnpm -r test && pnpm -r build`
+
+### Review / decision log
+
+- OGP は正規化 GET cache key、同一 isolate の admission/render/cache-write single-flight、cache miss の Cloudflare RateLimit (`30/60s/location`) を組み合わせた。RateLimit は固定 aggregate key を使い、攻撃者が user/query を変えて制限を分割できないようにした。cache hit と既存 in-flight は token を消費しない。
+- 主レビューで同時 miss が limiter token を複数消費する競合を発見し、admission 自体を single-flight 化してから再検証した。
+- Wrangler dry-run で `routes` が `ratelimits[0]` 配下に誤解釈される TOML 順序を発見。root-level `routes` を table より前へ移し、Wrangler 4.120.0 で設定警告なし・RateLimit binding 認識を確認した。
+- contribution は response body を 64 KiB、配列を 371 cells に制限し、厳密な実在日付・UTC 連続性・padding 後 53週以内を web/Worker 両境界で検証する。上流 `y=last` の実レスポンスが Sunday 始まり 371 cells、上流実装が GitHub の既定 contribution table を scrape することを確認し、53週契約を維持した。
+- dev writer は loopback + Vite same-origin、PNG content type/signature、5 MiB streaming 上限を write 前に強制する。oversize/abort/error は buffer を解放して書き込まない。実 Vite server でも不正 PNG が 422 となり `public/og.png` の SHA-256 が不変であることを確認した。
+- 独立レビューの最終結果は actionable finding なし。残余不確実性は Cloudflare account 内 `namespace_id` の一意性、実 edge の permissive/eventually-consistent RateLimit/Cache/HEAD 挙動、将来の上流 calendar 契約変更。
+- 最新 `origin/main` への rebase 後の最終検証: targeted OGP 30/30、targeted web 49/49、workspace 全体 344/344 tests。OGP/web/全 workspace build、`git diff --check`、Wrangler dry-run はすべて成功。
+
+### PR #65 レビュー修正 (2026-08-09)
+
+- [x] RateLimit binding の reject を捕捉し、`no-store` の controlled 503 を返す。失敗をログに残し、同一 admission の cleanup と次回 retry をテストする
+- [x] OGP cache key の username だけを lowercase 化し、表示 casing を維持したまま大小文字 variant を同一 cache/single-flight に集約する
+- [x] 64 KiB response parser と contribution calendar validator の複製箇所に相互参照コメントを置き、変更時の同期対象を明示する
+- [x] dev writer の deprecated `aborted` API を `close` + `request.complete` に置き換え、正常完了と中断時の非書き込みを維持する
+- [x] targeted/full tests、build、Wrangler dry-run、独立レビューを通し、同一PRへpushする
+
+#### Decision log
+
+- RateLimit障害は fail-closed を選ぶ。fail-open はbinding設定漏れが恒常化した場合に元のcache-miss増幅を再び無制限にするため、公開OG画像の一時的な503よりセキュリティ境界の維持を優先する。
+- validatorの共通package化は、browser/Worker固有のResponse・error型と既存bundle境界を広げる。今回のdrift対策には相互参照コメントが最小で、web/Workerの対称テストを機械的な裏付けとして維持する。
+- 独立レビューで、同一admissionの失敗を各waiterが個別に記録するログ増幅を発見。共有promiseの生成時に1回だけ記録してrethrowし、全waiterはcontrolled 503へ変換する形に修正した。
+- 最終検証: index 15/15、targeted OGP 32/32、targeted web 49/49、workspace全体346/346 tests。全workspace build、Wrangler dry-run、diff checkは成功し、独立レビューのblockerは0件。

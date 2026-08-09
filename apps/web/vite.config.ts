@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+import { createOgCardWriterForTargets, OG_CARD_MAX_BYTES } from "./tools/og-card-writer";
 
 const CARD_SAVE_PATH = "/__save-card";
 
@@ -28,35 +29,19 @@ function cardWriter(): Plugin {
     name: "kusakuzushi:card-writer",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use(CARD_SAVE_PATH, (request, response) => {
-        if (request.method !== "POST") {
-          response.statusCode = 405;
-          response.end("POST only");
-          return;
-        }
-
-        const target = new URL(request.url ?? "", "http://localhost").searchParams.get("target");
-        const output = target === null ? undefined : CARD_OUTPUTS[target];
-        if (output === undefined) {
-          response.statusCode = 400;
-          response.end(`unknown target: ${String(target)}`);
-          return;
-        }
-
-        const chunks: Buffer[] = [];
-        request.on("data", (chunk: Buffer) => chunks.push(chunk));
-        request.on("end", () => {
-          try {
-            mkdirSync(dirname(output), { recursive: true });
-            writeFileSync(output, Buffer.concat(chunks));
-            response.statusCode = 200;
-            response.end(output);
-          } catch (error) {
-            response.statusCode = 500;
-            response.end(String(error));
-          }
-        });
-      });
+      server.middlewares.use(
+        CARD_SAVE_PATH,
+        createOgCardWriterForTargets({
+          outputs: CARD_OUTPUTS,
+          maxBytes: OG_CARD_MAX_BYTES,
+          getAllowedOrigins: () =>
+            [...(server.resolvedUrls?.local ?? []), ...(server.resolvedUrls?.network ?? [])].map(
+              (url) => new URL(url).origin,
+            ),
+          ensureOutputDirectory: (output) => mkdirSync(dirname(output), { recursive: true }),
+          write: writeFileSync,
+        }),
+      );
     },
   };
 }

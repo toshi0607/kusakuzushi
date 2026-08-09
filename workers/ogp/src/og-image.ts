@@ -20,6 +20,67 @@ import { loadOgFonts } from "./fonts";
 const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v4";
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 630;
+// Keep this 64 KiB streaming limit aligned with apps/web/src/api.ts; separate
+// bundles retain their own error and fallback behavior.
+// A 371-cell response is normally below 32 KiB; 64 KiB leaves room for API
+// metadata while keeping an untrusted upstream body inexpensive to parse.
+const MAX_RESPONSE_BYTES = 64 * 1024;
+
+async function parseJsonResponse(response: Response): Promise<unknown> {
+  if (Number(response.headers.get("content-length")) > MAX_RESPONSE_BYTES) {
+    if (response.body) {
+      await response.body.cancel().catch(() => undefined);
+    }
+    throw new Error("jogruber response is too large");
+  }
+
+  if (!response.body) {
+    throw new Error("jogruber response has no body");
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let done = false;
+  let cancelled = false;
+  const cancel = async () => {
+    if (!cancelled) {
+      cancelled = true;
+      await reader.cancel();
+    }
+  };
+
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        done = true;
+        break;
+      }
+      size += chunk.value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await cancel().catch(() => undefined);
+        throw new Error("jogruber response is too large");
+      }
+      chunks.push(chunk.value);
+    }
+  } catch (error) {
+    if (!done) {
+      await cancel().catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 
 type FetchedGrid = {
   /** A `data:image/svg+xml` URI, or null when the grid could not be fetched. */
@@ -46,7 +107,7 @@ async function fetchGrid(user: string, emptied: boolean): Promise<FetchedGrid> {
       return NO_GRID;
     }
 
-    const json: unknown = await response.json();
+    const json = await parseJsonResponse(response);
     const contributions = parseJogruberContributions(json);
     const weeks = foldContributionsIntoWeeks(contributions);
     if (weeks.length === 0) {

@@ -8,14 +8,139 @@
 import { isCrawlerUserAgent } from "./crawler";
 import { parseShareParams } from "./share-params";
 import { buildOgpHtml } from "./ogp-page";
-import { renderOgImage } from "./og-image";
+import { renderOgImage, type OgImageRender } from "./og-image";
 
 const SITE_URL = "https://kusakuzushi.toshi0607.com";
 const SHARE_PAGE_PATTERN = /^\/share\/([^/]+)$/;
 const OG_IMAGE_PATTERN = /^\/share\/([^/]+)\/og\.png$/;
+const OGP_RENDER_RATE_LIMIT_KEY = "ogp-render-cache-miss";
+type Env = {
+  OGP_RENDER_RATE_LIMITER: RateLimit;
+};
+type InFlightRender = {
+  render: Promise<OgImageRender>;
+  cacheWrite: Promise<void>;
+};
+const inFlightRenders = new Map<string, InFlightRender>();
+const pendingRenderAdmissions = new Map<string, Promise<InFlightRender | null>>();
 
 function notFound(): Response {
   return new Response("Not Found", { status: 404 });
+}
+
+function methodNotAllowed(): Response {
+  return new Response("Method Not Allowed", {
+    status: 405,
+    headers: { allow: "GET, HEAD" },
+  });
+}
+
+function tooManyRequests(): Response {
+  return new Response("Too Many Requests", {
+    status: 429,
+    headers: {
+      "retry-after": "60",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function createOgImageCacheKey(request: Request, user: string, score: number | null, percentage: number): Request {
+  const url = new URL(request.url);
+  url.pathname = `/share/${encodeURIComponent(user.toLowerCase())}/og.png`;
+  const searchParams = new URLSearchParams();
+  if (score !== null) {
+    searchParams.set("s", String(score));
+  }
+  searchParams.set("p", String(percentage));
+  url.search = searchParams.toString();
+  return new Request(url.toString(), { method: "GET" });
+}
+
+function createOgImageResponse(render: OgImageRender): Response {
+  const maxAge = render.gridIncluded ? 86400 : 300;
+  return new Response(render.response.clone().body, {
+    status: 200,
+    headers: {
+      "content-type": "image/png",
+      "cache-control": `public, max-age=${maxAge}, s-maxage=${maxAge}`,
+    },
+  });
+}
+
+function createInFlightRender(
+  cache: Cache,
+  cacheKey: Request,
+  user: string,
+  score: number | null,
+  percentage: number,
+): InFlightRender {
+  const render = renderOgImage(user, score, percentage);
+  const cacheWrite = render.then((result) => cache.put(cacheKey, createOgImageResponse(result)));
+  const entry = { render, cacheWrite };
+  inFlightRenders.set(cacheKey.url, entry);
+  const removeEntry = () => {
+    if (inFlightRenders.get(cacheKey.url) === entry) {
+      inFlightRenders.delete(cacheKey.url);
+    }
+  };
+  void cacheWrite.then(removeEntry, removeEntry);
+  return entry;
+}
+
+async function admitRender(
+  cache: Cache,
+  cacheKey: Request,
+  user: string,
+  score: number | null,
+  percentage: number,
+  limiter: RateLimit,
+): Promise<InFlightRender | null> {
+  const outcome = await limiter.limit({ key: OGP_RENDER_RATE_LIMIT_KEY });
+  if (!outcome.success) {
+    return null;
+  }
+
+  const joined = inFlightRenders.get(cacheKey.url);
+  if (joined) {
+    return joined;
+  }
+
+  return createInFlightRender(cache, cacheKey, user, score, percentage);
+}
+
+function getOrCreateInFlightRender(
+  cache: Cache,
+  cacheKey: Request,
+  user: string,
+  score: number | null,
+  percentage: number,
+  limiter: RateLimit,
+): Promise<InFlightRender | null> {
+  const existing = inFlightRenders.get(cacheKey.url);
+  if (existing) {
+    return Promise.resolve(existing);
+  }
+
+  const pending = pendingRenderAdmissions.get(cacheKey.url);
+  if (pending) {
+    return pending;
+  }
+
+  const admission = admitRender(cache, cacheKey, user, score, percentage, limiter).catch((error) => {
+    // Fail closed so a persistent missing/broken binding cannot turn every
+    // cache miss into an unbounded render workload.
+    console.error("OG image render admission failed", error);
+    throw error;
+  });
+  pendingRenderAdmissions.set(cacheKey.url, admission);
+  const removeAdmission = () => {
+    if (pendingRenderAdmissions.get(cacheKey.url) === admission) {
+      pendingRenderAdmissions.delete(cacheKey.url);
+    }
+  };
+  void admission.then(removeAdmission, removeAdmission);
+  return admission;
 }
 
 function handleSharePage(request: Request, user: string, searchParams: URLSearchParams): Response {
@@ -44,24 +169,50 @@ async function handleOgImage(
   request: Request,
   user: string,
   searchParams: URLSearchParams,
+  env: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return methodNotAllowed();
+  }
+
   const params = parseShareParams(user, searchParams);
   if (!params) {
     return notFound();
   }
 
   const cache = caches.default;
-  const cached = await cache.match(request);
+  const cacheKey = createOgImageCacheKey(request, params.user, params.score, params.percentage);
+  const cached = await cache.match(cacheKey);
   if (cached) {
     return cached;
   }
 
+  let inFlight: InFlightRender | null;
+  try {
+    inFlight = await getOrCreateInFlightRender(
+      cache,
+      cacheKey,
+      params.user,
+      params.score,
+      params.percentage,
+      env.OGP_RENDER_RATE_LIMITER,
+    );
+  } catch {
+    return new Response("og image generation temporarily unavailable", {
+      status: 503,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  if (!inFlight) {
+    return tooManyRequests();
+  }
+
   // Font loading or the satori render itself can fail on an external outage —
   // return a controlled, uncached 500 instead of an unhandled Worker exception.
-  let render;
+  let render: OgImageRender;
   try {
-    render = await renderOgImage(params.user, params.score, params.percentage);
+    render = await inFlight.render;
   } catch {
     return new Response("og image generation failed", {
       status: 500,
@@ -71,26 +222,17 @@ async function handleOgImage(
 
   // A grid-less fallback card (jogruber outage) is cached briefly so the full
   // card replaces it soon after recovery.
-  const maxAge = render.gridIncluded ? 86400 : 300;
-  const response = new Response(render.response.body, {
-    status: 200,
-    headers: {
-      "content-type": "image/png",
-      "cache-control": `public, max-age=${maxAge}, s-maxage=${maxAge}`,
-    },
-  });
-
-  ctx.waitUntil(cache.put(request, response.clone()));
-  return response;
+  ctx.waitUntil(inFlight.cacheWrite);
+  return createOgImageResponse(render);
 }
 
 export default {
-  async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     const imageMatch = url.pathname.match(OG_IMAGE_PATTERN);
     if (imageMatch) {
-      return handleOgImage(request, imageMatch[1], url.searchParams, ctx);
+      return handleOgImage(request, imageMatch[1], url.searchParams, env, ctx);
     }
 
     const shareMatch = url.pathname.match(SHARE_PAGE_PATTERN);
