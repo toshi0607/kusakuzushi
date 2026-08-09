@@ -20,6 +20,8 @@ import { loadOgFonts } from "./fonts";
 const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v4";
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 630;
+// Keep this 64 KiB streaming limit aligned with apps/web/src/api.ts; separate
+// bundles retain their own error and fallback behavior.
 // A 371-cell response is normally below 32 KiB; 64 KiB leaves room for API
 // metadata while keeping an untrusted upstream body inexpensive to parse.
 const MAX_RESPONSE_BYTES = 64 * 1024;

@@ -168,6 +168,59 @@ describe("OG image route", () => {
     expect(cachePut).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a shared limiter admission rejects, then admits a later miss", async () => {
+    // #given
+    const failure = new Error("missing rate limiter binding");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    rateLimit.mockRejectedValueOnce(failure);
+    const first = createContext();
+    const second = createContext();
+
+    try {
+      // #when: same-key requests share the rejected admission.
+      const [firstResponse, secondResponse] = await Promise.all([
+        worker.fetch(
+          new Request("https://example.com/share/toshi0607/og.png?s=1&p=50"),
+          env,
+          first.ctx,
+        ),
+        worker.fetch(
+          new Request("https://example.com/share/toshi0607/og.png?p=50&s=001"),
+          env,
+          second.ctx,
+        ),
+      ]);
+
+      // #then
+      expect(firstResponse.status).toBe(503);
+      expect(secondResponse.status).toBe(503);
+      expect(firstResponse.headers.get("cache-control")).toBe("no-store");
+      expect(rateLimit).toHaveBeenCalledTimes(1);
+      expect(renderOgImageMock).not.toHaveBeenCalled();
+      expect(cachePut).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith("OG image render admission failed", failure);
+
+      // #when: rejection cleanup allows a fresh later admission.
+      renderOgImageMock.mockResolvedValue(createRenderResult());
+      const retry = createContext();
+      const retryResponse = await worker.fetch(
+        new Request("https://example.com/share/toshi0607/og.png?s=1&p=50"),
+        env,
+        retry.ctx,
+      );
+      await retry.settled();
+
+      // #then
+      expect(retryResponse.status).toBe(200);
+      expect(rateLimit).toHaveBeenCalledTimes(2);
+      expect(renderOgImageMock).toHaveBeenCalledTimes(1);
+      expect(cachePut).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("uses distinct canonical entries for scored, scoreless, and explicit-zero links", async () => {
     // #given
     renderOgImageMock.mockImplementation(async () => createRenderResult());
@@ -237,6 +290,50 @@ describe("OG image route", () => {
     expect(await firstResult.text()).toBe("png");
     expect(await secondResult.text()).toBe("png");
     expect(rateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("canonicalizes username casing for cache and singleflight while rendering the original casing", async () => {
+    // #given
+    let resolveRender: ((value: ReturnType<typeof createRenderResult>) => void) | undefined;
+    renderOgImageMock.mockImplementation(
+      () => new Promise<ReturnType<typeof createRenderResult>>((resolve) => {
+        resolveRender = resolve;
+      }),
+    );
+    const first = createContext();
+    const second = createContext();
+
+    // #when
+    const firstResponse = worker.fetch(
+      new Request("https://example.com/share/ToShi0607/og.png?s=1&p=50"),
+      env,
+      first.ctx,
+    );
+    const secondResponse = worker.fetch(
+      new Request("https://example.com/share/toshi0607/og.png?s=1&p=50"),
+      env,
+      second.ctx,
+    );
+    await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1));
+    resolveRender?.(createRenderResult());
+    await Promise.all([firstResponse, secondResponse]);
+    await Promise.all([first.settled(), second.settled()]);
+    const cacheHit = createContext();
+    const cacheHitResponse = await worker.fetch(
+      new Request("https://example.com/share/toshi0607/og.png?s=1&p=50"),
+      env,
+      cacheHit.ctx,
+    );
+
+    // #then
+    expect(cacheHitResponse.status).toBe(200);
+    expect(renderOgImageMock).toHaveBeenCalledTimes(1);
+    expect(renderOgImageMock).toHaveBeenCalledWith("ToShi0607", 1, 50);
+    expect(rateLimit).toHaveBeenCalledTimes(1);
+    expect(cachePut).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com/share/toshi0607/og.png?s=1&p=50" }),
+      expect.any(Response),
+    );
   });
 
   it("singleflights same-key limiter admission before creating a render", async () => {

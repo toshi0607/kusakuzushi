@@ -140,9 +140,11 @@ export function createOgCardWriter(options: OgCardWriterOptions) {
       request.resume();
     };
 
-    request.on("aborted", () => {
-      rejected = true;
-      chunks.length = 0;
+    request.on("close", () => {
+      if (!request.complete) {
+        rejected = true;
+        chunks.length = 0;
+      }
     });
     request.on("error", () => abandon(400, "Upload failed"));
     request.on("data", (chunk: Buffer) => {
@@ -155,7 +157,7 @@ export function createOgCardWriter(options: OgCardWriterOptions) {
       chunks.push(chunk);
     });
     request.on("end", () => {
-      if (rejected || request.aborted) return;
+      if (rejected || !request.complete) return;
 
       const image = Buffer.concat(chunks, size);
       if (!hasPngSignature(image)) {

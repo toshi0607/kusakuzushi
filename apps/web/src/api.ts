@@ -8,8 +8,11 @@ import type { Cell, ContributionGrid } from "@kusakuzushi/core";
 import { toGrid } from "@kusakuzushi/core";
 
 const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v4";
+// Keep these date, 53-week, consecutive, and padded-width checks aligned with
+// workers/ogp/src/jogruber.ts; separate bundles retain their own error behavior.
 /** The core contribution-grid model renders at most 53 weeks of 7 days. */
 const MAX_CONTRIBUTION_DAYS = 53 * 7;
+// Keep this 64 KiB streaming limit aligned with workers/ogp/src/og-image.ts.
 // A 371-cell response is normally below 32 KiB; 64 KiB leaves room for API
 // metadata while keeping an untrusted upstream body inexpensive to parse.
 const MAX_RESPONSE_BYTES = 64 * 1024;

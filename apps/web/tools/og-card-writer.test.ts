@@ -28,16 +28,24 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-function startWriter(emitRequestError = false): Promise<ReturnType<typeof createServer>> {
+function startWriter(
+  emitRequestError = false,
+  onRequestClose?: (complete: boolean) => void,
+  onWrite?: () => void,
+): Promise<ReturnType<typeof createServer>> {
   const handler = createOgCardWriter({
     outputPath,
     maxBytes: MAX_BYTES,
     getAllowedOrigins: () => [ORIGIN],
     ensureOutputDirectory: () => mkdirSync(dirname(outputPath), { recursive: true }),
-    write: writeFileSync,
+    write: (path, data) => {
+      onWrite?.();
+      writeFileSync(path, data);
+    },
   });
   const writer = createServer((request, response) => {
     handler(request, response);
+    request.on("close", () => onRequestClose?.(request.complete));
     if (emitRequestError) queueMicrotask(() => request.emit("error", new Error("simulated request failure")));
   });
 
@@ -94,6 +102,28 @@ function sendHeadersOnly(server: ReturnType<typeof createServer>, headers: Incom
   });
 }
 
+function sendIncompleteRequest(
+  server: ReturnType<typeof createServer>,
+  headers: IncomingHttpHeaders,
+  body: Buffer,
+): Promise<void> {
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Test server did not listen on TCP");
+
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: "127.0.0.1", port: address.port });
+    socket.once("connect", () => {
+      const headerLines = Object.entries({ ...headers, "content-length": String(body.length + 1) }).map(
+        ([name, value]) => `${name}: ${value}`,
+      );
+      socket.write(["POST / HTTP/1.1", "Host: 127.0.0.1", ...headerLines, "", ""].join("\r\n"));
+      socket.end(body);
+      resolve();
+    });
+    socket.once("error", reject);
+  });
+}
+
 function sendRequest(
   server: ReturnType<typeof createServer>,
   headers: IncomingHttpHeaders,
@@ -127,13 +157,17 @@ async function expectOutputAbsent(): Promise<void> {
 
 describe("OG card writer HTTP handler", () => {
   it("writes same-origin data with a PNG signature from a loopback client", async () => {
-    const server = await startWriter();
+    let writes = 0;
+    const server = await startWriter(false, undefined, () => {
+      writes += 1;
+    });
     try {
       const response = await sendRequest(server, { origin: ORIGIN, "content-type": "image/png" }, PNG);
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toBe(outputPath);
       await expect(readFile(outputPath)).resolves.toEqual(PNG);
+      expect(writes).toBe(1);
     } finally {
       await closeServer(server);
     }
@@ -207,26 +241,16 @@ describe("OG card writer HTTP handler", () => {
     }
   });
 
-  it("does not write when an in-flight request is aborted", async () => {
-    const server = await startWriter();
-    const address = server.address();
-    if (address === null || typeof address === "string") throw new Error("Test server did not listen on TCP");
+  it("clears retained chunks when close reports an incomplete request", async () => {
+    let resolveClose: (complete: boolean) => void = () => undefined;
+    const requestClosed = new Promise<boolean>((resolve) => {
+      resolveClose = resolve;
+    });
+    const server = await startWriter(false, resolveClose);
 
     try {
-      await new Promise<void>((resolve) => {
-        const request = createRequest({
-          host: "127.0.0.1",
-          port: address.port,
-          method: "POST",
-          path: "/",
-          headers: { origin: ORIGIN, "content-type": "image/png", "transfer-encoding": "chunked" },
-        });
-        request.on("error", () => resolve());
-        request.write(PNG);
-        request.destroy(new Error("client aborted upload"));
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await sendIncompleteRequest(server, { origin: ORIGIN, "content-type": "image/png" }, PNG);
+      await expect(requestClosed).resolves.toBe(false);
       await expectOutputAbsent();
     } finally {
       await closeServer(server);

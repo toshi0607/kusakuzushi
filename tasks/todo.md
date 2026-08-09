@@ -2108,3 +2108,18 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
 - dev writer は loopback + Vite same-origin、PNG content type/signature、5 MiB streaming 上限を write 前に強制する。oversize/abort/error は buffer を解放して書き込まない。実 Vite server でも不正 PNG が 422 となり `public/og.png` の SHA-256 が不変であることを確認した。
 - 独立レビューの最終結果は actionable finding なし。残余不確実性は Cloudflare account 内 `namespace_id` の一意性、実 edge の permissive/eventually-consistent RateLimit/Cache/HEAD 挙動、将来の上流 calendar 契約変更。
 - 最新 `origin/main` への rebase 後の最終検証: targeted OGP 30/30、targeted web 49/49、workspace 全体 344/344 tests。OGP/web/全 workspace build、`git diff --check`、Wrangler dry-run はすべて成功。
+
+### PR #65 レビュー修正 (2026-08-09)
+
+- [x] RateLimit binding の reject を捕捉し、`no-store` の controlled 503 を返す。失敗をログに残し、同一 admission の cleanup と次回 retry をテストする
+- [x] OGP cache key の username だけを lowercase 化し、表示 casing を維持したまま大小文字 variant を同一 cache/single-flight に集約する
+- [x] 64 KiB response parser と contribution calendar validator の複製箇所に相互参照コメントを置き、変更時の同期対象を明示する
+- [x] dev writer の deprecated `aborted` API を `close` + `request.complete` に置き換え、正常完了と中断時の非書き込みを維持する
+- [x] targeted/full tests、build、Wrangler dry-run、独立レビューを通し、同一PRへpushする
+
+#### Decision log
+
+- RateLimit障害は fail-closed を選ぶ。fail-open はbinding設定漏れが恒常化した場合に元のcache-miss増幅を再び無制限にするため、公開OG画像の一時的な503よりセキュリティ境界の維持を優先する。
+- validatorの共通package化は、browser/Worker固有のResponse・error型と既存bundle境界を広げる。今回のdrift対策には相互参照コメントが最小で、web/Workerの対称テストを機械的な裏付けとして維持する。
+- 独立レビューで、同一admissionの失敗を各waiterが個別に記録するログ増幅を発見。共有promiseの生成時に1回だけ記録してrethrowし、全waiterはcontrolled 503へ変換する形に修正した。
+- 最終検証: index 15/15、targeted OGP 32/32、targeted web 49/49、workspace全体346/346 tests。全workspace build、Wrangler dry-run、diff checkは成功し、独立レビューのblockerは0件。

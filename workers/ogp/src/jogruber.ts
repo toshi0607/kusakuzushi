@@ -11,6 +11,8 @@ export type ContributionCell = {
   level: 0 | 1 | 2 | 3 | 4;
 };
 
+// Keep these date, 53-week, consecutive, and padded-width checks aligned with
+// apps/web/src/api.ts; separate bundles retain their own error behavior.
 /** The contribution-grid renderer supports at most 53 weeks of 7 days. */
 const MAX_CONTRIBUTION_DAYS = 53 * 7;
 const DAY_MS = 24 * 60 * 60 * 1000;

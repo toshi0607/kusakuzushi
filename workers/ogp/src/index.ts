@@ -47,7 +47,7 @@ function tooManyRequests(): Response {
 
 function createOgImageCacheKey(request: Request, user: string, score: number | null, percentage: number): Request {
   const url = new URL(request.url);
-  url.pathname = `/share/${encodeURIComponent(user)}/og.png`;
+  url.pathname = `/share/${encodeURIComponent(user.toLowerCase())}/og.png`;
   const searchParams = new URLSearchParams();
   if (score !== null) {
     searchParams.set("s", String(score));
@@ -127,7 +127,12 @@ function getOrCreateInFlightRender(
     return pending;
   }
 
-  const admission = admitRender(cache, cacheKey, user, score, percentage, limiter);
+  const admission = admitRender(cache, cacheKey, user, score, percentage, limiter).catch((error) => {
+    // Fail closed so a persistent missing/broken binding cannot turn every
+    // cache miss into an unbounded render workload.
+    console.error("OG image render admission failed", error);
+    throw error;
+  });
   pendingRenderAdmissions.set(cacheKey.url, admission);
   const removeAdmission = () => {
     if (pendingRenderAdmissions.get(cacheKey.url) === admission) {
@@ -183,20 +188,28 @@ async function handleOgImage(
     return cached;
   }
 
-  // Font loading or the satori render itself can fail on an external outage —
-  // return a controlled, uncached 500 instead of an unhandled Worker exception.
-  const inFlight = await getOrCreateInFlightRender(
-    cache,
-    cacheKey,
-    params.user,
-    params.score,
-    params.percentage,
-    env.OGP_RENDER_RATE_LIMITER,
-  );
+  let inFlight: InFlightRender | null;
+  try {
+    inFlight = await getOrCreateInFlightRender(
+      cache,
+      cacheKey,
+      params.user,
+      params.score,
+      params.percentage,
+      env.OGP_RENDER_RATE_LIMITER,
+    );
+  } catch {
+    return new Response("og image generation temporarily unavailable", {
+      status: 503,
+      headers: { "cache-control": "no-store" },
+    });
+  }
   if (!inFlight) {
     return tooManyRequests();
   }
 
+  // Font loading or the satori render itself can fail on an external outage —
+  // return a controlled, uncached 500 instead of an unhandled Worker exception.
   let render: OgImageRender;
   try {
     render = await inFlight.render;
