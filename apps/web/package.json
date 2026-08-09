@@ -13,10 +13,10 @@
     "@kusakuzushi/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10",
     "wrangler": "^4.116.0"
   }
