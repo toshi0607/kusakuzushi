@@ -121,7 +121,8 @@ Playwright の Chromium に `--enable-experimental-web-platform-features` を付
 - Lighthouse(`pnpm lh`、dist、5 runs、Chrome にフラグ無し): perf 中央値 100(1 回だけ 0.84 のノイズ)、**`resource-summary` script 転送 12,353 B**(予算 40,000 B)、total 200,091 B。WebMCP モジュールは 1 バイトも乗らない(gate spec `e2e/webmcp-gate.spec.ts` で固定)
 - E2E(`pnpm test:e2e`、Playwright 1.62.1、Chromium 151 + `--enable-experimental-web-platform-features`): 6 passed / 14.7s。内容: 4 ツールの列挙 / bridge 経由 `remote.get_contribution_grid`(実 jogruber)/ 不正 user の両側拒否と非 echo / `start_game` → `ready` → Space で `playing` → 再 `start_game` 拒否 → ストレージ(local/session/cookie/IndexedDB 名)バイト同一 + 同一オリジンと Google Fonts 以外への通信ゼロ / `remote.render_share_card`(Service Binding 越しの実レンダリング、`data:image` 不在、1.5K 以内)/ フラグ無し Chromium で WebMCP チャンク未ロード
 - ユニット: core 70 / ogp 121(+18: `/api/grid` 8、via:mcp 5、github-grid 5)/ web 98(+5)/ extension 80 / mcp 10 = 379 passed。`pnpm -r build` 6 パッケージ Done
-- 未実施: PR・CI(GitHub Actions 上の e2e / deploy-mcp / verify-webmcp は初回)・本番デプロイ・Claude Code からの `claude mcp add`・ゼロコード注入(トシのダッシュボード操作待ち)
+- 本番(2026-09-04、PR #74 → merge b3bbd87): GitHub Actions の `e2e` job は初回で pass(2 本の `wrangler dev` がレジストリ経由で Service Binding を接続できた、1m11s)。deploy-ogp → deploy-mcp(DO namespace 初回作成込み 54s)/ deploy-web → verify-webmcp(本番ページ + フラグ付き Chromium、7m44s)まで success。手元からの `verify:mcp` は本番で「他オリジン 403 / Origin 無しに CORS ヘッダ無し / 自オリジンの `Access-Control-Allow-Origin` が厳密に `https://kusakuzushi.toshi0607.com`」を確認 → 上の「wrangler dev が route ホストを読み替える」は本番では起きない(VERIFIED)
+- 未実施: Claude Code からの `claude mcp add --transport http`(トシの作業)、ゼロコード注入(トシのダッシュボード操作 → 計測 → オフ)、ベンチ(native WebMCP を出した Chrome + エージェントで、ツールあり/なし)
 
 ### 2026-09-04 レビューで判明した Cloudflare 側の既定(記事の「制約」章)
 

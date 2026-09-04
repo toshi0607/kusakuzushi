@@ -2296,7 +2296,7 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ペ�
 | Playwright を root に追加しても Lighthouse / verify 系に影響しない | VERIFIED(2026-09-04) | 追加後に `pnpm -r test` 379 passed / `pnpm lh` exit 0 / `node --check tools/verify-*.mjs` OK。Playwright は `pnpm test:e2e` 別コマンドで、`pnpm -r test` の対象外 |
 | Durable Object 内で `caches.default` が使える | UNVERIFIED-ACCEPTED(2026-09-04) | docs 検索では「DO の応答は Workers Caching の対象外」しか出ず、DO 内からの Cache API 呼び出しの可否は明記なし。**緩和**: D15/D16 で Cache API は ogp の plain Worker 側にだけ置き、mcp の DO 内では一切呼ばない(`workers/mcp/src/*.ts` に `caches` 参照なし: grep)。真偽が設計に影響しない |
 | Durable Object 内(`this.env`)で ratelimit binding の `limit()` が効く | 不要(2026-09-04、D14 改訂) | limiter を全部 ogp の plain Worker に移したので mcp の `Env` に ratelimit binding は無い(`workers/mcp/wrangler.toml`、`src/index.ts` の `Env` 型)。検証対象そのものが消えた |
-| CI の `CLOUDFLARE_API_TOKEN` で初回 deploy の DO namespace 作成(`new_sqlite_classes` migration)が通る | UNVERIFIED-ACCEPTED(2026-09-04) | 手元からは検証不能(CI の token はボクから見えない・cloudflare-api MCP 未認証)。ogp の `wrangler deploy` が通っている token(Workers Scripts 書き込み)で DO namespace も作れるのが通常。緩和: 初回 `deploy-mcp` が権限で落ちたらトシに token 更新を依頼する(質問 Q6 で了承済みの前提) |
+| CI の `CLOUDFLARE_API_TOKEN` で初回 deploy の DO namespace 作成(`new_sqlite_classes` migration)が通る | VERIFIED(2026-09-04、deploy-mcp 初回 success) | 手元からは事前検証不能だったが、PR #74 の main run で `wrangler deploy` が migration ごと通った。ogp の `wrangler deploy` が通っている token(Workers Scripts 書き込み)で DO namespace も作れるのが通常。緩和: 初回 `deploy-mcp` が権限で落ちたらトシに token 更新を依頼する(質問 Q6 で了承済みの前提) |
 | `syncUsernameQuery` は `replaceState`(履歴を積まない) | VERIFIED | `apps/web/src/app.ts:22-26` |
 | Lighthouse(lhci 0.15.1 同梱版)が WebMCP を有効化して計測しない(= native ゲートが閉じたまま) | VERIFIED(2026-09-04) | 実ゲート込みの `pnpm lh` exit 0、`resource-summary` script 転送 12,353 B(予算 40,000 B)、遅延チャンク 83 KB gz は乗っていない。フラグ無し Chromium で未ロードなことは `e2e/webmcp-gate.spec.ts` でも固定 |
 
@@ -2310,8 +2310,8 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ペ�
 - [x] P5 Playwright E2E 6 本 — `pnpm test:e2e` 6 passed (14.7s)、2026-09-04
 - [x] P6 CI(`changes.mcp` / `deploy-mcp` / `verify-webmcp` / `e2e` job、deploy-web を ogp の後に)+ README / DESIGN.md §5.5 / SECURITY.md / privacy ページ(ja/en、最終更新 2026-09-04)更新。yaml パース OK。**CI 上での実行は PR 作成後**
 - [x] P7 フェーズゲート: `/code-review high`(finder 8 観点 → 検証 → 10 件報告、全件修正済み。下の Review 節)+ `reviewer`(opus、設計適合。結果は Review 節に追記)。修正後 `pnpm -r test` 386 passed / `pnpm test:e2e` 6 passed / `pnpm -r build` Done
-- [ ] P8 (ユーザー指示後)コミット・PR・CI green・main マージ → 本番 `verify:mcp` + 本番 E2E + Claude Code から `claude mcp add` で実呼び出し → 記事メモに結果
-- [ ] P9 ゼロコード注入の試行(Q4 の回答次第)
+- [x] P8 PR #74(3 コミット)→ PR CI 緑(test 7m05s / e2e 1m11s 初回で pass / Lighthouse dist・slow pass)→ merge b3bbd87(2026-09-04 00:54Z)→ main CI: deploy-ogp 5m47s → deploy-mcp 54s(DO namespace 初回作成 OK = Q6 解消)/ deploy-web 51s → verify-webmcp 7m44s、すべて success。手元から本番へ `verify:ogp` / `verify:mcp`(自オリジンの ACAO 厳密値まで)/ `test:e2e:prod` 1 passed。Claude Code からの `claude mcp add` はトシの作業として残す
+- [ ] P9 ゼロコード注入の試行 — トシがダッシュボードで Agent Readiness > WebMCP をオン → ボクが `listTools()` / バイト数 / `pnpm lh:prod` を計測して記事メモに記録 → オフ
 
 ## Notes(実装中の判断ログ — 追記)
 
