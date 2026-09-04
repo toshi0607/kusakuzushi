@@ -4,8 +4,7 @@
  * reused by both the HTML and PNG handlers.
  */
 
-/** GitHub's own username charset: letters, digits, hyphen; 1-39 characters. */
-const GITHUB_USERNAME_PATTERN = /^[a-zA-Z0-9-]{1,39}$/;
+import { isValidGithubUsername } from "@kusakuzushi/core/github-username";
 
 /** Digits-only integer string (no sign, no decimal point). */
 const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
@@ -20,10 +19,7 @@ export type ShareParams = {
   percentage: number;
 };
 
-/** True if `user` matches GitHub's username charset. */
-export function isValidGithubUsername(user: string): boolean {
-  return GITHUB_USERNAME_PATTERN.test(user);
-}
+export { isValidGithubUsername };
 
 /**
  * Parses the `s` (score) query param: any non-negative integer.

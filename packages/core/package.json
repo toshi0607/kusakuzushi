@@ -6,7 +6,9 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./clear-message": "./src/clear-message.ts"
+    "./clear-message": "./src/clear-message.ts",
+    "./share-link": "./src/share-link.ts",
+    "./github-username": "./src/github-username.ts"
   },
   "scripts": {
     "test": "vitest run",

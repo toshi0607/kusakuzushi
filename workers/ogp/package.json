@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
+  "exports": {
+    "./jogruber": "./src/jogruber.ts",
+    "./contribution-grid": "./src/contribution-grid.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "build": "tsc -p . --noEmit",

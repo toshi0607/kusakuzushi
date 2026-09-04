@@ -236,12 +236,13 @@ describe("fetchGrid", () => {
     expect(cancelled).toBe(true);
   });
 
-  it("resolves to a ContributionGrid on a valid response", async () => {
+  it("resolves to a ContributionGrid on a valid response, fetched from the same-origin grid route", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify(VALID_RESPONSE), { status: 200 })),
     );
     const grid = await fetchGrid("octocat");
+    expect(fetch).toHaveBeenCalledWith("/api/grid/octocat");
     expect(grid.username).toBe("octocat");
     expect(grid.total).toBe(3);
     expect(hasBricks(grid)).toBe(true);
