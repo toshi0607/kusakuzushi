@@ -2312,7 +2312,7 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ペ�
 - [x] P6 CI(`changes.mcp` / `deploy-mcp` / `verify-webmcp` / `e2e` job、deploy-web を ogp の後に)+ README / DESIGN.md §5.5 / SECURITY.md / privacy ページ(ja/en、最終更新 2026-09-04)更新。yaml パース OK。**CI 上での実行は PR 作成後**
 - [x] P7 フェーズゲート: `/code-review high`(finder 8 観点 → 検証 → 10 件報告、全件修正済み。下の Review 節)+ `reviewer`(opus、設計適合。結果は Review 節に追記)。修正後 `pnpm -r test` 386 passed / `pnpm test:e2e` 6 passed / `pnpm -r build` Done
 - [x] P8 PR #74(3 コミット)→ PR CI 緑(test 7m05s / e2e 1m11s 初回で pass / Lighthouse dist・slow pass)→ merge b3bbd87(2026-09-04 00:54Z)→ main CI: deploy-ogp 5m47s → deploy-mcp 54s(DO namespace 初回作成 OK = Q6 解消)/ deploy-web 51s → verify-webmcp 7m44s、すべて success。手元から本番へ `verify:ogp` / `verify:mcp`(自オリジンの ACAO 厳密値まで)/ `test:e2e:prod` 1 passed。Claude Code からの `claude mcp add` はトシの作業として残す
-- [ ] P10 セッションレス化(D17): `workers/mcp` を `createMcpHandler` に置き換え → ローカルで cold `tools/list` 2 ツール + verify-mcp pass → E2E → PR → デプロイ → トシが注入をもう一度オン → 注入ブリッジ由来のツールが `listTools()` に並ぶかを再計測 → オフ
+- [x] P10 セッションレス化(D17、2026-09-04): PR #76 → merge b730370 → deploy 連鎖 success → 本番 `verify:mcp` pass(cold `tools/list` 含む)→ 注入オン → **注入ブリッジが 2 ツール登録、`listTools()` 6 つ、注入側の実行結果はボクらの `remote.*` とバイト同一** → オフ(トシ、タグ消失を確認)
 - [x] P9 ゼロコード注入の試行(2026-09-04): トシがオン → 注入タグ・bridge.js 47,612 B / gzip 13,403 B・フラグ無しでも読み込まれる・**注入ブリッジは initialize 無しの `tools/list` を投げて McpAgent に 400 で弾かれ、site tools 0 個**(記事メモに詳細)→ `pnpm lh:prod` の結果は下の Notes → オフに戻す(トシ)
 
 ## Notes(実装中の判断ログ — 追記)
