@@ -39,8 +39,15 @@ function buildPostIntentUrl(text: string, shareUrl: string): string {
  * web 版用 — 実 contributions 数とスコアの両方を持っているのは web だけ。
  */
 export function buildIntentUrl(username: string, totalContributions: number, percentage: number, score: number): string {
-  const text = `${username} の草 ${totalContributions.toLocaleString("en-US")} contributions を ${percentage}% 刈り取った🌱 スコア ${score.toLocaleString("en-US")} ${SHARE_HASHTAG}`;
-  return buildPostIntentUrl(text, buildShareUrl(username, percentage, score));
+  return buildPostIntentUrl(
+    buildIntentText(username, totalContributions, percentage, score),
+    buildShareUrl(username, percentage, score),
+  );
+}
+
+/** The post body behind `buildIntentUrl`, for callers that show the text itself (the MCP tools do). */
+export function buildIntentText(username: string, totalContributions: number, percentage: number, score: number): string {
+  return `${username} の草 ${totalContributions.toLocaleString("en-US")} contributions を ${percentage}% 刈り取った🌱 スコア ${score.toLocaleString("en-US")} ${SHARE_HASHTAG}`;
 }
 
 /**
@@ -58,6 +65,10 @@ export function buildIntentUrl(username: string, totalContributions: number, per
  * 刈り取り率は分子・分母が同じ重みなので、これだけは両者で同じ意味を持つ。
  */
 export function buildHarvestIntentUrl(username: string, percentage: number): string {
-  const text = `${username} の草を GitHub 上で ${percentage}% 刈り取った🌱 ${SHARE_HASHTAG}`;
-  return buildPostIntentUrl(text, buildShareUrl(username, percentage));
+  return buildPostIntentUrl(buildHarvestIntentText(username, percentage), buildShareUrl(username, percentage));
+}
+
+/** The post body behind `buildHarvestIntentUrl`. */
+export function buildHarvestIntentText(username: string, percentage: number): string {
+  return `${username} の草を GitHub 上で ${percentage}% 刈り取った🌱 ${SHARE_HASHTAG}`;
 }

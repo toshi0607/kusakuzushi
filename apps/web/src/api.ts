@@ -1,18 +1,23 @@
 /**
- * Data-fetching adapter between the jogruber GitHub-contributions API and
- * core's plain `Cell[]` / `ContributionGrid` model. No rendering or game
- * logic lives here — only network access and payload validation.
+ * Data-fetching adapter between the contribution calendar the OGP Worker
+ * proxies at `/api/grid/{user}` (workers/ogp/src/github-grid.ts — the
+ * jogruber payload, validated and passed through verbatim) and core's plain
+ * `Cell[]` / `ContributionGrid` model. No rendering or game logic lives here —
+ * only network access and payload validation.
+ *
+ * Same origin on purpose: the page never talks to a third party directly, and
+ * swapping the upstream is a Worker deploy, not a page deploy.
  */
 
 import type { Cell, ContributionGrid } from "@kusakuzushi/core";
 import { toGrid } from "@kusakuzushi/core";
 
-const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v4";
+const GRID_API_PATH = "/api/grid";
 // Keep these date, 53-week, consecutive, and padded-width checks aligned with
 // workers/ogp/src/jogruber.ts; separate bundles retain their own error behavior.
 /** The core contribution-grid model renders at most 53 weeks of 7 days. */
 const MAX_CONTRIBUTION_DAYS = 53 * 7;
-// Keep this 64 KiB streaming limit aligned with workers/ogp/src/og-image.ts.
+// Keep this 64 KiB streaming limit aligned with workers/ogp/src/github-grid.ts.
 // A 371-cell response is normally below 32 KiB; 64 KiB leaves room for API
 // metadata while keeping an untrusted upstream body inexpensive to parse.
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -180,13 +185,13 @@ export function hasBricks(grid: ContributionGrid): boolean {
 }
 
 /**
- * Fetches `username`'s last-year contribution calendar from the jogruber
- * API and converts it into a core `ContributionGrid`.
+ * Fetches `username`'s last-year contribution calendar through the Worker
+ * proxy and converts it into a core `ContributionGrid`.
  */
 export async function fetchGrid(username: string): Promise<ContributionGrid> {
   let response: Response;
   try {
-    response = await fetch(`${JOGRUBER_API_BASE}/${encodeURIComponent(username)}?y=last`);
+    response = await fetch(`${GRID_API_PATH}/${encodeURIComponent(username)}`);
   } catch (error) {
     throw new ContributionFetchError(
       `ネットワークエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`,

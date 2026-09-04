@@ -8,14 +8,17 @@
  *     これに化けた)。つまり *200 が返ってくること* は route の証明にならない
  *   - route が生きていても、UA 判定や画像生成だけが壊れることがある
  *
- * なので観測できる 4 つの分岐をそれぞれ叩く:
+ * なので観測できる 6 つの分岐をそれぞれ叩く:
  *
  *   1. 非クローラー UA → 302(人間はアプリ本体へ飛ばされる)
  *   2. クローラー UA   → 200 かつ og:image を含む HTML
  *   3. og.png          → 200 かつ image/png
  *   4. `s` を持たない共有リンク(= 拡張から。DESIGN.md §5)→ スコアを一切名乗らない
+ *   5. /api/grid/{user} → 200 かつ contributions 配列を持つ JSON(web 版の草データ)
+ *   6. /api/grid/{不正な名前} → 404(200 なら `/api/*` route が Pages に食われている)
  *
  * 1 が 200 なら Pages に食われている(= route が外れた)と一発で分かる。
+ * 5/6 は `/api/*` という別 route なので、`/share/*` が生きていても独立に外れうる。
  * 4 は「`s` が無ければスコア行を出さない」を本番で確かめる。ここが壊れると、
  * 拡張から共有されたリンクが「100% 刈り取ってスコア 0」のカードを配る。
  * og:image / og:url / twitter:image は 1 つずつ見る(まとめると片方が消えても通る)。
@@ -132,8 +135,52 @@ async function checkScorelessShare(url) {
   return null;
 }
 
+/**
+ * `/api/grid/{user}` は jogruber の JSON を検証して素通しする(workers/ogp/src/index.ts)。
+ * Pages に食われると index.html が 200 で返るので、JSON として読めて
+ * `contributions` が配列であることまで見る。
+ */
+async function checkGridApi(gridUrl, invalidGridUrl) {
+  const grid = await fetchAs(gridUrl, HUMAN_USER_AGENT);
+  const contentType = grid.headers.get("content-type") ?? "";
+  // 429 / 502 / 503 は Worker 自身の応答(jogruber 停止や枠切れ)。route は生きているので、
+  // 第三者の都合でデプロイ連鎖(deploy-web / deploy-mcp)を止めない。HTML の 200 だけが route 喪失
+  if ([429, 502, 503].includes(grid.status) && !contentType.includes("text/html")) {
+    console.log(`  (注意) /api/grid が HTTP ${grid.status}: 上流(jogruber)側の都合。route は Worker に届いている`);
+    return await checkInvalidGridUser(invalidGridUrl);
+  }
+  if (grid.status !== 200) {
+    return `/api/grid が HTTP ${grid.status}`;
+  }
+  if (!contentType.includes("application/json")) {
+    return `/api/grid の content-type が ${contentType || "(無し)"}(HTML なら route が外れている)`;
+  }
+  let payload;
+  try {
+    payload = await grid.json();
+  } catch {
+    return "/api/grid の本文が JSON として読めない";
+  }
+  if (!Array.isArray(payload?.contributions) || payload.contributions.length === 0) {
+    return "/api/grid の JSON に contributions 配列が無い";
+  }
+  if (typeof payload.contributions[0]?.date !== "string") {
+    return "/api/grid の contributions の要素に date が無い";
+  }
+
+  return await checkInvalidGridUser(invalidGridUrl);
+}
+
+async function checkInvalidGridUser(invalidGridUrl) {
+  const invalid = await fetchAs(invalidGridUrl, HUMAN_USER_AGENT);
+  if (invalid.status !== 404) {
+    return `不正なユーザー名の /api/grid が HTTP ${invalid.status}(404 のはず)`;
+  }
+  return null;
+}
+
 /** 全部通れば null、駄目なら理由の文字列を返す。 */
-async function checkOnce(shareUrl, imageUrl, scorelessShareUrl) {
+async function checkOnce(shareUrl, imageUrl, scorelessShareUrl, gridUrl, invalidGridUrl) {
   const human = await fetchAs(shareUrl, HUMAN_USER_AGENT);
   if (human.status !== 302) {
     // 200 なら Pages の「存在しないパスに index.html」に食われている疑いが濃い
@@ -160,7 +207,12 @@ async function checkOnce(shareUrl, imageUrl, scorelessShareUrl) {
     return `og.png の content-type が ${contentType || "(無し)"}`;
   }
 
-  return await checkScorelessShare(scorelessShareUrl);
+  const scoreless = await checkScorelessShare(scorelessShareUrl);
+  if (scoreless !== null) {
+    return scoreless;
+  }
+
+  return await checkGridApi(gridUrl, invalidGridUrl);
 }
 
 async function main() {
@@ -170,22 +222,26 @@ async function main() {
   const imageUrl = `${options.origin}/share/${user}/og.png?s=1234&p=56`;
   /** 拡張が作る形の共有リンク(スコアを載せない)。 */
   const scorelessShareUrl = `${options.origin}/share/${user}?p=56`;
+  const gridUrl = `${options.origin}/api/grid/${user}`;
+  /** `_` は GitHub のユーザー名に使えない(share-params.ts)。Worker なら 404、Pages なら 200。 */
+  const invalidGridUrl = `${options.origin}/api/grid/not_valid`;
 
   console.log(`verify-worker: ${shareUrl}`);
 
   for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
     let reason;
     try {
-      reason = await checkOnce(shareUrl, imageUrl, scorelessShareUrl);
+      reason = await checkOnce(shareUrl, imageUrl, scorelessShareUrl, gridUrl, invalidGridUrl);
     } catch (error) {
       // 伝播待ちの最中は DNS/TLS/ECONNRESET が単発で起きる。ここで例外を投げると
       // リトライが 1 度も回らずに赤くなる(= デプロイは済んでいるのに人間が呼ばれる)
       reason = `取得に失敗: ${error?.cause?.code ?? error?.cause?.message ?? error?.message ?? error}`;
     }
     if (reason === null) {
-      console.log(`✅ /share/* が Worker に届いている(${attempt} 回目で成功)`);
+      console.log(`✅ /share/* と /api/* が Worker に届いている(${attempt} 回目で成功)`);
       console.log("   人間 UA → 302 / クローラー UA → 200 + og:image / og.png → image/png");
       console.log("   s なしの共有リンク(拡張)→ スコアを名乗らず、s 付き URL も広告しない");
+      console.log("   /api/grid/{user} → JSON の草データ / 不正な名前 → 404");
       return;
     }
     console.log(`  [${attempt}/${options.attempts}] ${reason}`);

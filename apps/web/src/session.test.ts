@@ -143,7 +143,7 @@ function mountSession(options: MountOptions = {}): Harness {
 
   const container = document.createElement("div");
   document.body.appendChild(container);
-  const destroy = createSession(container, "toshi0607", grid, () => LIGHT_THEME, {
+  const { destroy } = createSession(container, "toshi0607", grid, () => LIGHT_THEME, {
     onRestart: () => {},
   });
   raf.drain(0);

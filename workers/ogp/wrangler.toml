@@ -3,7 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2026-07-01"
 
 routes = [
-  { pattern = "kusakuzushi.toshi0607.com/share/*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" }
+  { pattern = "kusakuzushi.toshi0607.com/share/*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" },
+  { pattern = "kusakuzushi.toshi0607.com/api/*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" }
 ]
 
 # namespace_id must be unique within this Cloudflare account.
@@ -11,3 +12,19 @@ routes = [
 name = "OGP_RENDER_RATE_LIMITER"
 namespace_id = "46802917"
 simple = { limit = 30, period = 60 }
+
+# /api/grid/* cache misses (one jogruber fetch each), per client IP. The web
+# app and the MCP Worker both read through this route.
+[[ratelimits]]
+name = "GRID_FETCH_RATE_LIMITER"
+namespace_id = "46802918"
+simple = { limit = 60, period = 60 }
+
+# Card renders requested through the MCP Worker (x-kusakuzushi-via: mcp),
+# per client IP (the Service Binding shares one bucket). Checked before
+# OGP_RENDER_RATE_LIMITER so agent loops cannot drain the budget real
+# crawlers share.
+[[ratelimits]]
+name = "MCP_RENDER_RATE_LIMITER"
+namespace_id = "46802919"
+simple = { limit = 10, period = 60 }

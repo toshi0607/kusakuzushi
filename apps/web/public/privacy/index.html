@@ -72,7 +72,7 @@
 <body>
   <main>
     <h1>プライバシーポリシー</h1>
-    <p class="meta">草崩し (Kusakuzushi) — 最終更新日: 2026年7月26日</p>
+    <p class="meta">草崩し (Kusakuzushi) — 最終更新日: 2026年9月4日</p>
     <p class="lang-note"><a href="#en">English version below</a></p>
 
     <h2>1. 対象</h2>
@@ -116,9 +116,19 @@
     <h2>3. Web 版が扱う情報</h2>
     <p>
       Web 版では、あなたが入力した <strong>GitHub のユーザー名</strong>を、
-      草グラフのデータを取得するために外部 API
+      草グラフのデータを取得するために当サイトのサーバー (<code>/api/grid/</code>) へ送信し、
+      サーバーがそのユーザー名で外部 API
       (<a href="https://github.com/grubersjoe/github-contributions-api" rel="noopener">github-contributions-api</a>、
-      運営者: Jonathan Gruber)へ送信します。同 API の取り扱いについては当該提供者の方針に従います。
+      運営者: Jonathan Gruber)に問い合わせます。同 API の取り扱いについては当該提供者の方針に従います。
+      ブラウザから第三者へ直接送信することはありません。
+    </p>
+    <p>
+      Web 版は、ブラウザ内の AI エージェント向けの
+      <a href="https://github.com/webmachinelearning/webmcp" rel="noopener">WebMCP</a> ツールを登録します
+      (対応ブラウザでのみ)。あなたが使うエージェントがそのツールを呼んだときに限り、
+      指定されたユーザー名がサーバー (<code>/mcp</code>) に渡り、上記と同じ経路で草グラフのデータや
+      共有カードが生成されます。ツールはブラウザには何も保存せず、サーバー側にも MCP の接続セッション情報
+      (使用したクライアントの名前とプロトコルのバージョン)以外は保存しません。
     </p>
     <p>
       入力されたユーザー名やスコアを当方のサーバーに保存することはありません。
@@ -147,7 +157,7 @@
     </p>
 
     <h2 id="en">Privacy Policy (English)</h2>
-    <p class="meta">Kusakuzushi — Last updated: July 26, 2026</p>
+    <p class="meta">Kusakuzushi — Last updated: September 4, 2026</p>
 
     <h3>1. Scope</h3>
     <p>
@@ -179,10 +189,20 @@
 
     <h3>3. Data handled by the web version</h3>
     <p>
-      The web version sends the <strong>GitHub username you enter</strong> to a third-party API
+      The web version sends the <strong>GitHub username you enter</strong> to our own server
+      (<code>/api/grid/</code>), which queries a third-party API
       (<a href="https://github.com/grubersjoe/github-contributions-api" rel="noopener">github-contributions-api</a>
-      by Jonathan Gruber) in order to fetch the contribution graph. That provider's own policy
-      applies to the request.
+      by Jonathan Gruber) for the contribution graph. That provider's own policy applies to the
+      request. The browser never contacts the third party directly.
+    </p>
+    <p>
+      The web version registers
+      <a href="https://github.com/webmachinelearning/webmcp" rel="noopener">WebMCP</a> tools for
+      in-browser AI agents (in browsers that support it). Only when an agent you use calls one of
+      them is the given username sent to our server (<code>/mcp</code>), which fetches the graph or
+      renders a share card through the same path as above. The tools store nothing in the browser,
+      and nothing on the server beyond the MCP session record (the client's name and protocol
+      version).
     </p>
     <p>
       We do not store entered usernames or scores on our servers. Share images

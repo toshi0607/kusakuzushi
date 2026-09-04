@@ -3,14 +3,47 @@
  * footer) once, swaps the stage between the username form, a loading
  * state, the "no bricks" guard screen, and a play session — and keeps
  * the `?user=` query string in sync.
+ *
+ * It hands back an `AppController` so something other than the form can
+ * start a game and read where it stands (the WebMCP tools in `webmcp/`).
+ * Everything goes through the same `startFlow` the form uses, so there is
+ * exactly one way into a session.
  */
 
-import type { ContributionGrid } from "@kusakuzushi/core";
+import type { ContributionGrid, GameState } from "@kusakuzushi/core";
 
 import { UserNotFoundError, fetchGrid, hasBricks } from "./api";
 import { createAttract } from "./attract";
-import { createSession } from "./session";
+import { createSession, type SessionHandle } from "./session";
 import { currentTheme } from "./theme";
+
+/** The stage's phases outside a session, followed by the game's own states inside one. */
+export type AppPhase = "idle" | "loading" | "empty" | "error" | GameState;
+
+export type AppSnapshot = {
+  phase: AppPhase;
+  /** The username the stage is showing for, or null on the empty form. */
+  user: string | null;
+  score: number | null;
+  harvestedPercent: number | null;
+  lives: number | null;
+  bricksLeft: number | null;
+  totalContributions: number | null;
+};
+
+export type AppController = {
+  /** Same path as submitting the form: loads `username`'s grid and starts a session. */
+  start(username: string): void;
+  getSnapshot(): AppSnapshot;
+};
+
+const NO_SESSION = {
+  score: null,
+  harvestedPercent: null,
+  lives: null,
+  bricksLeft: null,
+  totalContributions: null,
+} as const;
 
 function errorMessageFor(error: unknown): string {
   if (error instanceof UserNotFoundError) {
@@ -121,39 +154,45 @@ function buildEmptyView(onBack: () => void): HTMLElement {
   return section;
 }
 
-export function initApp(root: HTMLElement): void {
+export function initApp(root: HTMLElement): AppController {
   const stage = findStage(root);
-  let sessionCleanup: (() => void) | null = null;
+  let session: SessionHandle | null = null;
   let attractCleanup: (() => void) | null = null;
+  // What the stage shows when no session is mounted (a mounted session
+  // speaks for itself). Every view goes through `swapStage`, so a new view
+  // cannot forget to say what it is.
+  let stage_: { phase: Exclude<AppPhase, GameState>; user: string | null } = { phase: "idle", user: null };
 
   function teardownSession(): void {
-    sessionCleanup?.();
-    sessionCleanup = null;
+    session?.destroy();
+    session = null;
     attractCleanup?.();
     attractCleanup = null;
   }
 
-  function showForm(initialUsername: string, errorMessage?: string): void {
+  function swapStage(phase: Exclude<AppPhase, GameState>, user: string | null, view: HTMLElement): void {
     teardownSession();
+    stage_ = { phase, user };
+    stage.replaceChildren(view);
+  }
+
+  function showForm(initialUsername: string, errorMessage?: string): void {
     const { view, attractHost } = buildFormView(initialUsername, errorMessage, (username) => {
       void startFlow(username);
     });
-    stage.replaceChildren(view);
+    swapStage(errorMessage === undefined ? "idle" : "error", initialUsername || null, view);
     attractCleanup = createAttract(attractHost, currentTheme);
   }
 
   function showLoading(username: string): void {
-    teardownSession();
-    stage.replaceChildren(buildLoadingView(username));
+    swapStage("loading", username, buildLoadingView(username));
   }
 
   function showEmpty(username: string): void {
-    teardownSession();
-    stage.replaceChildren(buildEmptyView(() => showForm(username)));
+    swapStage("empty", username, buildEmptyView(() => showForm(username)));
   }
 
   function showSession(username: string, grid: ContributionGrid): void {
-    teardownSession();
     const container = document.createElement("div");
     container.className = "view view-session";
 
@@ -162,8 +201,9 @@ export function initApp(root: HTMLElement): void {
     status.textContent = `@${username} ― ${grid.total.toLocaleString()} contributions`;
     container.appendChild(status);
 
-    stage.replaceChildren(container);
-    sessionCleanup = createSession(container, username, grid, currentTheme, {
+    // The session's own state is the phase from here on; `stage_` keeps the user.
+    swapStage("loading", username, container);
+    session = createSession(container, username, grid, currentTheme, {
       onRestart: () => showSession(username, grid),
     });
   }
@@ -189,4 +229,17 @@ export function initApp(root: HTMLElement): void {
   } else {
     showForm("");
   }
+
+  return {
+    start(username: string): void {
+      void startFlow(username);
+    },
+    getSnapshot(): AppSnapshot {
+      if (session) {
+        const { state, score, harvestedPercent, lives, bricksLeft, totalContributions } = session.getSnapshot();
+        return { phase: state, user: stage_.user, score, harvestedPercent, lives, bricksLeft, totalContributions };
+      }
+      return { phase: stage_.phase, user: stage_.user, ...NO_SESSION };
+    },
+  };
 }

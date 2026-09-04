@@ -32,13 +32,29 @@ export type SessionHandlers = {
   onRestart: () => void;
 };
 
+/** What a session is willing to say about itself to the outside (the WebMCP `get_game_state` tool reads this). */
+export type SessionSnapshot = {
+  state: GameState;
+  score: number;
+  /** 刈り取り率(0-100、`harvestPercentage`)。 */
+  harvestedPercent: number;
+  lives: number;
+  bricksLeft: number;
+  totalContributions: number;
+};
+
+export type SessionHandle = {
+  destroy(): void;
+  getSnapshot(): SessionSnapshot;
+};
+
 export function createSession(
   container: HTMLElement,
   username: string,
   grid: ContributionGrid,
   getTheme: () => Theme,
   handlers: SessionHandlers,
-): () => void {
+): SessionHandle {
   const game = new Game(grid);
 
   // The board and the touch rail move together as one block: the rail is
@@ -347,7 +363,7 @@ export function createSession(
     }
   });
 
-  return function destroy(): void {
+  function destroy(): void {
     running = false;
     window.cancelAnimationFrame(rafId);
     unwatchTheme();
@@ -357,5 +373,20 @@ export function createSession(
     window.removeEventListener("keyup", handleKeyUp);
     rail.destroy();
     stack.remove();
-  };
+  }
+
+  // Read straight off the game each time — the values move every frame
+  // while playing, and nothing here should cache what the board shows.
+  function getSnapshot(): SessionSnapshot {
+    return {
+      state: game.state,
+      score: game.score,
+      harvestedPercent: harvestPercentage(game, grid.total),
+      lives: game.life,
+      bricksLeft: game.liveBricks.filter((brick) => brick.alive).length,
+      totalContributions: grid.total,
+    };
+  }
+
+  return { destroy, getSnapshot };
 }

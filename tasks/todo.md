@@ -2123,3 +2123,253 @@ Web はパドルだけが墨色(`paddleColor`)で、玉は `accentColor` = マ�
 - validatorの共通package化は、browser/Worker固有のResponse・error型と既存bundle境界を広げる。今回のdrift対策には相互参照コメントが最小で、web/Workerの対称テストを機械的な裏付けとして維持する。
 - 独立レビューで、同一admissionの失敗を各waiterが個別に記録するログ増幅を発見。共有promiseの生成時に1回だけ記録してrethrowし、全waiterはcontrolled 503へ変換する形に修正した。
 - 最終検証: index 15/15、targeted OGP 32/32、targeted web 49/49、workspace全体346/346 tests。全workspace build、Wrangler dry-run、diff checkは成功し、独立レビューのblockerは0件。
+
+---
+
+# WebMCP 対応 — Cloudflare bridge 方式の設計(2026-09-04、実装前・質問待ち)
+
+cca-study-guide(PR #88)が「ブラウザ状態だけのサイトに第一者でページ内登録する」実装だったのに対し、
+こちらは「サーバー側にしかできない処理(OGP レンダリング、草データ取得)を持つサイト」に
+Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ページへ映すブリッジ)を当てる。
+技術記事での対比が目的。プロダクト価値は控えめでよいが、**本番で実際に呼べるところまで**持っていく。
+
+一次情報の記録は `tasks/webmcp-article-notes.md`(このリポジトリ、本日新設)。cca 側の記録は
+`cca-study-guide/tasks/webmcp-article-notes.md`(worktree `mcp-server-vs-webmcp-39ce20`)。
+
+## 決定事項(ボクの判断。理由込み — 変えるなら質問への回答で)
+
+| # | 決定 | 理由 |
+|---|---|---|
+| D1 | **`@mcp-b/global` は入れない**(native `navigator.modelContext` がある時だけ動く) | `lighthouserc.cjs` の `resource-summary:script:size ≤ 40,000B` が error。cca 方式(常時遅延ロード)は Lighthouse の Chrome(フラグ無し)でも 284KB を落として CI が落ちる。Cloudflare bridge 自体も native が無ければ no-op(通信ゼロ・空ハンドル、`dist/experimental/webmcp.js` 実読)なので、native ゲートが両者に整合する。cca との対比点にもなる(「polyfill+bridge 常時」 vs 「native ゲート」、理由は CI 予算) |
+| D2 | ブリッジのロードは **`'modelContext' in navigator` が真の時だけ** dynamic import(idle 後) | D1 と同じ。Lighthouse では 0 バイト。`agents/experimental/webmcp` は esbuild 実測で **309KB / gzip 89KB**(ajv 104K + zod 98K + MCP SDK 66K)— cca の `@mcp-b/global`(284KB / 73KB)と同規模で、初期バンドルに乗せられる大きさではない |
+| D3 | `render_share_card` は **Service Binding で `kusakuzushi-ogp` の `/share/{user}/og.png` を叩く** | 同一ゾーン内の Worker→Worker は素の `fetch` が失敗し Service Binding が唯一の経路(docs `workers/configuration/routing/custom-domains/#worker-to-worker-communication`、2026-09-04 確認)。レンダラ・Cache API・`OGP_RENDER_RATE_LIMITER`(429)をそのまま再利用でき、rate limit の `namespace_id` を 2 Worker で共有できるかという未確認事項を回避できる |
+| D4 | ツールは**画像本体を返さない**。URL + X 投稿文 + サイズ/Content-Type のみ | bridge は image content を data URL 文字列に平坦化する(`webmcp.js` 実読)。1200x630 PNG は数十 KB で出力予算 1.5K を桁で超える |
+| D5 | `get_contribution_grid` の出力は **53 週 × 7 桁の level 文字列**(count と日付は持たない) | 371 セルを `{date,count,level}` で返すと 10KB 超。level 文字列 53 本 ≈ 600 字で予算内。count は開始/終了日と total だけ添える。ゲーム(core)は level があれば成立する(DESIGN.md §2 データ源 B と同じ整理) |
+| D6 | `registerWebMcp` は **`watch: false`**、`timeoutMs` 明示 | 既定 `watch: true` はページ表示ごとに `/mcp` へ GET(SSE)を張って DO 接続を持ち続ける。ツールは静的なので不要 |
+| D7 | `/sse`(旧 SSE transport)は出さない。**`/mcp`(Streamable HTTP)のみ** | bridge も Claude Code(`--transport http`)も Streamable HTTP。面を増やさない |
+| D8 | ページ内ツールは `start_game(user)` と `get_game_state()` の 2 つ。**プレイ中(`state === "playing"`)の `start_game` は拒否** | cca の「練習セッション中は遷移させない」と同じ理屈: エージェント起点の遷移はユーザーの意思を伴わない。盤面を黙って捨てない |
+| D9 | ~~`apps/web` の `fetchGrid` はこの PR では jogruber 直叩きのまま~~ → **トシ回答(2026-09-04 Q3)で同 PR 切替に変更**。`apps/web` は同一オリジン `GET /api/grid/{user}` を叩く | 切替後、ページの通信先は jogruber → 自オリジンに**減る**。upstream 停止は解消しないが、切替点がサーバー側に移るので次に upstream を替えるときページの再デプロイが要らない。詳細は D16 |
+| D10 | leaderboard / スコア保存は **入れない**(質問 Q1) | DESIGN.md §4「サーバー不要」、SECURITY.md「サーバー側の保存を持ちません」の両方を変えることになる。実験の目的(bridge の対比)に必要ない |
+| D11 | CSP は**追加しない**(現状 `apps/web` に CSP は無い: `_headers` なし、meta なし — Explore 実測) | 「CSP との整合」は現状ゼロ CSP のため自明に成立。CSP の新設はこの PR のスコープ外(やるなら `connect-src 'self' https://github-contributions-api.jogruber.de https://fonts.gstatic.com` から始める別 PR) |
+| D12 | バージョンは **exact pin**: `agents@0.22.0`、`@modelcontextprotocol/sdk@1.30.0`(agents の peer)、`zod@4` | モジュール自身が「pin your agents version and expect to rewrite」と警告(実読)。Dependabot が上げてきたら E2E で受ける |
+| D13 | Playwright E2E をこのリポジトリに**新設**(root `e2e/`、`@playwright/test` は root devDependency) | 現状 Playwright 無し(lockfile に `@vitest/browser-playwright` があるだけで未使用)。「推移的に書き込まない」「通信先が増えない」「bridge 経由の round-trip」はブラウザでしか固定できない |
+| D14 | **エージェント経由の呼び出しは ogp 側で別枠の limiter を先に通す**: mcp は Service Binding のリクエストに `x-kusakuzushi-via: mcp` を付け、ogp は該当時に `MCP_RENDER_RATE_LIMITER`(10/60s)→ 既存 `OGP_RENDER_RATE_LIMITER`(30/60s)の順で判定。`/api/grid` は `GRID_FETCH_RATE_LIMITER`(60/60s)。limiter は**すべて ogp Worker(plain Worker context)に置き、DO 内では呼ばない**。**キーはクライアント IP ごと**(`cf-connecting-ip`、Service Binding 経由は IP が無いので 1 つの共有バケット)— レビューで「global key 1 本だと誰かの連打で本物のプレイヤーが 429 になる(切替前は各ブラウザが jogruber を直接叩いていた)」「via ヘッダは誰でも付けられるので 10 回でエージェント枠を枯らせる」の 2 件が出たため 2026-09-04 に改訂 | ogp の limiter はキー 1 つの全体枠。エージェントが score/pct を変えて `render_share_card` を回すと、その枠を食い潰して**本物のクローラー(X/Slack)の共有カードが 429** になる。「レート制限を尊重」= 上流の枠を先に自分で絞る、と読む |
+| D15 | 草データのキャッシュ(Cache API、`max-age=600`)は **ogp Worker の `/api/grid` handler** に置く。mcp の DO 内では Cache API も ratelimit も呼ばない | DO 内で `caches.default` / ratelimit binding が使えるかは docs で確認できず(下の台帳)。plain Worker 側に寄せれば確認不要 |
+| D16 | **草データの取得口 `GET /api/grid/{user}` は `workers/ogp` に置く**(route `kusakuzushi.toshi0607.com/api/*` を ogp に追加)。`workers/mcp` は jogruber を知らず、両ツールとも `env.OGP` を叩くだけの façade | ogp は既に jogruber を叩いており、持ち上げ(`github-grid.ts`)が ogp 内で閉じる。mcp が要るパーサと折り畳みは `@kusakuzushi/ogp` の `exports` map(`./jogruber`、`./contribution-grid`)経由で借りる(2026-09-04 レビューで deep import を exports に改めた)。レスポンスは **jogruber と同じ JSON 形**(検証済みを素通し)にして `apps/web/src/api.ts` は URL 差し替えだけで済ませる。Worker 名が ogp のままなのは既知のズレ(改名はスコープ外、README で説明) |
+
+## 質問(実装前にトシの回答が要るもの)
+
+- **Q1 leaderboard / スコア保存**: → 回答「入れない」(2026-09-04)。入れるなら DESIGN.md §4 / SECURITY.md の「サーバー状態なし」を方針変更として同 PR で書き換える
+- **Q2 `@mcp-b/global`**: → 回答「入れない」(2026-09-04)。入れる場合は Lighthouse の 40KB 予算と両立させる条件(native ゲートの外側で読む理由が無い)を先に決める必要がある。到達性の整理: リモートツールは Claude Code から `claude mcp add --transport http kusakuzushi https://kusakuzushi.toshi0607.com/mcp` で**ブラウザなしに**直接呼べる。ページ内ツールと bridge 経路は native WebMCP ブラウザ(Chrome 149+ OT / フラグ)からのみ
+- **Q3 `apps/web` の草取得**: → 回答「同 PR で切り替える」(2026-09-04)。D16 のとおり `/api/grid/{user}` を ogp Worker に置く
+- **Q4 ゼロコード注入**: → 回答「試す(計測して戻す)」(2026-09-04)。Worker デプロイ後にトシがオン → ボクが計測 → オフ。ダッシュボード側の操作が要るなら**トシの作業**になる(wrangler の OAuth token は zone read のみ、cloudflare-api MCP は未認証)。試すかどうか
+- **Q6 CI token**: 初回 `deploy-mcp` で DO namespace の作成が token 権限で弾かれた場合、Cloudflare 側の token 編集はトシの作業になる(事前確認は不可 — cloudflare-api MCP 未認証)。その時は連絡するので了承だけ
+- **Q5 Chrome Origin Trial**(未回答・保留扱い): `<meta http-equiv="origin-trial">` を `index.html` に足すと、フラグ無しの Chrome 149+ でも native `navigator.modelContext` が出る(= トシの普段の Chrome から本番で呼べる)。OT トークン取得は外部アカウント作業。今回やるか(cca では保留)
+
+## アーキテクチャ
+
+```
+[ブラウザ: kusakuzushi.toshi0607.com/]
+  apps/web/src/webmcp/register.ts  … idle 後、native がある時だけ dynamic import
+    ├─ tools.ts: start_game / get_game_state  → navigator.modelContext.registerTool(直接)
+    └─ agents/experimental/webmcp registerWebMcp({ url:'/mcp', prefix:'remote.', watch:false })
+         │  tools/list → remote.get_contribution_grid / remote.render_share_card として再登録
+         │  execute → tools/call(同一オリジン POST /mcp)
+         ▼
+[Worker: kusakuzushi-mcp  route kusakuzushi.toshi0607.com/mcp*]   workers/mcp
+  McpAgent(Durable Object, SQLite)  McpAgent.serve('/mcp')
+    ├─ get_contribution_grid(user) → env.OGP.fetch('/api/grid/{user}') → level 文字列 53 本に圧縮
+    └─ render_share_card(user, pct, score?) → env.OGP.fetch('/share/{user}/og.png?s=&p=', {x-kusakuzushi-via: mcp})
+                                                │ Service Binding
+                                                ▼
+[Worker: kusakuzushi-ogp  routes /share/*, /api/*]   workers/ogp
+    ├─ /share/*            既存(レンダラ + Cache + OGP_RENDER_RATE_LIMITER)。via:mcp なら MCP_RENDER_RATE_LIMITER を先に通す
+    └─ /api/grid/{user}    新規: jogruber を叩いて検証済み JSON を素通し。Cache API 10 分 + GRID_FETCH_RATE_LIMITER
+                              ▲ apps/web の fetchGrid(同一オリジン)もここを叩く(D9/D16)
+```
+
+到達経路は 3 つ。(a) native WebMCP ブラウザ内のエージェント → ページ内 + bridge 経由のリモート。
+(b) Claude Code / Desktop → `/mcp` を直接(ブラウザ不要)。(c) Playwright(Chromium 151 + `--enable-experimental-web-platform-features`)→ `navigator.modelContextTesting` で (a) を機構化。
+
+### workers/mcp(新規 Worker)
+
+- パッケージ `@kusakuzushi/mcp`、Worker 名 `kusakuzushi-mcp`、`compatibility_date = "2026-07-01"`、`compatibility_flags = ["nodejs_compat"]`(McpAgent 要件)
+- `wrangler.toml`: routes `kusakuzushi.toshi0607.com/mcp*`(zone_id は ogp と同じ)、`[[durable_objects.bindings]] name="MCP_OBJECT" class_name="KusakuzushiMcp"`、`[[migrations]] tag="v1" new_sqlite_classes=["KusakuzushiMcp"]`(Free plan は SQLite DO のみ — docs 確認済み)、`[[services]] binding="OGP" service="kusakuzushi-ogp"`、`[[ratelimits]]` ×2: `GRID_FETCH_RATE_LIMITER`(namespace_id 46802918、60/60s)、`SHARE_CARD_RATE_LIMITER`(46802919、10/60s)(D14)。キーはセッション単位ではなく global 1 本(ogp と同じ整理 — 守りたいのは上流の総量)
+- `src/index.ts`: `export class KusakuzushiMcp extends McpAgent<Env>`、`server = new McpServer({name:'kusakuzushi', version})`、`init()` で 2 ツール登録。`export default { fetch }` は `/mcp` を `McpAgent.serve('/mcp', { binding: 'MCP_OBJECT' })` に渡し、それ以外は 404。GET `/mcp`(SSE ストリーム)は 405 を返して bridge の watch を明示的に断つ(D6 の保険。※McpAgent が GET をどう扱うかは実装時に実測)
+- ツール定義(`@modelcontextprotocol/sdk` `registerTool`、`annotations.readOnlyHint: true` を両方に付ける。`render_share_card` はエッジキャッシュに書くが「ユーザーに見える状態」は変えない — 記事で「readOnlyHint は自己申告」の例にする)
+  - `get_contribution_grid({ user })` → text content 1 つに JSON: `{ user, from, to, total, weeks: ["0012340", …53本] }`。`user` は `share-params.ts` と同じ `^[a-zA-Z0-9-]{1,39}$`(不正なら形を説明し echo しない)。upstream 404 → `isError` で `user not found`(echo は検証済みの値のみ)。キャッシュは持たない(D15)。limiter 超過は `isError`「rate limited, retry after 60s」(D14)
+  - `render_share_card({ user, percentage, score? })` → `env.OGP.fetch(new Request('https://kusakuzushi.toshi0607.com/share/{user}/og.png?s=&p='))`。200 なら `{ imageUrl, shareUrl, intentUrl, postText, bytes, contentType, cached }`、429 なら `isError`「rate limited, retry after 60s」、それ以外は `isError`。`shareUrl`/`intentUrl`/`postText` は `packages/core/share-link.ts` の `buildShareUrl` / `buildIntentUrl` を再利用(文面の正は 1 箇所)。`percentage` は 0–100 の整数、`score` は非負整数(`share-params.ts` と同じ規則)。**PNG 本体は読み捨てる**(`bytes` は `content-length` か読み取り長)
+- 出力予算: 全ツールの text を `guardOutput`(直列化長 ≤ 1500、超過は isError)で包む。bridge 側では `content[].text` を `\n` で連結した**文字列**が `execute` の戻り値になるので、予算はその最終文字列で測る(cca の「最終結果の直列化サイズで測る」を bridge の形に合わせる)
+- `workers/mcp` は jogruber を知らない。`get_contribution_grid` は `env.OGP.fetch('https://kusakuzushi.toshi0607.com/api/grid/{user}')` の JSON(jogruber 形)を `foldContributionsIntoWeeks` 相当で 53 週に折って level 文字列にする(折る関数は `packages/core` の `toGrid` を使う — core は既に日付フラット配列 → weeks 変換を持つ。DOM/fetch 非依存なので Worker から import 可)
+- `env` 型: `{ MCP_OBJECT: DurableObjectNamespace; OGP: Fetcher }` のみ。ratelimit / Cache は持たない(D14/D15)
+
+### workers/ogp(変更)
+
+- `wrangler.toml`: routes に `kusakuzushi.toshi0607.com/api/*` を追加。`[[ratelimits]]` を 2 本追加: `GRID_FETCH_RATE_LIMITER`(namespace_id 46802918、60/60s)、`MCP_RENDER_RATE_LIMITER`(46802919、10/60s)
+- `src/github-grid.ts`(新規): `og-image.ts` の private `fetchGrid` から「jogruber URL + fetch + parse」を持ち上げ、`fetchJogruberContributions(user): Promise<{ status: 'ok', json } | { status: 'not-found' } | { status: 'unavailable' }>` を export。`og-image.ts` はこれを使う(挙動不変、既存テストで固定)
+- `src/index.ts`: `GET /api/grid/{user}` を追加。`user` を `share-params.ts` の正規表現で検証(不正は 404、echo なし)→ `GRID_FETCH_RATE_LIMITER.limit({key:'grid-fetch'})`(超過 429 + `retry-after: 60`)→ Cache API(キーは正規化した URL、`max-age=600`、`s-maxage=600`)→ jogruber → `parseJogruberContributions` で検証した上で**元 JSON を素通し**(`content-type: application/json`)。upstream 404 → 404、その他 → 502(`cache-control: no-store`)。HEAD 対応、他メソッドは 405
+- `/share/{user}/og.png`: `x-kusakuzushi-via: mcp` ヘッダがある時だけ `MCP_RENDER_RATE_LIMITER.limit({key:'ogp-render-mcp'})` を既存 limiter の**前**に通す(D14)。ヘッダは公開経路からも付けられるが、付けた側が厳しくなるだけ
+- `verify-worker.mjs` に `/api/grid/toshi0607`(200・JSON・`contributions` 配列)と不正 user(404)の 2 分岐を追加
+- CORS: **`McpAgent.serve` は既定で `Access-Control-Allow-Origin: *` を付ける**(reviewer が実測、2026-09-04)。wrapper で `Origin` を `ALLOWED_ORIGINS`(vars、本番は自オリジンのみ)と照合し、他オリジンのブラウザは 403、許可オリジンには `*` を具体的なオリジンに置換、Origin 無し(Claude Code 等)からは CORS ヘッダを全部落とす。GET は 405(D6)。`/mcp` 全体に IP ごとの `MCP_REQUEST_RATE_LIMITER`(60/分、plain Worker 側)— `initialize` が DO と行(`initializeRequest`/`props`、PII なし)を作るため。認証は無し(公開データのみ・書き込みなし)。**DO の SQLite にはツールが何も書かない**(McpAgent のセッション管理が内部で使う分だけ。DELETE しない client の残骸は残る — privacy/README に明記)
+
+### apps/web(ページ側)
+
+- `src/api.ts`: `fetchGrid` の URL を `${location.origin}/api/grid/{user}` に変更(D9/D16)。パーサ・エラー型は不変(jogruber 形の素通しのため)。`vite.config.ts` に `server.proxy` / `preview.proxy` で `/api` と `/mcp` を `KUSAKUZUSHI_API_PROXY`(既定 `https://kusakuzushi.toshi0607.com`、E2E では `http://127.0.0.1:8787`)へ転送 — `pnpm dev` を 1 コマンドのまま保つ
+- `src/webmcp/register.ts`(登録アダプタ、遅延)/ `src/webmcp/tools.ts`(純関数のツール本体、vitest 対象)/ `app.ts` から `initApp()` が **controller**(`start(username)`, `getState()`)を返すように変更 → `main.ts` が idle 後に `register.ts` を dynamic import して controller を渡す
+- ゲート: `main.ts` で `'modelContext' in navigator`(document でも同じオブジェクト — 実測)が偽なら**何も import しない**
+- `session.ts` は `getSnapshot(): { state, score, harvestedPct, lives, liveBricks, total }` を返す(`Game` に `lives` getter を追加 — core の API 追加、テスト同梱。`_life` は private で現状外から読めない)
+- ページ内ツール(`navigator.modelContext.registerTool`、AbortController 1 つ)
+  - `start_game({ user })`: `user` を `^[a-zA-Z0-9-]{1,39}$` で検証(`textContent` / `syncUsernameQuery` に流れる前)→ `controller.start(user)`。プレイ中は `{ started:false, reason:'a game is in progress' }`。`readOnlyHint: false`(ページ状態を変える。ストレージには書かない)。**受け入れる可視の副作用**: URL の `?user=` が `history.replaceState` で書き換わる(`app.ts:22-26`、push ではないので履歴は積まれない)。E2E 4 の「ストレージ バイト同一」は「副作用ゼロ」ではなく「永続状態ゼロ」の検証
+  - `get_game_state()`: `{ phase:'idle'|'loading'|'empty'|'ready'|'playing'|'ballLost'|'gameOver'|'clear', user, score, harvestedPercent, lives, bricksLeft, totalContributions }`。`readOnlyHint: true`
+- bridge: `registerWebMcp({ url:'/mcp', prefix:'remote.', watch:false, timeoutMs: 15000, quiet:true })`。失敗(Worker 停止等)は warn のみでページに影響なし
+- Vite: `agents` / `@modelcontextprotocol/sdk` / `zod` は遅延チャンクにのみ入ること(`build` 後の `index-*.js` に `webmcp-adapter` 文字列が無いことをテストで固定 — cca の内容マーカー方式)
+
+### CI / デプロイ / 検証
+
+- `ci.yml`: `deploy-web` も `deploy-ogp` の後(`needs` + 同じ `!cancelled()` 形)にする — `apps/web` が `/api/grid` を叩き始めるのは ogp が出た後でないと本番が一時的に壊れる。`changes` に `mcp`(paths: `workers/mcp/**`, `packages/core/**`)を追加、`deploy-mcp` を `deploy-ogp` と同形で追加(`wrangler deploy` → `pnpm verify:mcp`)。`needs: [test, changes, deploy-ogp]` にするが、`deploy-ogp` は ogp 変更が無いと skip されるので `if: !cancelled() && needs.test.result == 'success' && needs.deploy-ogp.result != 'failure' && needs.changes.outputs.mcp == 'true' && github.ref == 'refs/heads/main'` の形にする(skip の伝播で `deploy-mcp` まで skip されない)
+- `tools/verify-mcp.mjs`: 素の Streamable HTTP で `initialize`(`Accept: application/json, text/event-stream`、`Mcp-Session-Id` 取得)→ `tools/list`(2 ツール)→ `tools/call get_contribution_grid {user:'toshi0607'}`(200・text の長さ ≤ 1500)→ `tools/call render_share_card`(imageUrl が `/share/toshi0607/og.png?…`)→ `DELETE` セッション。ogp 同様「200 で終わらせない」
+- E2E(root `playwright.config.ts`、`e2e/`): `webServer` 2 本 = `wrangler dev --port 8787`(miniflare、DO/Service Binding は `-c workers/mcp/wrangler.toml -c workers/ogp/wrangler.toml` の複数構成)+ `vite preview --port 4173`(`vite.config.ts` に `preview.proxy['/mcp'] → 8787` を追加、dev 専用)。Chromium に `--enable-experimental-web-platform-features`
+  1. ページ内ツール 2 つ + `remote.*` 2 つが `navigator.modelContextTesting.listTools()` に出る
+  2. `remote.get_contribution_grid` を `executeTool` で呼ぶと文字列 JSON が返り、長さ ≤ 1500、`weeks.length === 53`
+  3. `start_game` → `get_game_state` が `ready` になる。プレイ中の再 `start_game` は拒否
+  4. 全ツールを一巡した後、`localStorage` / `sessionStorage` / `document.cookie` / IndexedDB 一覧が**呼ぶ前とバイト同一**
+  5. ネットワーク監視: 同一オリジン `/mcp` と `github-contributions-api.jogruber.de`(既存)以外へのリクエスト・WebSocket がゼロ
+  6. `--enable-experimental-web-platform-features` 無しの Chromium では `agents` チャンクが**ロードされない**(Lighthouse 予算の機構化)
+- 本番スモーク: `deploy-mcp` 後に `verify-mcp.mjs`(HTTP)+ `e2e/production/webmcp.spec.ts`(本番 URL に上記 1–2 を実行)。加えて `pnpm lh` が予算内であること(D1/D2 の検証)
+- Lighthouse: `pnpm lh` を PR で回す(既存)。`resource-summary:script:size` が変わらないこと
+
+### ゼロコード注入(Cloudflare、2026-08-06 発表)— 一次情報取得済み
+
+- blog「Give any website a WebMCP interface」 https://blog.cloudflare.com/webmcp/ (2026-08-06T13:00Z、developer preview)。専用 docs ページは無し(2026-09-04 時点)
+- 仕組み: ダッシュボード **Agent Readiness > WebMCP** をゾーンでオンにすると、HTMLRewriter が全 HTML レスポンスに
+  `<script type="module" src="/.webmcp/bridge.js" data-packs="c2pa,mcp-server-client" data-mcp-url="/mcp">` を注入する。
+  `mcp-server-client` パックが **同一オリジン `/mcp`(既定)** の MCP サーバーをページに映す = この設計の `workers/mcp` がそのまま接続先になる
+- 比較方式: 同じ `/mcp` に対して (A) `registerWebMcp()`(`apps/web` にコード、D2)と (B) ゼロコード注入(コードなし、ダッシュボード)を
+  切り替え、`listTools()` の結果・ロードされるバイト数・Lighthouse を並べる。(B) は**一時的にオンにして計測し、記録後にオフへ戻す**
+- 制約: (a) 設定はゾーン単位のダッシュボード操作 → **トシの作業**(Q4)。(b) 全 HTML に module script が入るため、
+  `lh:prod`(毎日 06:00 JST)の `script:size ≤ 40,000B` と best-practices 1.0 を割り得る。オンにする前に `/.webmcp/bridge.js` の
+  サイズと native 無しブラウザでの挙動(console error の有無)を実測して判断する。(c) `c2pa` パックも既定オン(`signatureVerified:false` 固定)。
+  `data-packs` を絞れるかは未確認。(d) 注入ブリッジが `document.modelContext` / `navigator.modelContext` のどちらを見るかは blog に明記なし(本文表記は `document.`)
+
+## Constraints(制約台帳)
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| ツールは推移的にも書き込まない(ページ状態の変更は `start_game` のみ・ストレージ不変) | ユーザー指示 4 + cca 教訓 | E2E 4(ストレージ バイト同一)+ Worker 側は DO/KV へ `put`/`sql.exec` を書かない(grep) |
+| 出力は最終結果の直列化サイズで 1.5K 以内 | ユーザー指示 4 / Chrome 指針 | vitest: 53 週フィクスチャで `get_contribution_grid`、代表エラー、`render_share_card` 成功/429 の `JSON.stringify(...).length ≤ 1500`。bridge 経路は E2E 2 |
+| `user` は echo 前に検証(`^[a-zA-Z0-9-]{1,39}$`) | ユーザー指示 4 / share-params.ts:8 | vitest: 2000 字・記号入り・空文字で拒否し、エラー文に入力が含まれない |
+| 外部通信は Worker 側に限定。ページからの通信先を増やさない(切替後は jogruber → 自オリジンに減る) | ユーザー指示 4 + Q3 回答 | E2E 5(同一オリジン以外への通信ゼロ) |
+| CSP との整合 | ユーザー指示 4 | 現状 CSP 無し(D11)。`_headers` を追加しない(diff) |
+| bridge の既知制約(同名衝突・`content[]` 平坦化・非ストリーミング・SSR 不可)を設計に反映し記録 | ユーザー指示 5 | `prefix:'remote.'` / text 1 本で返す / SSE 不使用 / dynamic import のみ。記事メモに記載 |
+| DESIGN.md「サーバー不要」と SECURITY.md「サーバー側の保存なし」を守る | DESIGN.md §4、SECURITY.md | leaderboard を入れない(D10)。SECURITY.md の対象表に `/mcp` を追加(保存なしの記述は維持) |
+| Lighthouse CI を壊さない(`script:size ≤ 40,000B`、perf ≥ 0.9) | lighthouserc.cjs | `pnpm lh` green、E2E 6 |
+| verify-deploy / verify-worker を壊さない | ユーザー指示ルール | 既存 2 本は変更しない。`verify-mcp` を追加 |
+| `workers/ogp` の `/share/*` の既存挙動を変えない(追加は `/api/*` と via:mcp 時の limiter のみ) | 既存 CI・Bugfix Rule | ogp の既存テスト全 pass、`verify:ogp` の既存 4 分岐不変 |
+| privacy ページ / README / SECURITY.md の「Web 版は第三者 API に問い合わせる」記述を切替後の実態(自 Worker 経由で jogruber)に合わせる | rules/pr.md | 同 PR で更新。`apps/web/public/privacy/index.html` を grep |
+| core は DOM/fetch 非依存 | DESIGN.md §1 | `lives` getter 追加のみ。core/src に fetch/document 参照なし(grep) |
+| バージョン pin(`agents` exact) | モジュール警告(実読) | package.json に `^` 無し |
+| コミット・PR はユーザー指示後。main へは PR 経由 | ユーザー指示 | git log |
+| 応答はタチコマ口調、コード・ドキュメントは通常文体 | ユーザー指示 | — |
+| README / DESIGN.md / SECURITY.md をコードと同期 | rules/pr.md | 同 PR で更新(構成表に `workers/mcp`、対象表に `/mcp`) |
+
+## Assumptions(前提台帳)
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| `agents@0.22.0` の `registerWebMcp` は **`navigator.modelContext`** を見る(document ではない)。無ければ no-op・通信なし | VERIFIED | `dist/experimental/webmcp.js` 実読(2026-09-04、npm pack) |
+| Chromium 151(Playwright 同梱)+ `--enable-experimental-web-platform-features` で `navigator.modelContext === document.modelContext`、`ModelContext` が native | VERIFIED | probe 実測 2026-09-04(フラグ無しでは両方 undefined) |
+| native `registerTool` はドット付き名(`remote.get_contribution_grid`)を受理し、`modelContextTesting.executeTool` で呼べる(戻りは JSON 文字列) | VERIFIED | probe2 実測 2026-09-04 |
+| native では**同名の二重登録が黙って通る**(spec の `InvalidStateError` と違う) | VERIFIED(Chromium 151 実測) | probe2。bridge の「衝突は無音」は native の挙動そのもの |
+| `agents/experimental/webmcp` のブラウザバンドルは ≈309KB / gzip 89KB | VERIFIED | esbuild `--bundle --minify` 実測(ajv 104K、zod 98K、MCP SDK 66K)。Vite の tree-shake で多少変わる |
+| bridge は Streamable HTTP(`StreamableHTTPClientTransport`)で接続し、結果の `content[]` を `\n` 連結の文字列にする。image は data URL 化。`isError` は throw | VERIFIED | `webmcp.js` 実読 |
+| bridge は `registerTool` の例外を warn に握りつぶす(=衝突は無音) | VERIFIED | `webmcp.js` `registerTools` の try/catch |
+| 同一ゾーン内の Worker→Worker は素の fetch 不可、Service Binding 必須 | VERIFIED | Cloudflare docs(custom-domains / limits)2026-09-04 |
+| Workers Free plan で SQLite DO が使える(`new_sqlite_classes`) | VERIFIED | Cloudflare docs(durable-objects/platform/pricing)2026-09-04 |
+| `McpAgent.serve('/mcp', { binding })` の wrangler 設定: `compatibility_flags ["nodejs_compat"]`、`durable_objects.bindings [{class_name, name}]`、`migrations new_sqlite_classes` | VERIFIED | cloudflare/agents `examples/webmcp/wrangler.jsonc` + `src/server.ts` @ec93caf(2026-09-03)。実装時に `wrangler dev` で再確認 |
+| McpAgent は `Mcp-Session-Id` ごとに DO インスタンスを作る。ページ表示ごとに 1 セッション(initialize + tools/list = 数リクエスト)。native ゲートのため実質トシの検証時のみ | VERIFIED(2026-09-04、ローカル) | `verify-mcp.mjs` 実測: initialize が `mcp-session-id` を返し、GET `/mcp` は Session-Id 無しで 400「Mcp-Session-Id header is required」、DELETE で 204。Free 枠(DO リクエスト 10 万/日)に対し無視できる量 |
+| ratelimit binding の `namespace_id` は account 内で一意にする必要がある(2 Worker で同じ id を共有できるかは不明) | UNVERIFIED-ACCEPTED(2026-09-04) | docs 検索で該当なし。**回避**: ogp の limiter は Service Binding 越しに ogp 側で効く(D3)。mcp 側は別 id(46802918)で自前の limiter を持つ |
+| `wrangler dev` で Service Binding と DO がローカルで動く | VERIFIED(2026-09-04) | 複数構成(`-c mcp -c ogp`)で `verify-mcp.mjs` が 1 回目 pass(両ツールの実呼び出し)。E2E は別ポート 2 セッション(`playwright.config.ts`)でレジストリ経由に `[connected]`、6 passed |
+| Chrome: 146 でフラグ実装、**149〜156 が Origin Trial**(Google I/O 2026-05-19)、150 で `navigator.modelContext` は deprecated alias(console warn 1 回) | VERIFIED(二次資料の相互裏取り、chromestatus 直読はしていない) | librarian 2026-09-04。rename 日付は 05-27 / 08-10 で資料が割れて未解決 |
+| jogruber は Worker からも CORS 無関係に叩ける(サーバー間) | VERIFIED | ogp Worker が既にそうしている(`og-image.ts:105`) |
+| 53 週への折り畳みは ogp の `foldContributionsIntoWeeks` を mcp から使う | VERIFIED(2026-09-04) | `workers/mcp/src/tools.ts` が `@kusakuzushi/ogp/src/contribution-grid` を import。core の `toGrid` は使わない(パーサと同じ出所に揃える) |
+| Worker の plain fetch handler では Cache API と ratelimit binding が動く | VERIFIED | ogp が既にその形(`index.ts:99`、`caches.default`) |
+| Playwright を root に追加しても Lighthouse / verify 系に影響しない | VERIFIED(2026-09-04) | 追加後に `pnpm -r test` 379 passed / `pnpm lh` exit 0 / `node --check tools/verify-*.mjs` OK。Playwright は `pnpm test:e2e` 別コマンドで、`pnpm -r test` の対象外 |
+| Durable Object 内で `caches.default` が使える | UNVERIFIED-ACCEPTED(2026-09-04) | docs 検索では「DO の応答は Workers Caching の対象外」しか出ず、DO 内からの Cache API 呼び出しの可否は明記なし。**緩和**: D15/D16 で Cache API は ogp の plain Worker 側にだけ置き、mcp の DO 内では一切呼ばない(`workers/mcp/src/*.ts` に `caches` 参照なし: grep)。真偽が設計に影響しない |
+| Durable Object 内(`this.env`)で ratelimit binding の `limit()` が効く | 不要(2026-09-04、D14 改訂) | limiter を全部 ogp の plain Worker に移したので mcp の `Env` に ratelimit binding は無い(`workers/mcp/wrangler.toml`、`src/index.ts` の `Env` 型)。検証対象そのものが消えた |
+| CI の `CLOUDFLARE_API_TOKEN` で初回 deploy の DO namespace 作成(`new_sqlite_classes` migration)が通る | UNVERIFIED-ACCEPTED(2026-09-04) | 手元からは検証不能(CI の token はボクから見えない・cloudflare-api MCP 未認証)。ogp の `wrangler deploy` が通っている token(Workers Scripts 書き込み)で DO namespace も作れるのが通常。緩和: 初回 `deploy-mcp` が権限で落ちたらトシに token 更新を依頼する(質問 Q6 で了承済みの前提) |
+| `syncUsernameQuery` は `replaceState`(履歴を積まない) | VERIFIED | `apps/web/src/app.ts:22-26` |
+| Lighthouse(lhci 0.15.1 同梱版)が WebMCP を有効化して計測しない(= native ゲートが閉じたまま) | VERIFIED(2026-09-04) | 実ゲート込みの `pnpm lh` exit 0、`resource-summary` script 転送 12,353 B(予算 40,000 B)、遅延チャンク 83 KB gz は乗っていない。フラグ無し Chromium で未ロードなことは `e2e/webmcp-gate.spec.ts` でも固定 |
+
+## 実装フェーズ(質問回答後に着手。各項目は 1 コマンドで検証)
+
+- [x] P0 `agents` 依存追加 + spike: 遅延チャンク `register-*.js` 295,039 B / gzip 83,252 B、eager `index-*.js` gzip 11,589 B(`webmcp-adapter` 文字列なし)。`pnpm lh` exit 0(perf 中央値 100、`resource-summary` script は下の Notes、2026-09-04)
+- [x] P1 `workers/ogp`: `github-grid.ts` 持ち上げ + `/api/grid/{user}` + limiter 2 本 + via:mcp 判定 + テスト — `pnpm --filter @kusakuzushi/ogp test` 121 passed(+18)。`apps/web/src/api.ts` の URL 切替 + vite proxy — web 98 passed
+- [x] P2 `workers/mcp` scaffold + 2 ツール + vitest 10 passed。`wrangler dev -c mcp -c ogp` に対し `verify-mcp.mjs --origin http://127.0.0.1:8787` が 1 回目で pass(initialize → tools/list → 両ツール実呼び出し(実 jogruber + 実レンダリング)→ DELETE 204)
+- [x] P3 session `getSnapshot` + `initApp` controller(core は `Game.life` getter が既にあり変更なし。`share-link.ts` に text builder を export 追加)— `pnpm -r test` 379 passed / `pnpm -r build` 全 6 パッケージ Done
+- [x] P4 `apps/web/src/webmcp/`(tools.ts vitest 5、register.ts、main.ts ゲート)。遅延チャンク検査は E2E 6(`webmcp-gate.spec.ts`)で機構化
+- [x] P5 Playwright E2E 6 本 — `pnpm test:e2e` 6 passed (14.7s)、2026-09-04
+- [x] P6 CI(`changes.mcp` / `deploy-mcp` / `verify-webmcp` / `e2e` job、deploy-web を ogp の後に)+ README / DESIGN.md §5.5 / SECURITY.md / privacy ページ(ja/en、最終更新 2026-09-04)更新。yaml パース OK。**CI 上での実行は PR 作成後**
+- [x] P7 フェーズゲート: `/code-review high`(finder 8 観点 → 検証 → 10 件報告、全件修正済み。下の Review 節)+ `reviewer`(opus、設計適合。結果は Review 節に追記)。修正後 `pnpm -r test` 386 passed / `pnpm test:e2e` 6 passed / `pnpm -r build` Done
+- [ ] P8 (ユーザー指示後)コミット・PR・CI green・main マージ → 本番 `verify:mcp` + 本番 E2E + Claude Code から `claude mcp add` で実呼び出し → 記事メモに結果
+- [ ] P9 ゼロコード注入の試行(Q4 の回答次第)
+
+## Notes(実装中の判断ログ — 追記)
+
+- 2026-09-04 実装(逸脱と発見):
+  - `Game.lives` getter の追加は不要だった(`Game.life` が既に public getter。設計時の grep で `lives` を探して見落とし)
+  - `McpAgent` は agents 0.22.0 の d.ts で **`@deprecated` / feature-frozen**(`createMcpHandler` + SDK v2 factory 推奨)。トシ指定どおり `McpAgent` で実装し、`index.ts` のヘッダと DESIGN.md §5.5 に理由を明記。移行は別判断
+  - ogp の entry module から `VIA_HEADER` を `export` したら workerd が「entry の export はハンドラか DO クラスのみ」で起動拒否 → module-private に
+  - Playwright の `webServer` は最初 `wrangler dev -c mcp -c ogp` の 1 セッション構成にしたが、ページの `/api` が primary(mcp)に届いて 404 になる(secondary は Service Binding 専用)。**ogp と mcp を別ポートの 2 セッション**にし、Service Binding は wrangler のローカルレジストリで接続(実測で `[connected]` になり render_share_card が通る)
+  - Chromium 151 の `navigator.modelContextTesting.executeTool` は **文字列の戻り値をそのまま、オブジェクトは JSON 文字列にして**返す(probe3 実測)。bridge が平坦化した「JSON 文字列」と「オブジェクト」は runner 越しには区別できない → E2E の `typeof` 断定を外し、最終文字列の予算と復号後の形だけを固定
+  - `document.modelContext.executeTool(tool, {})` は native に存在するが `UnknownError: Failed to parse input arguments`(入力は JSON 文字列を期待している模様。未追跡)
+  - `pnpm exec wrangler` は root に wrangler が無いので失敗。E2E は `pnpm --filter @kusakuzushi/<worker> exec wrangler dev` で起動
+  - Lighthouse(`pnpm lh`、5 runs、2026-09-04): index.html perf 中央値 100、`resource-summary` は下記。WebMCP 経路は Lighthouse の Chrome では開かない(gate spec で固定)
+- 2026-09-04 質問回答: Q1 入れない / Q2 入れない / Q3 **同 PR で切替**(D9 を覆す。D16 で ogp 側に取得口を置く形に再設計)/ Q4 試す。Q5(OT)・Q6(token)は未回答のため既定(OT 保留、token は問題が出たら連絡)で進める
+- 2026-09-04 設計時: cloudflare-api MCP は未認証(`Authentication error`)、wrangler は OAuth ログイン済み(account `5ee49b8e…`、zone read / workers write)。デプロイは CI の `CLOUDFLARE_API_TOKEN` で行う(手元からは出さない)
+
+## Review(WebMCP、2026-09-04)
+
+### `/code-review high`(finder 8 観点 × 検証)— 10 件、すべて同日修正
+
+| 重大度 | 指摘 | 対応 |
+|---|---|---|
+| High | `/api/grid` の limiter が global key 1 本 → 誰かの連打で本物のプレイヤーが 429(切替前は各ブラウザが jogruber を直叩きしていたので起きなかった退行) | キーを `cf-connecting-ip` ごとに。Service Binding 経由(IP なし)は `service-binding` の共有バケット。テストでキーを固定 |
+| High | `x-kusakuzushi-via: mcp` は誰でも付けられ、10 リクエストでエージェント用の render 枠を枯らせる | 同上(IP ごとのキー)。公開経路から偽装しても自分の IP 枠しか減らない |
+| Medium | `getSnapshot()` の spread で `state` キーが `get_game_state` の結果に漏れる(3 観点が独立に指摘) | フィールドを明示して構築。`phase`/`currentUser` の二重管理も `swapStage()` 1 箇所に集約 |
+| Medium | `start_game` が `loading` 中も通り、2 本の `startFlow` が競合して盤面と `?user=` がずれ得る | `loading` 中は拒否(ユニットテスト追加) |
+| Medium | `og-image.ts` の包括 try/catch が持ち上げで消え、fold/SVG の例外が 500 になる経路が復活 | try/catch を復元 |
+| Medium | `verify-worker.mjs` の `/api/grid` 判定が jogruber 停止で deploy-ogp を落とし、web/mcp のデプロイ連鎖まで止める | Worker 由来の 429/502/503(非 HTML)は route の証明として通す。HTML の 200 だけを route 喪失とする |
+| Low | `render_share_card` が ogp の描画で計算済みの total を捨てて `/api/grid` を取り直す | ogp が `x-kusakuzushi-total` ヘッダで返し、mcp はそれを読む(無い時だけ grid を取る) |
+| Low | ユーザー名の正規表現が 3 バンドルに手書き複製 | `@kusakuzushi/core/github-username` に集約。`workers/ogp` にも `exports` map を付けて mcp の deep import を `@kusakuzushi/ogp/jogruber` 等に |
+| Low | gate spec がチャンク名に結合(名前が変わると通ってしまう) | 「script は entry 1 本だけ」に変更(fail closed) |
+| Low | README が `KUSAKUZUSHI_MCP_PROXY` を書いていない | 追記 |
+
+REFUTED(対応せず): `renderShareCard` の同文エラー 2 分岐、CI ジョブの三重コピー、E2E の前置き重複(いずれも観測可能な効果なし)、`e2e/fixtures.ts` のコメント付き catch(意図した fallthrough)。
+対応せず(記録のみ): `/api/grid` の再 stringify → 生テキスト素通しに変更済み。PNG 本体の読み捨て(ogp が content-length を付けられないため保留)。CI の Playwright 二重インストール(`e2e` を PR 限定にしたので main では 1 回)。
+追加対応: `e2e/tsconfig.json` を `pnpm typecheck:e2e` として CI の e2e job で実行。`e2e` job は PR 限定(main は本番 `verify-webmcp` が同経路を見る)。`/mcp/`(末尾スラッシュ)も受ける。
+
+### `reviewer`(opus、設計適合)— Request Changes → 同日すべて対応
+
+| 重大度 | 指摘 | 対応 |
+|---|---|---|
+| High | **`McpAgent.serve` は既定で `Access-Control-Allow-Origin: *` を返す**(reviewer が curl で実測)。設計の「CORS ヘッダは付けない」は本番形では偽で、どのサイトの JS からも `/mcp` を叩ける | wrapper で `Origin` を `ALLOWED_ORIGINS`(`[vars]`)と照合。他オリジン → 403、許可オリジン → `*` を具体値に置換 + `Vary: Origin`、Origin 無し → CORS ヘッダ全削除。E2E は `--var` で preview オリジンを許可 |
+| High | `/api/grid` が global 1 バケット・404 の負キャッシュなし・single-flight なし | キーを IP ごとに(code-review と同根)。404 も 10 分キャッシュ。miss 経路を同期登録の single-flight に(admission ごと共有)。テスト 3 本追加 |
+| Medium | 認証なしの `initialize` が DO と行(`initializeRequest`/`props`)を作り、DELETE しない client の残骸が残る | `/mcp` 全体に IP ごとの `MCP_REQUEST_RATE_LIMITER`(60/分、plain Worker 側)。残骸は privacy/README に明記(PII なし) |
+| Medium | GET `/mcp` が 405 ではなく 400(設計 D6 の保険が未実装) | wrapper で POST / DELETE / OPTIONS 以外は 405 |
+| Medium | E2E が「全ツール一巡後にストレージ不変」を実際には見ていない。invalid user の remote 側は `ok === false` を断定していない | 全周テストを追加(7 本目)。`remote.ok` を断定 |
+| Low | privacy/README の「何も保存しない」がサーバー側の残骸と矛盾 | 「セッション情報以外は保存しない」に修正 |
+| Low | D16 の理由文が deep import の実態と不一致 | exports map 化に合わせて改訂 |
+| Low | `verify-mcp.mjs` のリトライが render 枠(10/分)を自分で食い潰す | render は一度通ったら以降呼ばない。枠切れの isError は通す |
+| Low | `e2e/` が型検査されない | `pnpm typecheck:e2e` を CI の e2e job に追加 |
+
+reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行は「`pnpm lh` 未実行」注記 → ボクが再実行して script 12,361 B / perf 100 ×5 で確認)。
+未検証として残る指摘: **CI の `e2e` job は GitHub Actions 上でまだ一度も走っていない**(2 本の `wrangler dev` がレジストリ経由で Service Binding を繋ぐのは手元でしか確認していない)。PR で初回実行。
+- 2026-09-04 追記(reviewer 対応の実測): `/mcp` の Origin allowlist はローカルで「他オリジン 403 / Origin 無しは CORS ヘッダ無し / 許可オリジン(4173)は ACAO 厳密値 / GET 405 / `/mcp/` 200」を curl で確認。wrangler dev 自身のオリジン(8787)は route ホストに読み替えられるので許可できない(最初これを「`--var` が壊れる」と誤読した — 本番オリジンを `--var` で渡した回は 200 / 偽装 403 で正常)。ローカルの許可オリジンは `workers/mcp/.dev.vars` にまとめ、`verify-mcp.mjs` の自オリジン検査は本番(https)限定
+
+### 自己クイズ(2026-09-04、実装完了時)
+
+1. **一番リスクの高い行は?** `workers/mcp/src/index.ts` の wrapper が `McpAgent.serve` の応答から CORS ヘッダを削る / 具体オリジンに置換する箇所。根拠: 他オリジン 403・Origin 無しヘッダ無し・許可オリジン厳密値を curl で実測(ローカル)、本番は `verify-mcp.mjs` の分岐 6 が deploy 直後に検査する。次点は `handleGridApi` の single-flight(同期登録)— 並行 miss のテストで 1 fetch / 1 token を固定
+2. **壊す入力・状態は?** (a) jogruber 停止: `/api/grid` 502 → ページは既存のエラー文、OGP は grid-less カード、verify は route 証明として通す。(b) 60 回/分を超える同一 IP の連打: 429(他 IP に影響なし)。(c) native WebMCP が `navigator.modelContext` 名を捨てた日: bridge が no-op(ページ内ツールは残る)— 記事メモに記録、E2E は Chromium 151 で固定。(d) 未検証: CI 上で 2 本の `wrangler dev` がレジストリ経由で繋がるか(初回 PR で判明)
+3. **テストしていないこと**: 本番デプロイ後の実挙動(PR 後の `verify-mcp` / `verify-webmcp`)、Claude Code からの実呼び出し、ゼロコード注入(トシ操作待ち)、DO の Free 枠(実質トシの検証時のみのトラフィックなので許容)
+4. **計画との矛盾**: D9(切替しない)は Q3 回答で覆した。D14 の「global key」は reviewer 指摘で IP ごとに改訂。D16 の deep import は exports map に改訂。いずれも台帳に記録済み
+

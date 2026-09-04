@@ -7,6 +7,20 @@ import { createOgCardWriterForTargets, OG_CARD_MAX_BYTES } from "./tools/og-card
 const CARD_SAVE_PATH = "/__save-card";
 
 /**
+ * `/api/*` (contribution data, the OGP Worker) and `/mcp` (the MCP Worker)
+ * live behind the same origin in production. Locally they are proxied to the
+ * production zone by default so `pnpm dev` stays a single command; point
+ * KUSAKUZUSHI_API_PROXY / KUSAKUZUSHI_MCP_PROXY at `wrangler dev` origins
+ * (E2E does, one per Worker) to exercise local Workers instead. `changeOrigin`
+ * rewrites the Host header, which the zone routes need to match.
+ */
+const PRODUCTION_ORIGIN = "https://kusakuzushi.toshi0607.com";
+const workerProxy = {
+  "/api": { target: process.env.KUSAKUZUSHI_API_PROXY ?? PRODUCTION_ORIGIN, changeOrigin: true },
+  "/mcp": { target: process.env.KUSAKUZUSHI_MCP_PROXY ?? PRODUCTION_ORIGIN, changeOrigin: true },
+};
+
+/**
  * 書き出し先は名前で引く固定表にする。POST のボディだけを受け取り、パスを
  * リクエストから組み立てない(dev サーバーとはいえ、任意のパスに書ける口を
  * 開けないため)。
@@ -90,4 +104,6 @@ function inlineStylesheet(): Plugin {
 
 export default defineConfig({
   plugins: [cardWriter(), inlineStylesheet()],
+  server: { proxy: workerProxy },
+  preview: { proxy: workerProxy },
 });

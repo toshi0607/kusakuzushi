@@ -23,3 +23,7 @@ videos/*/.thumbnails/
 videos/*/.media/
 videos/*/tools/.frames/
 videos/*/tools/core-bundle.js
+
+# Playwright の出力(トレース・スクリーンショット。CI は失敗時に artifact へ上げる)
+test-results/
+playwright-report/

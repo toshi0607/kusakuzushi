@@ -22,7 +22,8 @@ GitHub の非公開報告を使ってください。作者にだけ届き、修�
 | 対象 | 範囲 |
 |---|---|
 | Web 版 | https://kusakuzushi.toshi0607.com とその成果物(`apps/web`) |
-| OGP Worker | `https://kusakuzushi.toshi0607.com/share/*`(`workers/ogp`) |
+| OGP Worker | `https://kusakuzushi.toshi0607.com/share/*` と `/api/*`(`workers/ogp`) |
+| MCP Worker | `https://kusakuzushi.toshi0607.com/mcp`(`workers/mcp`)と、ページが登録する WebMCP ツール(`apps/web/src/webmcp`) |
 | Chrome 拡張 | `apps/extension`(GitHub のページ上で動く content script) |
 | ゲームエンジン | `packages/core` |
 
@@ -39,7 +40,9 @@ GitHub の非公開報告を使ってください。作者にだけ届き、修�
 このプロジェクトは**アカウントも認証もサーバー側の保存も持ちません**。ログイン機構、
 セッション、データベース、ユーザーデータの保管はどこにもありません。
 
-- 入力されるユーザー名は GitHub 上の公開情報で、Web 版はそれを第三者 API に問い合わせるだけです
+- 入力されるユーザー名は GitHub 上の公開情報で、Web 版はそれを自分の Worker(`/api/grid`)に渡し、
+  Worker が第三者 API に問い合わせるだけです。MCP Worker のツールも同じ公開情報しか扱わず、
+  認証は無く、Durable Object には MCP セッション以外を保存しません
 - Chrome 拡張は**通信を一切行いません**。草の読み取りと描画はブラウザの中だけで完結し、
   外部送信・解析・Cookie・`chrome.storage` のいずれも使いません。マニフェストには
   `permissions` も `host_permissions` も無く、content script の match が
@@ -48,7 +51,8 @@ GitHub の非公開報告を使ってください。作者にだけ届き、修�
 
 そのため想定される問題は、認証やデータ漏洩よりも **XSS / DOM インジェクション**
 (ユーザー名や URL パラメータが GitHub のページや OGP HTML に流れ込む経路)、
-**Worker のパラメータ処理**、**依存パッケージ**のあたりに寄ります。
+**Worker のパラメータ処理**(`/api/grid` と MCP ツールの入力検証、上流へのレート制限)、
+**依存パッケージ**のあたりに寄ります。
 
 ## 依存パッケージ
 
