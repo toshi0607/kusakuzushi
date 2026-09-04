@@ -71,6 +71,7 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       ogp: ${{ steps.filter.outputs.ogp }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,9 +90,10 @@ jobs:
           # 余分にデプロイする(どちらも冪等)
           if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ] \
             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            echo "前回の main tip を特定できないため両方デプロイする (before=${BEFORE})"
+            echo "前回の main tip を特定できないため全部デプロイする (before=${BEFORE})"
             echo "web=true" >> "$GITHUB_OUTPUT"
             echo "ogp=true" >> "$GITHUB_OUTPUT"
+            echo "mcp=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -106,6 +108,9 @@ jobs:
           # Worker が古い文言とフォントサブセットのカードを配り続ける
           web='^(apps/web/|packages/core/)'
           ogp='^(workers/ogp/|packages/core/)'
+          # workers/mcp は workers/ogp の src(jogruber のパーサ)と packages/core
+          # (共有リンク)を直接 import してバンドルする
+          mcp='^(workers/mcp/|workers/ogp/|packages/core/)'
 
           # パイプにしないこと: `grep -q` は一致した時点で終了するので、書き手が SIGPIPE で
           # 死ぬと pipefail のせいで「一致したのに失敗」になりうる
@@ -113,16 +118,26 @@ jobs:
 
           if matches "${web}" || matches "${shared}"; then web=true; else web=false; fi
           if matches "${ogp}" || matches "${shared}"; then ogp=true; else ogp=false; fi
+          if matches "${mcp}" || matches "${shared}"; then mcp=true; else mcp=false; fi
 
-          echo "→ web=${web} ogp=${ogp}"
+          echo "→ web=${web} ogp=${ogp} mcp=${mcp}"
           echo "web=${web}" >> "$GITHUB_OUTPUT"
           echo "ogp=${ogp}" >> "$GITHUB_OUTPUT"
+          echo "mcp=${mcp}" >> "$GITHUB_OUTPUT"
 
   deploy-web:
-    needs: [test, changes]
+    # ogp の後に出す: web は草データを ogp の /api/grid から取るので、先に web だけ
+    # 出ると新しいページが古い Worker(route 無し → Pages の index.html)を叩く。
+    # deploy-ogp は ogp に変更が無いと skip されるため、needs の伝播で自分まで
+    # skip されないよう `!cancelled()` + 各 result を明示して判定する
+    needs: [test, changes, deploy-ogp]
     # needs.changes が push 限定なので実質 main への push だけだが、
     # デプロイの門番は条件側にも明示しておく(fork の PR から絶対に走らせない)
     if: >-
+      !cancelled() &&
+      needs.test.result == 'success' &&
+      needs.changes.result == 'success' &&
+      needs.deploy-ogp.result != 'failure' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.changes.outputs.web == 'true'
@@ -244,3 +259,135 @@ jobs:
 
       - if: steps.tip.outputs.current == 'true'
         run: pnpm run verify:ogp
+
+  deploy-mcp:
+    # ogp の後に出す: mcp は Service Binding で ogp の /api/grid と /share/*/og.png を
+    # 叩くので、ogp 側の新しい route と limiter が先に要る(deploy-web と同じ理屈)
+    needs: [test, changes, deploy-ogp]
+    if: >-
+      !cancelled() &&
+      needs.test.result == 'success' &&
+      needs.changes.result == 'success' &&
+      needs.deploy-ogp.result != 'failure' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.outputs.mcp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deploy-mcp
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 5ee49b8e0983dc8fcf6d0eddb45ef5d8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - id: tip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')
+          if [ "${tip}" = "${GITHUB_SHA}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main は既に ${tip} まで進んでいる。この run(${GITHUB_SHA})はデプロイしない"
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Durable Object の migration(初回は namespace 作成)も wrangler deploy が行う
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run deploy:mcp
+
+      # 素の Streamable HTTP で initialize → tools/list → tools/call まで通す
+      - if: steps.tip.outputs.current == 'true'
+        run: pnpm run verify:mcp
+
+  # 本番で「ページ → bridge → MCP Worker → OGP Worker」が実際につながることを、
+  # WebMCP を有効にした Chromium で確かめる。web と mcp のどちらが出た後でも意味がある
+  # (もう一方は前回のデプロイ済み)。読み取りだけなので tip 判定は要らない
+  verify-webmcp:
+    needs: [changes, deploy-web, deploy-mcp]
+    if: >-
+      !cancelled() &&
+      needs.changes.result == 'success' &&
+      needs.deploy-web.result != 'failure' &&
+      needs.deploy-mcp.result != 'failure' &&
+      (needs.deploy-web.result == 'success' || needs.deploy-mcp.result == 'success') &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e:prod
+
+  # ブラウザ E2E(PR ゲート)。wrangler dev(miniflare)で MCP / OGP Worker を立て、
+  # vite preview から /api と /mcp をそこへプロキシする(playwright.config.ts)。
+  # WebMCP は Chromium のフラグで native を有効にして、ブラウザ自身のツール一覧と
+  # 実行 API(navigator.modelContextTesting)から見る。
+  # main への push では走らせない: 本番に対する verify-webmcp が同じ経路を見るし、
+  # ローカル Worker も実 jogruber を叩くので、上流の都合で main を赤くしない
+  e2e:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # playwright は esbuild で変換するだけで型は見ない
+      - run: pnpm typecheck:e2e
+
+      - run: pnpm test:e2e
+
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 7

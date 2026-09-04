@@ -22,7 +22,8 @@ kusakuzushi/
 │   ├── web/             # Vite + vanilla TS。ユーザー名入力→API→プレイ→共有
 │   └── extension/       # Chrome拡張 MV3。content scriptでDOM→グリッド化→オーバーレイ
 └── workers/
-    └── ogp/             # (Phase 2) Cloudflare Worker: 動的OGP画像生成
+    ├── ogp/             # (Phase 2) Cloudflare Worker: 動的OGP画像生成 + /api/grid(草データの取得口)
+    └── mcp/             # (Phase 4) Cloudflare Worker: リモート MCP サーバー(McpAgent)。ogp を Service Binding で叩く façade
 ```
 
 core は「`ContributionGrid` を受け取り、渡された canvas に描き、結果イベントを返す」だけ。
@@ -39,7 +40,7 @@ type ContributionGrid = {
 };
 ```
 
-### データ源A: Web版 — 非公式API(検証済み)
+### データ源A: Web版 — 非公式API(検証済み)、自前 Worker 経由
 
 `GET https://github-contributions-api.jogruber.de/v4/{user}?y=last`
 
@@ -47,8 +48,11 @@ type ContributionGrid = {
 - `access-control-allow-origin: *` — クライアントから直接叩ける — **VERIFIED**
 - 日付フラット配列なので、曜日で折って weeks[][] に変換するアダプタを書く
 
-リスク緩和: `fetchGrid(user): Promise<ContributionGrid>` のインターフェースの後ろに隠す。
-サービスが死んだら Cloudflare Worker の自前プロキシ(下記データ源Bと同じパース)に差し替えるだけ。
+2026-09-04 から、ページは直接叩かず同一オリジンの `GET /api/grid/{user}`(`workers/ogp`、
+`github-grid.ts`)を経由する。Worker が検証した JSON をそのまま返すので `fetchGrid` のパーサは不変。
+ページの通信先は自オリジンだけになり、上流を替える(GitHub の HTML を直接読む等)のは Worker の
+デプロイで済む。Worker 側は Cache API(10 分)と rate limit(60/分)を持つ。
+`fetchGrid(user): Promise<ContributionGrid>` のインターフェースはそのまま。
 
 ### データ源B: 拡張版 — ページのDOM(検証済み)
 
@@ -127,6 +131,43 @@ contributions 数ではない。同じ `#草崩し` に比較できない数字�
 (`td-paint.ts`)ので canvas を撮っても盤面が写らない。DOM ごと撮るには `chrome.tabs.captureVisibleTab`
 = 権限追加 + background が必要で、この機能のために払う額ではない。
 
+## 5.5 エージェント向けツール — WebMCP / MCP(Phase 4、2026-09-04)
+
+「サーバーにしかできない処理(OGP レンダリング、草データ取得)を持つサイト」に
+Cloudflare Agents SDK の `McpAgent`(リモート MCP)と `registerWebMcp()`(ページへ映すブリッジ)を当てる実験。
+姉妹プロジェクト cca-study-guide(ブラウザ状態だけ、第一者でページ内登録)との対比が目的で、
+設計の経緯と一次情報は `tasks/todo.md`「WebMCP 対応 — Cloudflare bridge 方式の設計」と
+`tasks/webmcp-article-notes.md` にある。
+
+```
+ページ(native navigator.modelContext がある時だけ、idle 後に dynamic import)
+  ├─ start_game / get_game_state         ← apps/web/src/webmcp/tools.ts(AppController 経由のみ)
+  └─ remote.get_contribution_grid /       ← agents/experimental/webmcp が /mcp の tools/list を映す
+     remote.render_share_card
+workers/mcp(McpAgent、Durable Object は MCP セッションだけ。何も保存しない)
+  └─ Service Binding → workers/ogp(/api/grid、/share/*/og.png。limiter と Cache はすべてこちら)
+```
+
+守っている性質(いずれも E2E `e2e/webmcp.spec.ts` で固定):
+
+- ツールは推移的にもストレージに書かない。ページ状態を変えるのは `start_game` だけで、
+  プレイ中は拒否する(エージェントの呼び出しはパドルを持つ人の意思ではない)。可視の副作用は
+  URL の `?user=` だけ(`replaceState`)
+- 出力は最終結果の直列化サイズで 1.5K 字以内。リモートツールの結果はブリッジが `content[]` を
+  1 本の文字列に平坦化するので、text 1 つに JSON を入れる。草データは 53 週 × 7 桁の level 文字列
+  (371 セルの日付付きオブジェクトでは入らない)。画像は URL とサイズだけを返す
+- ユーザー名は echo する前に `^[a-zA-Z0-9-]{1,39}$` で検証する(ページ・Worker の両側)
+- ページの通信先を増やさない。native が無いブラウザ(Lighthouse の Chrome を含む)は WebMCP の
+  モジュールを 1 バイトも読まない — `lighthouserc.cjs` のスクリプト予算(40KB)がこの設計の理由
+- エージェント経由のレンダリングは `x-kusakuzushi-via: mcp` で ogp 側の別枠(10/分)を先に通す。
+  ogp の既存 limiter は 1 本の全体枠なので、エージェントのループが本物のクローラーを 429 にしないため。
+  新設した 2 本(`/api/grid`、via:mcp)はクライアント IP ごとのバケット — 1 人の連打で他の人が 429 にならず、
+  via ヘッダを公開経路から偽装しても自分の枠しか減らない(Service Binding 経由は IP が無いので 1 バケット)
+
+サーバー状態(leaderboard 等)は持たない(§4「サーバー不要」、SECURITY.md の前提は不変)。
+`McpAgent` は agents 0.22.0 で feature-frozen(`createMcpHandler` 推奨)だが、Durable Object を伴う
+sessionful な形そのものが実験対象なので、バージョンを exact pin して使う。
+
 ## 6. 技術スタック
 
 | 項目 | 選定 | 理由 |
@@ -162,6 +203,7 @@ contributions 数ではない。同じ `#草崩し` に比較できない数字�
 | 1 | core + web版MVP(入力→プレイ→リザルト→X共有・画像保存) | 自分のユーザー名で最後まで遊べ、共有リンクが機能する |
 | 2 | 動的OGP Worker、演出磨き | Xでカードプレビューが出る |
 | 3 | Chrome拡張版 | 自分のプロフィールで本物の草が崩せる |
+| 4 | WebMCP / MCP(§5.5) | native WebMCP の Chromium から本番のツールが呼べ、Claude Code から `/mcp` を直接叩ける |
 
 実装開始時に Phase 1 を `tasks/todo.md` に展開する(Constraint/Assumption Ledger 込み)。
 
