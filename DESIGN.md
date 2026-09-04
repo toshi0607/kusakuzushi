@@ -144,7 +144,7 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)と `registerWebMcp()`(ペ
   ├─ start_game / get_game_state         ← apps/web/src/webmcp/tools.ts(AppController 経由のみ)
   └─ remote.get_contribution_grid /       ← agents/experimental/webmcp が /mcp の tools/list を映す
      remote.render_share_card
-workers/mcp(McpAgent、Durable Object は MCP セッションだけ。何も保存しない)
+workers/mcp(createMcpHandler + SDK v2 factory、セッションレス。何も保存しない)
   └─ Service Binding → workers/ogp(/api/grid、/share/*/og.png。limiter と Cache はすべてこちら)
 ```
 
@@ -165,8 +165,10 @@ workers/mcp(McpAgent、Durable Object は MCP セッションだけ。何も保�
   via ヘッダを公開経路から偽装しても自分の枠しか減らない(Service Binding 経由は IP が無いので 1 バケット)
 
 サーバー状態(leaderboard 等)は持たない(§4「サーバー不要」、SECURITY.md の前提は不変)。
-`McpAgent` は agents 0.22.0 で feature-frozen(`createMcpHandler` 推奨)だが、Durable Object を伴う
-sessionful な形そのものが実験対象なので、バージョンを exact pin して使う。
+最初のデプロイは `McpAgent`(Durable Object、sessionful)だった。Cloudflare のゼロコード注入ブリッジは
+`initialize` もセッションも無しに `tools/list` を投げるため sessionful なサーバーには 400 で弾かれ、
+site tools が 0 個になった(2026-09-04 実測)。そこで agents 0.22.0 が推奨するセッションレスの
+`createMcpHandler`(SDK v2 factory)に置き換えた。Durable Object は不要になり、セッションの残骸も消えた。
 
 ## 6. 技術スタック
 
