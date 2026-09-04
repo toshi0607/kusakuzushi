@@ -1,0 +1,43 @@
+name = "kusakuzushi-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+# McpAgent (Agents SDK) needs the Node.js compatibility layer.
+compatibility_flags = ["nodejs_compat"]
+
+routes = [
+  { pattern = "kusakuzushi.toshi0607.com/mcp*", zone_id = "ea6ad3e0ad5be8d094dd62dc14536b07" }
+]
+
+# McpAgent keeps each MCP session in a Durable Object. SQLite-backed classes
+# are the only kind available on the Workers Free plan (and the recommended
+# kind everywhere); nothing of ours is stored in it.
+[[durable_objects.bindings]]
+name = "MCP_OBJECT"
+class_name = "KusakuzushiMcp"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["KusakuzushiMcp"]
+
+# Pages allowed to call /mcp from JavaScript. The page bridge is same-origin;
+# every other browser origin is refused before the SDK sees the request
+# (the SDK would otherwise answer with Access-Control-Allow-Origin: *).
+# Local development and E2E override this through .dev.vars (or --var).
+[vars]
+ALLOWED_ORIGINS = "https://kusakuzushi.toshi0607.com"
+
+# One bucket per client IP for everything that reaches /mcp. An `initialize`
+# allocates a Durable Object and writes its session rows, and nothing else
+# stands in front of that. namespace_id must be unique within the account
+# (workers/ogp uses 46802917-46802919).
+[[ratelimits]]
+name = "MCP_REQUEST_RATE_LIMITER"
+namespace_id = "46802920"
+simple = { limit = 60, period = 60 }
+
+# Both tools are thin proxies over the OGP Worker (`/share/*/og.png` and
+# `/api/grid/*`). Same-zone Workers cannot fetch each other's routes, so this
+# Service Binding is the only way in — and it skips the public Internet.
+[[services]]
+binding = "OGP"
+service = "kusakuzushi-ogp"

@@ -30,4 +30,24 @@ if (!root) {
   throw new Error("#app root element not found");
 }
 
-initApp(root);
+const app = initApp(root);
+
+// WebMCP: only browsers with a native `navigator.modelContext` (Chrome behind
+// its origin trial or flag) load the tools module — it pulls in an MCP client
+// that would otherwise blow the page's script budget for nothing, since the
+// remote adapter is a no-op without the API anyway. Registration waits for an
+// idle moment so first paint and the player's first input come first; the
+// timeout keeps a busy tab from postponing it indefinitely.
+if ("modelContext" in navigator) {
+  const controller = new AbortController();
+  const register = (): void => {
+    void import("./webmcp/register")
+      .then(({ registerWebMcpTools }) => registerWebMcpTools(app, controller.signal))
+      .catch((error: unknown) => console.warn("[webmcp] tools unavailable:", error));
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(register, { timeout: 2000 });
+  } else {
+    window.setTimeout(register, 1000);
+  }
+}
