@@ -132,3 +132,30 @@ Playwright の Chromium に `--enable-experimental-web-platform-features` を付
 - 「サーバーを持つ」と増える責任の具体例(cca には無かった論点): CORS の既定、DO の残骸、limiter のキー設計(global → 誰でも全員を止められる)、上流障害とデプロイ連鎖の切り離し
 - **wrangler dev は自分のローカルオリジン(`http://127.0.0.1:8787`)と route ホスト(`kusakuzushi.toshi0607.com`)を双方向に読み替える**: `Origin: http://127.0.0.1:8787` を送ると Worker には別の値で届く(許可リストに入れても 403)、逆に Worker が set した route ホストの `Access-Control-Allow-Origin` は curl にはローカルホストで見える。別ポートの Vite preview(4173)のオリジンは読み替えられず、ACAO も厳密値で返った(実測)。`--var ALLOWED_ORIGINS:<url>` は URL のまま正しく渡る(本番オリジンを渡した回は 200 / 偽装 403 だった)。ローカルの許可オリジンは `workers/mcp/.dev.vars`(コミット済み、秘密ではない)にまとめ、本番の「自オリジンが許可され `*` ではない」は `verify-mcp.mjs` が https のときだけ検査する
 
+### 2026-09-04 ダッシュボードの実物(Agent Readiness > WebMCP、Beta)
+
+- 場所: ゾーン(`toshi0607.com`)配下の **Agent Readiness > WebMCP**(URL `/<account>/<zone>/agent-readiness/webmcp`)。バッジは「Beta」、説明は「Experimental, opt-in features for making your site work better with AI agents.」
+- 構成: 「Configuration: WebMCP bridge is off」の状態行、「Enable WebMCP — Injects a lightweight WebMCP bridge into your site's HTML so browser-based AI agents can read and interact with your pages.」、Tool packs(Optional)に **Content Credentials (C2PA)** と **Site MCP server(Proxies your site's own MCP server tools to the in-browser agent)** の 2 トグル。**ダッシュボードではどちらのパックも既定オフ**(blog の「両方既定オン」とは違う)。MCP サーバー URL の入力欄は無い(= 同一オリジン `/mcp` 固定で、blog の `data-mcp-url` 既定に一致)。「View Docs」は docs ではなく blog(https://blog.cloudflare.com/webmcp/)に飛ぶ
+- 影響範囲の注意: 設定は**ゾーン単位**。`toshi0607.com` 配下でプロキシ配信している HTML 全部(kusakuzushi 以外のサブドメインも)に注入される
+
+### 2026-09-04 ゼロコード注入を本番でオンにして計測(Site MCP server パックのみ、C2PA オフ)
+
+- 注入タグ(トップページ HTML、実測): `<script type="module" src="https://kusakuzushi.toshi0607.com/.webmcp/bridge.js" data-packs="mcp-server-client">`。blog の例と違い `data-mcp-url` は無く(既定の同一オリジン `/mcp`)、`src` は絶対 URL
+- `/.webmcp/bridge.js`: **47,612 B / gzip 13,403 B**、`text/javascript`、`cache-control: public, max-age=0, must-revalidate`、import なしの単一ファイル。`navigator.modelContext` と `document.modelContext` の両方を参照(deprecation warning が 1 回出る)。内部名は `[webmcp-interceptor]`
+- **フラグ無しの Chromium にも無条件に読み込まれる**(script 一覧: `/.webmcp/bridge.js`、`index-*.js`、Cloudflare beacon)。native が無い環境で 1 バイトも読まない D1/D2 の設計とは正反対。Lighthouse の予算への影響は下記
+- **フラグ有りでも注入ブリッジ由来のツールはゼロ**。`listTools()` に並ぶのはボクらの 4 つ(`get_game_state` / `start_game` / `remote.*`)だけ。コンソール: `[webmcp-interceptor] mcp-server-client: tools/list failed for "/mcp"; registering no site tools. Error: MCP endpoint returned HTTP 400` → `Registered 0 dynamic tool(s) from 1 dynamic pack(s).`
+- 原因(ワイヤ実測): 注入ブリッジの MCP クライアント(`mcpRpc`)は **`initialize` を送らず、`Mcp-Session-Id` も付けずに、いきなり `POST /mcp {"method":"tools/list"}`**(`accept: application/json, text/event-stream`、`credentials: "same-origin"` = ログイン Cookie で認証する前提、応答は 8 MB 上限・20 ページまで)。`McpAgent`(sessionful な Streamable HTTP)は「Mcp-Session-Id header is required」の 400 を返す。**ゼロコード注入が想定する「site MCP server」はセッションレス(`createMcpHandler` + SDK v2 factory)の形で、feature-frozen の `McpAgent` とは噛み合わない** — Cloudflare 内で MCP サーバーの推奨 API が動いたことの、もう一つの現れ
+- 一方ボクらの `registerWebMcp()` は同じ `/mcp` に `initialize` → `notifications/initialized` → GET(SSE、SDK の client が `watch:false` でも自動で開こうとする → wrapper の 405、SDK は仕様どおり無視)→ `tools/list`(sid 付き)で通る。同じページに 2 つの Cloudflare 製ブリッジが同居し、片方だけが動いた
+- 影響: ゾーン単位なので `toshi0607.com` 配下の全 HTML に 13.4 KB gz が乗る。ページ側の挙動は変わらない(失敗は warn どまり)
+- `pnpm lh:prod`(注入オン、5 runs、2026-09-04): perf 中央値 **100**、FCP/LCP 1,071 ms、`resource-summary` **script 転送 37,096〜37,109 B**(予算 40,000 B に対し残り約 2.9 KB。内訳の推定: entry 12.4 KB + 注入 bridge 13.4 KB + Cloudflare Web Analytics beacon ≈ 11 KB)、total ≈ 226.7 KB。`uses-long-cache-ttl` が warn(bridge.js が `max-age=0, must-revalidate`)。予算内には収まったが、ゼロコード注入 1 つでページの残り予算をほぼ使い切る
+- オフに戻した直後(同日): トップページ HTML から注入タグは消えた。`/.webmcp/bridge.js` 自体はオフ後も 200 で配信され続ける(パスは Cloudflare が予約している模様)
+- 次の実験(トシ指示「実験つづけて」): `/mcp` を Cloudflare 推奨のセッションレス(`createMcpHandler` + SDK v2 factory)に置き換え、注入ブリッジの `tools/list`(initialize 無し)が通るかを再計測する
+
+### 2026-09-04 実験 2: `/mcp` をセッションレスに置き換え
+
+- `agents/mcp/server` の `createMcpHandler(factory, options)`(= `createStatelessMcpHandler`)。factory は `(ctx: McpRequestContext) => McpServer` で **ctx に env は無い**(`era`/`authInfo`/`requestInfo` のみ)→ 最初のリクエストの `env.OGP` を閉じ込めてハンドラを isolate ごとに 1 回生成
+- SDK v2(`@modelcontextprotocol/server@2.0.0`)の `registerTool` は `inputSchema` に **Standard Schema(zod 4 の `z.object(...)` そのもの)** を取る(v1 は raw shape)。結果の形(`content[].text` / `isError`)は同じで `tools.ts` は無変更
+- handler オプション: `legacy: "stateless"`(2025 系の非エンベロープ通信を「各リクエストごとに新しいインスタンスで、sessionIdGenerator 無し」で捌く。GET/DELETE は 405)、`corsOptions: false` + `allowedOriginHostnames: "*"`(Origin 検証は wrapper で済ませている旨を宣言)。handler 自体に `allowedHostnames` / `allowedOriginHostnames` があり、`McpAgent.serve` の「`*` を無条件に付ける」既定とは対照的
+- Durable Object を撤去(`[[migrations]] tag="v2" deleted_classes`)。セッションの残骸問題(reviewer Medium 1)も消える
+- ローカル実測: initialize 無し・セッション無しの `POST /mcp tools/list` → 200(SSE、2 ツール)。`verify-mcp.mjs` に「cold tools/list」分岐を追加してフル pass。E2E(ページの `registerWebMcp` は initialize から通す形のまま)も通過
+

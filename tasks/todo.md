@@ -2155,6 +2155,7 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ペ�
 | D13 | Playwright E2E をこのリポジトリに**新設**(root `e2e/`、`@playwright/test` は root devDependency) | 現状 Playwright 無し(lockfile に `@vitest/browser-playwright` があるだけで未使用)。「推移的に書き込まない」「通信先が増えない」「bridge 経由の round-trip」はブラウザでしか固定できない |
 | D14 | **エージェント経由の呼び出しは ogp 側で別枠の limiter を先に通す**: mcp は Service Binding のリクエストに `x-kusakuzushi-via: mcp` を付け、ogp は該当時に `MCP_RENDER_RATE_LIMITER`(10/60s)→ 既存 `OGP_RENDER_RATE_LIMITER`(30/60s)の順で判定。`/api/grid` は `GRID_FETCH_RATE_LIMITER`(60/60s)。limiter は**すべて ogp Worker(plain Worker context)に置き、DO 内では呼ばない**。**キーはクライアント IP ごと**(`cf-connecting-ip`、Service Binding 経由は IP が無いので 1 つの共有バケット)— レビューで「global key 1 本だと誰かの連打で本物のプレイヤーが 429 になる(切替前は各ブラウザが jogruber を直接叩いていた)」「via ヘッダは誰でも付けられるので 10 回でエージェント枠を枯らせる」の 2 件が出たため 2026-09-04 に改訂 | ogp の limiter はキー 1 つの全体枠。エージェントが score/pct を変えて `render_share_card` を回すと、その枠を食い潰して**本物のクローラー(X/Slack)の共有カードが 429** になる。「レート制限を尊重」= 上流の枠を先に自分で絞る、と読む |
 | D15 | 草データのキャッシュ(Cache API、`max-age=600`)は **ogp Worker の `/api/grid` handler** に置く。mcp の DO 内では Cache API も ratelimit も呼ばない | DO 内で `caches.default` / ratelimit binding が使えるかは docs で確認できず(下の台帳)。plain Worker 側に寄せれば確認不要 |
+| D17 | **`/mcp` はセッションレス(`createMcpHandler` + SDK v2 factory)**。`McpAgent` と Durable Object は撤去(migration v2 `deleted_classes`) | 2026-09-04 のゼロコード注入実測: 注入ブリッジは initialize 無し・セッション無しで `tools/list` を投げ、`McpAgent` に 400 で弾かれて site tools 0 個。agents 0.22.0 の推奨 API でもある。Origin allowlist と IP ごとの limiter は wrapper に残し、handler は `corsOptions:false` / `allowedOriginHostnames:"*"`(上流で検証済みの意) |
 | D16 | **草データの取得口 `GET /api/grid/{user}` は `workers/ogp` に置く**(route `kusakuzushi.toshi0607.com/api/*` を ogp に追加)。`workers/mcp` は jogruber を知らず、両ツールとも `env.OGP` を叩くだけの façade | ogp は既に jogruber を叩いており、持ち上げ(`github-grid.ts`)が ogp 内で閉じる。mcp が要るパーサと折り畳みは `@kusakuzushi/ogp` の `exports` map(`./jogruber`、`./contribution-grid`)経由で借りる(2026-09-04 レビューで deep import を exports に改めた)。レスポンスは **jogruber と同じ JSON 形**(検証済みを素通し)にして `apps/web/src/api.ts` は URL 差し替えだけで済ませる。Worker 名が ogp のままなのは既知のズレ(改名はスコープ外、README で説明) |
 
 ## 質問(実装前にトシの回答が要るもの)
@@ -2311,7 +2312,8 @@ Cloudflare Agents SDK の `McpAgent`(リモート MCP)+ `registerWebMcp()`(ペ�
 - [x] P6 CI(`changes.mcp` / `deploy-mcp` / `verify-webmcp` / `e2e` job、deploy-web を ogp の後に)+ README / DESIGN.md §5.5 / SECURITY.md / privacy ページ(ja/en、最終更新 2026-09-04)更新。yaml パース OK。**CI 上での実行は PR 作成後**
 - [x] P7 フェーズゲート: `/code-review high`(finder 8 観点 → 検証 → 10 件報告、全件修正済み。下の Review 節)+ `reviewer`(opus、設計適合。結果は Review 節に追記)。修正後 `pnpm -r test` 386 passed / `pnpm test:e2e` 6 passed / `pnpm -r build` Done
 - [x] P8 PR #74(3 コミット)→ PR CI 緑(test 7m05s / e2e 1m11s 初回で pass / Lighthouse dist・slow pass)→ merge b3bbd87(2026-09-04 00:54Z)→ main CI: deploy-ogp 5m47s → deploy-mcp 54s(DO namespace 初回作成 OK = Q6 解消)/ deploy-web 51s → verify-webmcp 7m44s、すべて success。手元から本番へ `verify:ogp` / `verify:mcp`(自オリジンの ACAO 厳密値まで)/ `test:e2e:prod` 1 passed。Claude Code からの `claude mcp add` はトシの作業として残す
-- [ ] P9 ゼロコード注入の試行 — トシがダッシュボードで Agent Readiness > WebMCP をオン → ボクが `listTools()` / バイト数 / `pnpm lh:prod` を計測して記事メモに記録 → オフ
+- [ ] P10 セッションレス化(D17): `workers/mcp` を `createMcpHandler` に置き換え → ローカルで cold `tools/list` 2 ツール + verify-mcp pass → E2E → PR → デプロイ → トシが注入をもう一度オン → 注入ブリッジ由来のツールが `listTools()` に並ぶかを再計測 → オフ
+- [x] P9 ゼロコード注入の試行(2026-09-04): トシがオン → 注入タグ・bridge.js 47,612 B / gzip 13,403 B・フラグ無しでも読み込まれる・**注入ブリッジは initialize 無しの `tools/list` を投げて McpAgent に 400 で弾かれ、site tools 0 個**(記事メモに詳細)→ `pnpm lh:prod` の結果は下の Notes → オフに戻す(トシ)
 
 ## Notes(実装中の判断ログ — 追記)
 
@@ -2372,4 +2374,5 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 2. **壊す入力・状態は?** (a) jogruber 停止: `/api/grid` 502 → ページは既存のエラー文、OGP は grid-less カード、verify は route 証明として通す。(b) 60 回/分を超える同一 IP の連打: 429(他 IP に影響なし)。(c) native WebMCP が `navigator.modelContext` 名を捨てた日: bridge が no-op(ページ内ツールは残る)— 記事メモに記録、E2E は Chromium 151 で固定。(d) 未検証: CI 上で 2 本の `wrangler dev` がレジストリ経由で繋がるか(初回 PR で判明)
 3. **テストしていないこと**: 本番デプロイ後の実挙動(PR 後の `verify-mcp` / `verify-webmcp`)、Claude Code からの実呼び出し、ゼロコード注入(トシ操作待ち)、DO の Free 枠(実質トシの検証時のみのトラフィックなので許容)
 4. **計画との矛盾**: D9(切替しない)は Q3 回答で覆した。D14 の「global key」は reviewer 指摘で IP ごとに改訂。D16 の deep import は exports map に改訂。いずれも台帳に記録済み
+- 2026-09-04 ゼロコード注入オン時の `pnpm lh:prod`: perf 100 ×5、script 転送 37,1xx B(予算 40,000 B、残り約 2.9 KB)、`uses-long-cache-ttl` warn。詳細は記事メモ
 

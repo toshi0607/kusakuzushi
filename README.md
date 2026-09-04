@@ -32,7 +32,7 @@ web 版と拡張版は「それぞれの方法で `ContributionGrid` を作っ�
 | [`apps/web`](apps/web) | Vite + vanilla TS の Web 版。ユーザー名 → API → プレイ → リザルト → X 共有 |
 | [`apps/extension`](apps/extension) | Chrome 拡張 (Manifest V3)。content script が GitHub の DOM を読んでオーバーレイする → [README](apps/extension/README.md) |
 | [`workers/ogp`](workers/ogp) | Cloudflare Worker。`/share/{user}` にクローラーが来たらスコア入りの OGP 画像付き HTML、人間が来たら本体へ 302。`/api/grid/{user}` で草データを Web 版に渡す |
-| [`workers/mcp`](workers/mcp) | Cloudflare Worker(Agents SDK の `McpAgent`)。`/mcp` にリモート MCP サーバーを置き、草データの取得と共有カードの生成をエージェント向けツールとして公開する |
+| [`workers/mcp`](workers/mcp) | Cloudflare Worker(Agents SDK の `createMcpHandler`、セッションレス)。`/mcp` にリモート MCP サーバーを置き、草データの取得と共有カードの生成をエージェント向けツールとして公開する |
 
 データ源はこの 2 つで、core はどちらも知りません。
 

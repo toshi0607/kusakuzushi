@@ -5,7 +5,9 @@
  * Pages が index.html を **200** で返すので、ステータスでは判定できない。
  * MCP のハンドシェイクを素の fetch で最後まで通し、ツールが実際に答えることを見る:
  *
- *   1. initialize        → 200、`mcp-session-id` が返り、serverInfo.name が kusakuzushi
+ *   0. initialize 無しの tools/list → 200 で 2 ツール(Cloudflare のゼロコード注入ブリッジが投げる形。
+ *      セッションレスなサーバーでだけ通る)
+ *   1. initialize        → 200、serverInfo.name が kusakuzushi(セッションレスなので `mcp-session-id` は無くてよい)
  *   2. tools/list        → get_contribution_grid と render_share_card の 2 つ
  *   3. tools/call get_contribution_grid {user} → isError なし、text が JSON で weeks 53 本、1.5K 字以内
  *   4. tools/call render_share_card {user, percentage} → isError なし、imageUrl が /share/{user}/og.png
@@ -181,6 +183,14 @@ async function checkOnce(endpoint, user) {
     return originPolicy;
   }
 
+  // 注入ブリッジと同じ順番: いきなり tools/list(initialize もセッションも無し)
+  const cold = new McpSmoke(endpoint);
+  const coldList = await cold.request("tools/list", {});
+  const coldNames = (coldList?.tools ?? []).map((tool) => tool.name).sort();
+  if (JSON.stringify(coldNames) !== JSON.stringify(EXPECTED_TOOLS)) {
+    return `initialize 無しの tools/list が ${JSON.stringify(coldNames)}(期待: ${JSON.stringify(EXPECTED_TOOLS)})`;
+  }
+
   const mcp = new McpSmoke(endpoint);
   try {
     const init = await mcp.request("initialize", {
@@ -190,9 +200,6 @@ async function checkOnce(endpoint, user) {
     });
     if (init?.serverInfo?.name !== "kusakuzushi") {
       return `initialize の serverInfo.name が ${init?.serverInfo?.name ?? "(無し)"}`;
-    }
-    if (!mcp.sessionId) {
-      return "initialize が mcp-session-id を返していない";
     }
     await mcp.notify("notifications/initialized", {});
 
@@ -267,6 +274,7 @@ async function main() {
     }
     if (reason === null) {
       console.log(`✅ /mcp が Worker に届いている(${attempt} 回目で成功)`);
+      console.log("   initialize 無しの tools/list(注入ブリッジの形)→ 2 ツール");
       console.log("   initialize → tools/list(2 ツール)→ get_contribution_grid / render_share_card が 1.5K 字以内で答えた");
       console.log("   他オリジン → 403 / Origin 無し → CORS ヘッダ無し / 自オリジン → * ではない");
       return;
