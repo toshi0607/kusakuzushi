@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1080" />
+    <title>S4 — 収穫予報</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      @font-face {
+        font-family: "DotGothic16";
+        src: url("assets/fonts/DotGothic16-Regular.ttf") format("truetype");
+        font-weight: 400; font-style: normal; font-display: block;
+      }
+      @font-face {
+        font-family: "IBM Plex Sans JP";
+        src: url("assets/fonts/IBMPlexSansJP-Regular.ttf") format("truetype");
+        font-weight: 400; font-style: normal; font-display: block;
+      }
+      @font-face {
+        font-family: "IBM Plex Sans JP";
+        src: url("assets/fonts/IBMPlexSansJP-SemiBold.ttf") format("truetype");
+        font-weight: 600; font-style: normal; font-display: block;
+      }
+      html, body { width:100%; height:100%; background:#0C110D; overflow:hidden; }
+      #root { position:relative; width:100%; height:100%; overflow:hidden; background:#0C110D; color:#E4EDE2; font-family:"IBM Plex Sans JP", sans-serif; }
+      .clip { position:absolute; }
+      .board { top:338px; left:0; width:1080px; height:405px; }
+      .news-hook { inset:0; width:100%; height:100%; background:#0C110D; }
+      .news-band { position:absolute; top:0; left:0; width:100%; height:96px; background:#151C16; border-bottom:1px solid #28332A; display:flex; align-items:center; justify-content:space-between; padding:0 48px; }
+      .news-title { font-family:"DotGothic16", sans-serif; font-size:38px; color:#E4EDE2; }
+      .news-date { font-family:"IBM Plex Sans JP", sans-serif; font-size:24px; color:#8DA08C; font-variant-numeric:tabular-nums; }
+      .hook-center { position:absolute; top:444px; left:0; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:64px; color:#E4EDE2; }
+      .hook-rule { position:absolute; top:548px; left:522px; width:36px; height:2px; background:#FFB224; }
+      .forecast-title { top:178px; left:0; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:54px; color:#E4EDE2; }
+      .forecast-data { left:0; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:38px; color:#8DA08C; font-variant-numeric:tabular-nums; }
+      .forecast-area { top:794px; }
+      .forecast-yield { top:858px; color:#E4EDE2; }
+      .live-badge { top:138px; left:48px; font-family:"DotGothic16", sans-serif; font-size:30px; color:#1A1206; background:#FFB224; padding:10px 18px; border-radius:0; }
+      .ticker { left:0; bottom:80px; width:100%; height:96px; display:flex; align-items:center; padding:0 52px; background:#151C16; border-top:1px solid #28332A; font-family:"DotGothic16", sans-serif; font-size:44px; color:#E4EDE2; font-variant-numeric:tabular-nums; }
+      .ticker-value { color:#FFB224; }
+      .report-line { inset:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:#0C110D; font-family:"DotGothic16", sans-serif; font-size:62px; color:#FFB224; font-variant-numeric:tabular-nums; }
+.endcard {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: #0C110D;
+}
+.endcard-title { font-family: "DotGothic16", sans-serif; font-size: 160px; line-height: 1; color: #E4EDE2; }
+.endcard-url { font-family: "IBM Plex Sans JP", sans-serif; font-weight: 400; font-size: 36px; color: #E4EDE2; }
+.endcard-btn { font-family: "DotGothic16", sans-serif; font-size: 44px; color: #1A1206; background: #FFB224; padding: 20px 48px; border-radius: 0; }
+      .endcard-extra { position:absolute; left:0; width:100%; text-align:center; top:260px; font-family:"IBM Plex Sans JP", sans-serif; font-weight:600; font-size:32px; color:#8DA08C; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="s4-news" data-start="0" data-width="1080" data-height="1080" data-duration="24.0" data-fps="60">
+      <div class="clip news-hook" id="s4-news-hook" data-start="0.0" data-duration="3.0">
+        <div class="news-band">
+          <div class="news-title">草崩し 収穫ニュース</div>
+          <div class="news-date">2026.09.26</div>
+        </div>
+        <div class="hook-center" id="s4-hook-center">本日の収穫予報です</div>
+        <div class="hook-rule" id="s4-hook-rule"></div>
+      </div>
+
+      <div class="clip forecast-title" id="s4-forecast-title" data-start="3.0" data-duration="5.0"><div id="s4-forecast-title-inner">@toshi0607 さんの畑</div></div>
+      <img class="clip board" id="s4-forecast-still" data-start="3.0" data-duration="5.0" src="assets/clips/take-a-intact.png" alt="" />
+      <div class="clip forecast-data forecast-area" id="s4-forecast-area" data-start="4.2" data-duration="3.8"><div id="s4-forecast-area-inner">作付面積 370 マス</div></div>
+      <div class="clip forecast-data forecast-yield" id="s4-forecast-yield" data-start="4.8" data-duration="3.2"><div id="s4-forecast-yield-inner">予想収穫量 4,469</div></div>
+
+      <video class="clip board" id="s4-live-video" data-start="8.0" data-duration="10.0" src="assets/clips/a-ramp.mp4" muted playsinline></video>
+      <div class="clip live-badge" id="s4-live-badge" data-start="8.0" data-duration="10.0">LIVE</div>
+      <div class="clip ticker" id="s4-ticker" data-start="8.0" data-duration="10.0">収穫量&nbsp;<span class="ticker-value" id="s4-harvest-value">0</span></div>
+
+      <div class="clip report-line" id="s4-report-line" data-start="18.0" data-duration="2.0"><div id="s4-report-inner">収穫完了　刈り取り率 100%</div></div>
+
+<!-- endcard -->
+<div class="clip endcard" id="endcard" data-start="20.0" data-duration="4.0" data-track-index="90">
+  <div class="endcard-title">草崩し</div>
+  <div class="endcard-url">kusakuzushi.toshi0607.com</div>
+  <div class="endcard-btn">草を刈る</div>
+</div>
+<!-- /endcard -->
+      <div class="clip endcard-extra" id="endcard-extra" data-start="20.0" data-duration="4.0">あなたの畑も</div>
+    </div>
+    <script>
+      (function () {
+        const aRampSeries = [{u:0,harvested:0},{u:0.1,harvested:0},{u:0.2,harvested:1},{u:0.3,harvested:3},{u:0.4,harvested:4},{u:0.5,harvested:5},{u:0.6,harvested:27},{u:0.7,harvested:28},{u:0.8,harvested:43},{u:0.9,harvested:49},{u:1,harvested:50},{u:1.1,harvested:54},{u:1.2,harvested:55},{u:1.3,harvested:58},{u:1.4,harvested:59},{u:1.5,harvested:60},{u:1.6,harvested:82},{u:1.7,harvested:88},{u:1.8,harvested:106},{u:1.9,harvested:108},{u:2,harvested:109},{u:2.1,harvested:110},{u:2.2,harvested:111},{u:2.3,harvested:112},{u:2.4,harvested:112},{u:2.5,harvested:131},{u:2.6,harvested:132},{u:2.7,harvested:147},{u:2.8,harvested:148},{u:2.9,harvested:151},{u:3,harvested:160},{u:3.1,harvested:170},{u:3.2,harvested:171},{u:3.3,harvested:178},{u:3.4,harvested:179},{u:3.5,harvested:181},{u:3.6,harvested:211},{u:3.7,harvested:211},{u:3.8,harvested:329},{u:3.9,harvested:336},{u:4,harvested:351},{u:4.1,harvested:352},{u:4.2,harvested:361},{u:4.3,harvested:363},{u:4.4,harvested:363},{u:4.5,harvested:366},{u:4.6,harvested:366},{u:4.7,harvested:366},{u:4.8,harvested:366},{u:4.9,harvested:370},{u:5,harvested:394},{u:5.1,harvested:403},{u:5.2,harvested:418},{u:5.3,harvested:600},{u:5.4,harvested:679},{u:5.5,harvested:732},{u:5.6,harvested:813},{u:5.7,harvested:861},{u:5.8,harvested:907},{u:5.9,harvested:986},{u:6,harvested:1043},{u:6.1,harvested:1052},{u:6.2,harvested:1065},{u:6.3,harvested:1077},{u:6.4,harvested:1103},{u:6.5,harvested:1133},{u:6.6,harvested:1141},{u:6.7,harvested:1192},{u:6.8,harvested:1868},{u:6.9,harvested:2117},{u:7,harvested:2430},{u:7.1,harvested:2575},{u:7.2,harvested:2675},{u:7.3,harvested:2805},{u:7.4,harvested:2974},{u:7.5,harvested:3099},{u:7.6,harvested:3230},{u:7.7,harvested:3426},{u:7.8,harvested:3486},{u:7.9,harvested:3664},{u:8,harvested:4005},{u:8.1,harvested:4243},{u:8.2,harvested:4328},{u:8.3,harvested:4361},{u:8.4,harvested:4445},{u:8.5,harvested:4469},{u:8.6,harvested:4469},{u:8.7,harvested:4469},{u:8.8,harvested:4469},{u:8.9,harvested:4469},{u:9,harvested:4469},{u:9.1,harvested:4469},{u:9.2,harvested:4469},{u:9.3,harvested:4469},{u:9.4,harvested:4469},{u:9.5,harvested:4469},{u:9.6,harvested:4469},{u:9.7,harvested:4469},{u:9.8,harvested:4469},{u:9.9,harvested:4469},{u:10,harvested:4469}];
+        function seriesAt(series, u) {
+          const idx = Math.max(0, Math.min(series.length - 1, Math.round(u * 10)));
+          return series[idx];
+        }
+        function formatNumber(value) {
+          return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s4-hook-center", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 0.6);
+        tl.fromTo("#s4-hook-rule", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power3.out" }, 1.2);
+        tl.fromTo("#s4-forecast-title-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 3.0);
+        tl.fromTo("#s4-forecast-area-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 4.2);
+        tl.fromTo("#s4-forecast-yield-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 4.8);
+        tl.fromTo("#s4-live-badge", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power3.out" }, 8.0);
+
+        const counterState = { u: 0 };
+        tl.to(counterState, {
+          u: 10.0,
+          duration: 10.0,
+          ease: "none",
+          onUpdate: () => {
+            document.getElementById("s4-harvest-value").textContent = formatNumber(seriesAt(aRampSeries, counterState.u).harvested);
+          }
+        }, 8.0);
+        tl.fromTo("#s4-report-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 18.0);
+        tl.fromTo("#endcard-extra", {opacity:0, y:-24}, {opacity:1, y:0, duration:0.3, ease:"power3.out"}, 20.0 + 0.0);
+tl.fromTo("#endcard .endcard-title", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.0);
+tl.fromTo("#endcard .endcard-url",   { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.15);
+tl.fromTo("#endcard .endcard-btn",   { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.3);
+        tl.seek(0);
+        window.__timelines["s4-news"] = tl;
+      })();
+    </script>
+  </body>
+</html>

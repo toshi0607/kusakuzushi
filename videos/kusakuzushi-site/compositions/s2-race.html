@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1080" />
+    <title>S2 — 草の濃さで崩れ方が変わる</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      @font-face {
+        font-family: "DotGothic16";
+        src: url("assets/fonts/DotGothic16-Regular.ttf") format("truetype");
+        font-weight: 400; font-style: normal; font-display: block;
+      }
+      @font-face {
+        font-family: "IBM Plex Sans JP";
+        src: url("assets/fonts/IBMPlexSansJP-Regular.ttf") format("truetype");
+        font-weight: 400; font-style: normal; font-display: block;
+      }
+      @font-face {
+        font-family: "IBM Plex Sans JP";
+        src: url("assets/fonts/IBMPlexSansJP-SemiBold.ttf") format("truetype");
+        font-weight: 600; font-style: normal; font-display: block;
+      }
+      html, body { width:100%; height:100%; background:#0C110D; overflow:hidden; }
+      #root { position:relative; width:100%; height:100%; overflow:hidden; background:#0C110D; color:#E4EDE2; font-family:"IBM Plex Sans JP", sans-serif; }
+      .clip { position:absolute; }
+      .hook-line { left:0; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:76px; line-height:1.25; color:#E4EDE2; }
+      .hook-line-one { top:382px; }
+      .hook-line-two { top:500px; color:#FFB224; }
+      .panel { left:0; width:1080px; height:405px; }
+      .panel-top { top:90px; }
+      .panel-bottom { top:585px; }
+      .panel-label { left:28px; z-index:2; font-family:"DotGothic16", sans-serif; font-size:26px; color:#8DA08C; background:#0C110D; padding:8px 12px; }
+      .panel-label-top { top:40px; }
+      .panel-label-bottom { top:531px; }
+      .panel-readout { right:28px; z-index:2; width:190px; text-align:right; font-family:"DotGothic16", sans-serif; font-size:34px; color:#FFB224; background:#0C110D; padding:6px 12px; font-variant-numeric:tabular-nums; }
+      .panel-readout-top { top:40px; }
+      .panel-readout-bottom { top:531px; }
+      .clear-label { left:0; z-index:2; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:68px; color:#FFB224; font-variant-numeric:tabular-nums; }
+      .clear-top { top:270px; }
+      .clear-bottom { top:765px; }
+      .line-scene { inset:0; width:100%; height:100%; background:#0C110D; }
+      .line-main { position:absolute; top:410px; left:60px; width:960px; text-align:center; font-family:"DotGothic16", sans-serif; font-size:66px; line-height:1.3; color:#E4EDE2; }
+      .line-sub { position:absolute; top:570px; left:0; width:100%; text-align:center; font-family:"DotGothic16", sans-serif; font-size:34px; color:#8DA08C; font-variant-numeric:tabular-nums; }
+.endcard {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: #0C110D;
+}
+.endcard-title { font-family: "DotGothic16", sans-serif; font-size: 160px; line-height: 1; color: #E4EDE2; }
+.endcard-url { font-family: "IBM Plex Sans JP", sans-serif; font-weight: 400; font-size: 36px; color: #E4EDE2; }
+.endcard-btn { font-family: "DotGothic16", sans-serif; font-size: 44px; color: #1A1206; background: #FFB224; padding: 20px 48px; border-radius: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="s2-race" data-start="0" data-width="1080" data-height="1080" data-duration="24.0" data-fps="60">
+      <div class="clip hook-line hook-line-one" id="s2-hook-one" data-start="0.0" data-duration="3.0"><div id="s2-hook-one-inner">あなたの草は、</div></div>
+      <div class="clip hook-line hook-line-two" id="s2-hook-two" data-start="1.2" data-duration="1.8"><div id="s2-hook-two-inner">どう崩れる？</div></div>
+
+      <img class="clip panel panel-top" id="s2-top-still" data-start="3.0" data-duration="2.0" src="assets/clips/take-a-intact.png" alt="" />
+      <img class="clip panel panel-bottom" id="s2-bottom-still" data-start="3.0" data-duration="2.0" src="assets/clips/take-b-intact.png" alt="" />
+      <div class="clip panel-label panel-label-top" id="s2-top-label" data-start="3.0" data-duration="14.4">毎日の草 · 370 ブロック</div>
+      <div class="clip panel-label panel-label-bottom" id="s2-bottom-label" data-start="3.0" data-duration="14.4">まばらな草 · 38 ブロック</div>
+      <div class="clip panel-readout panel-readout-top" id="s2-top-factor" data-start="3.0" data-duration="2.0">×5.5</div>
+      <div class="clip panel-readout panel-readout-bottom" id="s2-bottom-factor" data-start="3.0" data-duration="2.0">×5.5</div>
+
+      <video class="clip panel panel-top" id="s2-top-video" data-start="5.0" data-duration="6.283" src="assets/clips/a-race.mp4" muted playsinline></video>
+      <img class="clip panel panel-top" id="s2-top-empty" data-start="11.283" data-duration="6.117" src="assets/clips/take-a-empty.png" alt="" />
+      <video class="clip panel panel-bottom" id="s2-bottom-video" data-start="5.0" data-duration="12.417" src="assets/clips/b-race.mp4" muted playsinline></video>
+      <div class="clip panel-readout panel-readout-top" id="s2-top-balls" data-start="5.0" data-duration="12.4">●×1</div>
+      <div class="clip panel-readout panel-readout-bottom" id="s2-bottom-balls" data-start="5.0" data-duration="12.4">●×1</div>
+      <div class="clip clear-label clear-top" id="s2-top-clear" data-start="10.87" data-duration="6.53"><div id="s2-top-clear-inner">CLEAR 32 秒</div></div>
+      <div class="clip clear-label clear-bottom" id="s2-bottom-clear" data-start="17.0" data-duration="0.4"><div id="s2-bottom-clear-inner">CLEAR 65 秒</div></div>
+
+      <div class="clip line-scene" id="s2-line-scene" data-start="17.4" data-duration="2.6">
+        <div class="line-main" id="s2-line-main">草が濃いほど、派手に崩れる。</div>
+        <div class="line-sub" id="s2-line-sub">最大 200 球 / 6 球</div>
+      </div>
+
+<!-- endcard -->
+<div class="clip endcard" id="endcard" data-start="20.0" data-duration="4.0" data-track-index="90">
+  <div class="endcard-title">草崩し</div>
+  <div class="endcard-url">kusakuzushi.toshi0607.com</div>
+  <div class="endcard-btn">草を刈る</div>
+</div>
+<!-- /endcard -->
+    </div>
+    <script>
+      (function () {
+        const aRaceSeries = [{u:0,balls:1},{u:0.1,balls:1},{u:0.2,balls:1},{u:0.3,balls:1},{u:0.4,balls:1},{u:0.5,balls:1},{u:0.6,balls:1},{u:0.7,balls:1},{u:0.8,balls:1},{u:0.9,balls:1},{u:1,balls:1},{u:1.1,balls:1},{u:1.2,balls:1},{u:1.3,balls:1},{u:1.4,balls:1},{u:1.5,balls:1},{u:1.6,balls:1},{u:1.7,balls:1},{u:1.8,balls:1},{u:1.9,balls:1},{u:2,balls:1},{u:2.1,balls:1},{u:2.2,balls:1},{u:2.3,balls:1},{u:2.4,balls:1},{u:2.5,balls:1},{u:2.6,balls:1},{u:2.7,balls:1},{u:2.8,balls:1},{u:2.9,balls:1},{u:3,balls:1},{u:3.1,balls:1},{u:3.2,balls:1},{u:3.3,balls:1},{u:3.4,balls:1},{u:3.5,balls:1},{u:3.6,balls:1},{u:3.7,balls:1},{u:3.8,balls:1},{u:3.9,balls:1},{u:4,balls:1},{u:4.1,balls:1},{u:4.2,balls:1},{u:4.3,balls:1},{u:4.4,balls:1},{u:4.5,balls:3},{u:4.6,balls:3},{u:4.7,balls:3},{u:4.8,balls:3},{u:4.9,balls:3},{u:5,balls:9},{u:5.1,balls:79},{u:5.2,balls:59},{u:5.3,balls:41},{u:5.4,balls:68},{u:5.5,balls:189},{u:5.6,balls:195},{u:5.7,balls:170},{u:5.8,balls:146},{u:5.9,balls:0},{u:6,balls:0},{u:6.1,balls:0},{u:6.2,balls:0}];
+        const bRaceSeries = [{u:0,balls:1},{u:0.1,balls:1},{u:0.2,balls:1},{u:0.3,balls:1},{u:0.4,balls:1},{u:0.5,balls:1},{u:0.6,balls:1},{u:0.7,balls:1},{u:0.8,balls:1},{u:0.9,balls:1},{u:1,balls:3},{u:1.1,balls:3},{u:1.2,balls:3},{u:1.3,balls:3},{u:1.4,balls:3},{u:1.5,balls:3},{u:1.6,balls:3},{u:1.7,balls:3},{u:1.8,balls:3},{u:1.9,balls:2},{u:2,balls:2},{u:2.1,balls:2},{u:2.2,balls:3},{u:2.3,balls:3},{u:2.4,balls:2},{u:2.5,balls:2},{u:2.6,balls:2},{u:2.7,balls:2},{u:2.8,balls:1},{u:2.9,balls:1},{u:3,balls:1},{u:3.1,balls:1},{u:3.2,balls:1},{u:3.3,balls:1},{u:3.4,balls:1},{u:3.5,balls:1},{u:3.6,balls:1},{u:3.7,balls:1},{u:3.8,balls:1},{u:3.9,balls:1},{u:4,balls:1},{u:4.1,balls:1},{u:4.2,balls:1},{u:4.3,balls:1},{u:4.4,balls:3},{u:4.5,balls:3},{u:4.6,balls:1},{u:4.7,balls:1},{u:4.8,balls:1},{u:4.9,balls:1},{u:5,balls:1},{u:5.1,balls:1},{u:5.2,balls:1},{u:5.3,balls:1},{u:5.4,balls:1},{u:5.5,balls:1},{u:5.6,balls:1},{u:5.7,balls:1},{u:5.8,balls:1},{u:5.9,balls:1},{u:6,balls:1},{u:6.1,balls:1},{u:6.2,balls:1},{u:6.3,balls:1},{u:6.4,balls:1},{u:6.5,balls:1},{u:6.6,balls:1},{u:6.7,balls:1},{u:6.8,balls:1},{u:6.9,balls:1},{u:7,balls:1},{u:7.1,balls:1},{u:7.2,balls:1},{u:7.3,balls:1},{u:7.4,balls:1},{u:7.5,balls:1},{u:7.6,balls:1},{u:7.7,balls:1},{u:7.8,balls:1},{u:7.9,balls:1},{u:8,balls:1},{u:8.1,balls:1},{u:8.2,balls:1},{u:8.3,balls:1},{u:8.4,balls:1},{u:8.5,balls:1},{u:8.6,balls:1},{u:8.7,balls:1},{u:8.8,balls:1},{u:8.9,balls:1},{u:9,balls:1},{u:9.1,balls:1},{u:9.2,balls:1},{u:9.3,balls:1},{u:9.4,balls:1},{u:9.5,balls:1},{u:9.6,balls:1},{u:9.7,balls:1},{u:9.8,balls:1},{u:9.9,balls:1},{u:10,balls:1},{u:10.1,balls:1},{u:10.2,balls:1},{u:10.3,balls:1},{u:10.4,balls:1},{u:10.5,balls:1},{u:10.6,balls:1},{u:10.7,balls:1},{u:10.8,balls:1},{u:10.9,balls:1},{u:11,balls:1},{u:11.1,balls:1},{u:11.2,balls:1},{u:11.3,balls:1},{u:11.4,balls:1},{u:11.5,balls:1},{u:11.6,balls:1},{u:11.7,balls:1},{u:11.8,balls:1},{u:11.9,balls:1},{u:12,balls:1},{u:12.1,balls:0},{u:12.2,balls:0},{u:12.3,balls:0},{u:12.4,balls:0}];
+        function seriesAt(series, u) {
+          const idx = Math.max(0, Math.min(series.length - 1, Math.round(u * 10)));
+          return series[idx];
+        }
+
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo("#s2-hook-one-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 0.0);
+        tl.fromTo("#s2-hook-two-inner", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 1.2);
+        tl.set("#s2-top-factor, #s2-bottom-factor", { opacity: 0 }, 5.0);
+        tl.set("#s2-top-balls, #s2-bottom-balls", { opacity: 1 }, 5.0);
+
+        const topState = { u: 0 };
+        tl.to(topState, {
+          u: 6.283,
+          duration: 6.283,
+          ease: "none",
+          onUpdate: () => {
+            document.getElementById("s2-top-balls").textContent = "●×" + seriesAt(aRaceSeries, topState.u).balls;
+          }
+        }, 5.0);
+
+        const bottomState = { u: 0 };
+        tl.to(bottomState, {
+          u: 12.417,
+          duration: 12.417,
+          ease: "none",
+          onUpdate: () => {
+            document.getElementById("s2-bottom-balls").textContent = "●×" + seriesAt(bRaceSeries, bottomState.u).balls;
+          }
+        }, 5.0);
+
+        tl.fromTo("#s2-top-clear-inner", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power3.out" }, 10.87);
+        tl.fromTo("#s2-bottom-clear-inner", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power3.out" }, 17.0);
+        tl.fromTo("#s2-line-main", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 17.4);
+        tl.fromTo("#s2-line-sub", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 18.2);
+tl.fromTo("#endcard .endcard-title", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.0);
+tl.fromTo("#endcard .endcard-url",   { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.15);
+tl.fromTo("#endcard .endcard-btn",   { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out" }, 20.0 + 0.3);
+        tl.seek(0);
+        window.__timelines["s2-race"] = tl;
+      })();
+    </script>
+  </body>
+</html>

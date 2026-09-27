@@ -1,0 +1,14 @@
+{
+  "name": "kusakuzushi-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.78 preview",
+    "check": "npx --yes hyperframes@0.8.78 check",
+    "render": "npx --yes hyperframes@0.8.78 render",
+    "publish": "npx --yes hyperframes@0.8.78 publish"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.3.0"
+  }
+}
