@@ -13,7 +13,7 @@
   "dependencies": {
     "@kusakuzushi/core": "workspace:*",
     "@kusakuzushi/ogp": "workspace:*",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.1.0",
     "agents": "0.24.0",
     "zod": "4.6.5"
   },
