@@ -2376,3 +2376,58 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 4. **計画との矛盾**: D9(切替しない)は Q3 回答で覆した。D14 の「global key」は reviewer 指摘で IP ごとに改訂。D16 の deep import は exports map に改訂。いずれも台帳に記録済み
 - 2026-09-04 ゼロコード注入オン時の `pnpm lh:prod`: perf 100 ×5、script 転送 37,1xx B(予算 40,000 B、残り約 2.9 KB)、`uses-long-cache-ttl` warn。詳細は記事メモ
 
+
+## セッション: 保存画像から本体への導線(2026-10-02)
+
+ユーザー指摘「使った人にシェアしてもらったが、その人のプレイ画像のみでは本体につながる感じがしづらい」への対応。体裁の設計判断は DESIGN-VISUAL.md §8。
+
+### 原因(修正前の実物で確認)
+
+- 保存画像(Web 版「画像を保存」のカード)が印字していたのはワードマーク「草崩し」だけ。ホスト名も、見た人が自分の草で遊べることも書いていなかった。画像はリンクにならないので、画像だけが出回ると行き先が分からない
+- モバイルの「画像を保存」は共有シートにファイルだけを渡していた(`navigator.share({ files })`)。そこから X などへ作った投稿には、文面もリンクも付かない
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| 保存画像だけを見た人が本体へ辿れる(名前・見た人も遊べること・行き先が画像の中にある) | ユーザー依頼 2026-10-02 | 実ゲーム状態から描いた PNG を目視 |
+| 緑は草だけ。追加要素の色は `--ink` と `--marquee` | DESIGN-VISUAL §0 | share.ts の fillStyle |
+| DotGothic16 はサブセットにある字だけに使う | DESIGN-VISUAL §2、lessons 2026-07-26 | share-image.test.ts「body face」 |
+| 絵文字を増やさない。飾り言葉なし | DESIGN-VISUAL §6 | 追加した文言 |
+| 共有 URL・投稿文・ハッシュタグ・ファイル名を変えない | 既存の共有リンクと OGP キャッシュ | share-link.test.ts の既存の文字列一致 |
+| 状態で絵が変わる出力は、その状態の実物で確認する | lessons 2026-07-26 | clear / gameOver × ダーク / ライトを実ゲームから描画 |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| DotGothic16 の `text=` サブセットはホスト名の英小文字を含まない | VERIFIED | index.html の `text=` をデコードして照合(k u s z h i t o m が無い) |
+| 共有シートに渡る文面と URL は「Xで共有」と同じになる | VERIFIED | 実 UI でゲームオーバー → 「画像を保存」をクリックし、スタブした `navigator.share` の引数と X ボタンの href を比較 |
+| 共有されたのは Web 版の保存画像である(拡張のスクリーンショットではない) | UNVERIFIED-ACCEPTED(2026-10-02) | 実際の投稿を見られていない。拡張には画像保存が無いので、拡張のスクショだった場合の対処はリザルトバナー側になる。報告でユーザーに確認を依頼 |
+| 実機の共有シートが files + text + url の組を受け付け、画像を落とさない | UNVERIFIED-ACCEPTED(2026-10-02) | この Mac に iOS シミュレータも Playwright の WebKit も無く、試せない。`canShare` が偽なら画像だけの共有に戻る。マージ後の実機確認をユーザーに依頼 |
+
+### やったこと
+
+- [x] カードの下端を「罫線 + プロダクトの 1 行」に変更(ワードマーク / 誘い文「あなたの GitHub の草も刈れる」/ ホスト名)。ワードマークはスコア行の右からこの行の先頭へ移動 — `pnpm --filter @kusakuzushi/web test` exit 0
+- [x] 共有シートへ `text` / `url` も渡す。受け付けない環境では画像だけに戻す — share-sheet.test.ts 2 件 pass
+- [x] core に `SITE_HOST` を公開し、共有 URL とカードのホスト名を同じ定数から作る — share-link.test.ts 1 件追加、既存の URL 文字列一致はそのまま pass
+- [x] DESIGN-VISUAL.md §6 / §8、DESIGN.md §4 を更新
+
+### 検証
+
+- `pnpm -r test` exit 0: core 73 / ogp 125 / web 103 / extension 80 / mcp 12(修正前は core 72 / web 98)
+- `pnpm -r build` exit 0
+- 実物の描画: 開発サーバー(`/api` は本番へプロキシ)で toshi0607 の草を取得し、ゲームをヘッドレスで最後まで進め、アプリ自身の `saveResultImage` が出した PNG を保存して目視。clear / gameOver × ダーク / ライト。誘い文とホスト名は Plex、ワードマークと誘い文の間は 24px、罫線はスコアに触れない。400px 幅に縮めても 1 行が読める
+- 実 UI の操作: Playwright で `/?user=toshi0607` を開き、3 球落としてゲームオーバー → 「画像を保存」をクリック。`navigator.share` に `text` / `url` / PNG が渡り、文面と URL は X ボタンのものと一致(`navigator.share` はスタブ。デスクトップの Chromium には共有シートが無い)
+
+### Notes
+
+- レイアウトは、修正前の実物に 11 案を重ねて決めた。3 行目を右寄せで足す案は下余白が 31px まで詰まり、誘い文をスコアの下に左寄せする案は誘い文がリザルトの 3 行目に読めた。罫線で分け、ワードマークごと下の行へ移す案を採った
+- 誘い文は当初 DotGothic16 で組むつもりだった(煽り文と同じ「ゲームの声」として)。「GitHub」を入れると G i t H u b がサブセットに無く、index.html の `text=` を 2 か所広げることになる。トップの OGP 画像と同じ「ワードマークだけ DotGothic16、ほかは Plex」に合わせ、サブセットは触らなかった
+- 実装は Codex(gpt-5.6-sol)に委譲した。Codex のサンドボックス内では `og-card-writer.test.ts` がループバック通信を塞がれて 10 件タイムアウトしたが、サンドボックス外では 103/103 で再現しない
+
+### 見つけたが直していないもの
+
+- OGP Worker のカード(「Xで共有」のリンクカード)にはホスト名(22px)はあるが、ワードマークと誘い文が無い
+- 共有リンクを踏んだ人は `/?user={シェアした人}` に着地し、その人の草の盤面が始まる。自分の草に切り替える入口が画面に無い(フォームは出ず、見出しもリンクではない)
+- ライトテーマで保存したカードは、盤面だけライトで描かれる(`boardSnapshotForCard` が `getTheme()` を使う)。カードは常にダークで合成する設計で、ライトの盤面の上では煽り文(`--ink` の白)が読めない
