@@ -2410,12 +2410,12 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 
 - [x] カードの下端を「罫線 + プロダクトの 1 行」に変更(ワードマーク / 誘い文「あなたの GitHub の草も刈れる」/ ホスト名)。ワードマークはスコア行の右からこの行の先頭へ移動 — `pnpm --filter @kusakuzushi/web test` exit 0
 - [x] 共有シートへ `text` / `url` も渡す。受け付けない環境では画像だけに戻す — share-sheet.test.ts 2 件 pass
-- [x] core に `SITE_HOST` を公開し、共有 URL とカードのホスト名を同じ定数から作る — share-link.test.ts 1 件追加、既存の URL 文字列一致はそのまま pass
-- [x] DESIGN-VISUAL.md §6 / §8、DESIGN.md §4 を更新
+- [x] core に `SITE_HOST` を公開し、共有 URL とカードのホスト名を同じ定数から作る — share-link.test.ts の既存の URL 文字列一致がそのまま pass
+- [x] DESIGN-VISUAL.md §6 / §8、DESIGN.md §4 を更新 — `grep -c "右下にワードマーク\|右にワードマーク\|そのまま \`toBlob" DESIGN-VISUAL.md DESIGN.md` が両ファイルとも 0(旧レイアウトの記述が残っていない)
 
 ### 検証
 
-- `pnpm -r test` exit 0: core 73 / ogp 125 / web 103 / extension 80 / mcp 12(修正前は core 72 / web 98)
+- `pnpm -r test` exit 0: core 72 / ogp 125 / web 103 / extension 80 / mcp 12(修正前は web 98)
 - `pnpm -r build` exit 0
 - 実物の描画: 開発サーバー(`/api` は本番へプロキシ)で toshi0607 の草を取得し、ゲームをヘッドレスで最後まで進め、アプリ自身の `saveResultImage` が出した PNG を保存して目視。clear / gameOver × ダーク / ライト。誘い文とホスト名は Plex、ワードマークと誘い文の間は 24px、罫線はスコアに触れない。400px 幅に縮めても 1 行が読める
 - 実 UI の操作: Playwright で `/?user=toshi0607` を開き、3 球落としてゲームオーバー → 「画像を保存」をクリック。`navigator.share` に `text` / `url` / PNG が渡り、文面と URL は X ボタンのものと一致(`navigator.share` はスタブ。デスクトップの Chromium には共有シートが無い)

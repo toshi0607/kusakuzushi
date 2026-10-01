@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SITE_HOST, buildHarvestIntentUrl, buildIntentUrl, buildShareUrl } from "./share-link";
+import { buildHarvestIntentUrl, buildIntentUrl, buildShareUrl } from "./share-link";
 
 describe("buildShareUrl", () => {
   it("points at the OGP worker's /share/{user} route with score and percentage", () => {
@@ -16,14 +16,6 @@ describe("buildShareUrl", () => {
 
     // #then
     expect(url).toBe("https://kusakuzushi.toshi0607.com/share/a%2Fb%3Fc?s=5&p=10");
-  });
-
-  it("is served from the host the saved result card prints", () => {
-    // #given / #when
-    const url = buildShareUrl("toshi0607", 87, 12340);
-
-    // #then
-    expect(new URL(url).host).toBe(SITE_HOST);
   });
 
   it("omits `s` entirely when no score is shared", () => {

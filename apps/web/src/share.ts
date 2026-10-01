@@ -60,6 +60,7 @@ const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
 /** 最長 30 字(§6)が盤面幅 1080px に 1 行で収まる上限。 */
 const TAUNT_FONT_SIZE = 34;
+const SCORE_FONT_SIZE = 40;
 const WORDMARK_FONT_SIZE = 36;
 const PRODUCT_LINE_FONT_SIZE = 28;
 export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
@@ -143,7 +144,7 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   y += 32;
 
   ctx.fillStyle = SHARE_COLORS.ink;
-  ctx.font = `40px ${DISPLAY_FONT}`;
+  ctx.font = `${SCORE_FONT_SIZE}px ${DISPLAY_FONT}`;
   ctx.fillText(`スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`, boardX, y);
 
   // 罫線から下はプロダクトの 1 行。保存した画像は投稿文もリンクも無いまま単独で
@@ -151,7 +152,7 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   // 遊べること(誘い文)、行き先(ホスト名)を、読める文字で描いておく。
   // 誘い文とホスト名は BODY_FONT で描く。DISPLAY_FONT は index.html で `text=`
   // サブセットを取得しており、ホスト名の英小文字を含まない。
-  const ruleY = y + 40 + 16;
+  const ruleY = y + SCORE_FONT_SIZE + 16;
   ctx.strokeStyle = SHARE_COLORS.ridge;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -230,13 +231,10 @@ export async function saveCanvasImage(canvas: HTMLCanvasElement, username: strin
   const fileName = `kusakuzushi-${username}.png`;
   const file = new File([blob], fileName, { type: "image/png" });
   const fileOnly: ShareData = { files: [file] };
-  const captioned: ShareData | undefined = caption
-    ? { files: [file], text: caption.text, url: caption.url }
-    : undefined;
-  const canShareCaptioned = captioned !== undefined && navigator.canShare?.(captioned);
-  const shareData = canShareCaptioned ? captioned : fileOnly;
+  const captioned: ShareData | undefined = caption ? { ...fileOnly, text: caption.text, url: caption.url } : undefined;
+  const shareData = captioned && navigator.canShare?.(captioned) ? captioned : fileOnly;
 
-  if (canShareCaptioned || navigator.canShare?.(fileOnly)) {
+  if (navigator.canShare?.(shareData)) {
     try {
       await navigator.share(shareData);
       return;
