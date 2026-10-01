@@ -169,4 +169,35 @@ describe("composeResultImage", () => {
     );
     expect(productCopy.map((entry) => entry.font.includes("DotGothic16"))).toEqual([false, false]);
   });
+
+  it("starts the invitation to the right of the wordmark", () => {
+    // #given a gameOver card
+    const drawn = stubRecordingContext();
+    // #when
+    composeResultImage(sourceBoard(), "toshi0607", {
+      score: 8200,
+      percentage: 64,
+      cleared: false,
+      taunt: null,
+    });
+    // #then
+    const wordmark = drawn.find((entry) => entry.text === "草崩し");
+    const invitation = drawn.find((entry) => entry.text === "あなたの GitHub の草も刈れる");
+    expect(invitation!.x).toBeGreaterThan(wordmark!.x);
+  });
+
+  it("leaves the 30px bottom margin under the product line", () => {
+    // #given a gameOver card
+    const drawn = stubRecordingContext();
+    // #when
+    composeResultImage(sourceBoard(), "toshi0607", {
+      score: 8200,
+      percentage: 64,
+      cleared: false,
+      taunt: null,
+    });
+    // #then
+    const lastThree = drawn.slice(-3);
+    expect(Math.max(...lastThree.map((entry) => entry.y + fontSizeOf(entry)))).toBeLessThanOrEqual(CARD_HEIGHT - 30);
+  });
 });

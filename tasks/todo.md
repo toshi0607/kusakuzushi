@@ -2391,7 +2391,7 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 | Constraint | Source | Verify by |
 |---|---|---|
 | 保存画像だけを見た人が本体へ辿れる(名前・見た人も遊べること・行き先が画像の中にある) | ユーザー依頼 2026-10-02 | 実ゲーム状態から描いた PNG を目視 |
-| 緑は草だけ。追加要素の色は `--ink` と `--marquee` | DESIGN-VISUAL §0 | share.ts の fillStyle |
+| 緑は草だけ。追加した文字の色は `--ink` と `--marquee`、罫線は盤面の枠と同じ `--ridge` | DESIGN-VISUAL §0 | share.ts の fillStyle / strokeStyle |
 | DotGothic16 はサブセットにある字だけに使う | DESIGN-VISUAL §2、lessons 2026-07-26 | share-image.test.ts「body face」 |
 | 絵文字を増やさない。飾り言葉なし | DESIGN-VISUAL §6 | 追加した文言 |
 | 共有 URL・投稿文・ハッシュタグ・ファイル名を変えない | 既存の共有リンクと OGP キャッシュ | share-link.test.ts の既存の文字列一致 |
@@ -2401,21 +2401,21 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 
 | Assumption | Status | Evidence |
 |---|---|---|
-| DotGothic16 の `text=` サブセットはホスト名の英小文字を含まない | VERIFIED | index.html の `text=` をデコードして照合(k u s z h i t o m が無い) |
+| DotGothic16 の `text=` サブセットはホスト名の英小文字の大半を含まない | VERIFIED | index.html の `text=` をデコードして照合(h i k m o s t u z が無い。a と c はある) |
 | 共有シートに渡る文面と URL は「Xで共有」と同じになる | VERIFIED | 実 UI でゲームオーバー → 「画像を保存」をクリックし、スタブした `navigator.share` の引数と X ボタンの href を比較 |
 | 共有されたのは Web 版の保存画像である(拡張のスクリーンショットではない) | UNVERIFIED-ACCEPTED(2026-10-02) | 実際の投稿を見られていない。拡張には画像保存が無いので、拡張のスクショだった場合の対処はリザルトバナー側になる。報告でユーザーに確認を依頼 |
-| 実機の共有シートが files + text + url の組を受け付け、画像を落とさない | UNVERIFIED-ACCEPTED(2026-10-02) | この Mac に iOS シミュレータも Playwright の WebKit も無く、試せない。`canShare` が偽なら画像だけの共有に戻る。マージ後の実機確認をユーザーに依頼 |
+| 実機の共有先アプリが、文面とリンクを添えても画像を落とさない | UNVERIFIED-ACCEPTED(2026-10-02) | この Mac に iOS シミュレータも Playwright の WebKit も無く、試せない。`canShare` はデータの形式しか確かめないので、コード側に受け皿は無い。マージ後の実機確認(共有シートに「画像を保存」が残るか、X に画像・文面・リンクが渡るか)をユーザーに依頼。落とす共有先が見つかったら、その環境ではファイルだけを渡す形に戻す |
 
 ### やったこと
 
 - [x] カードの下端を「罫線 + プロダクトの 1 行」に変更(ワードマーク / 誘い文「あなたの GitHub の草も刈れる」/ ホスト名)。ワードマークはスコア行の右からこの行の先頭へ移動 — `pnpm --filter @kusakuzushi/web test` exit 0
-- [x] 共有シートへ `text` / `url` も渡す。受け付けない環境では画像だけに戻す — share-sheet.test.ts 2 件 pass
+- [x] 共有シートへ `text` / `url` も渡す。共有シートを使うかどうかはファイルだけのデータで判定する — share-sheet.test.ts 6 件 pass
 - [x] core に `SITE_HOST` を公開し、共有 URL とカードのホスト名を同じ定数から作る — share-link.test.ts の既存の URL 文字列一致がそのまま pass
 - [x] DESIGN-VISUAL.md §6 / §8、DESIGN.md §4 を更新 — `grep -c "右下にワードマーク\|右にワードマーク\|そのまま \`toBlob" DESIGN-VISUAL.md DESIGN.md` が両ファイルとも 0(旧レイアウトの記述が残っていない)
 
 ### 検証
 
-- `pnpm -r test` exit 0: core 72 / ogp 125 / web 103 / extension 80 / mcp 12(修正前は web 98)
+- `pnpm -r test` exit 0: core 72 / ogp 125 / web 110 / extension 80 / mcp 12(修正前は web 98)
 - `pnpm -r build` exit 0
 - 実物の描画: 開発サーバー(`/api` は本番へプロキシ)で toshi0607 の草を取得し、ゲームをヘッドレスで最後まで進め、アプリ自身の `saveResultImage` が出した PNG を保存して目視。clear / gameOver × ダーク / ライト。誘い文とホスト名は Plex、ワードマークと誘い文の間は 24px、罫線はスコアに触れない。400px 幅に縮めても 1 行が読める
 - 実 UI の操作: Playwright で `/?user=toshi0607` を開き、3 球落としてゲームオーバー → 「画像を保存」をクリック。`navigator.share` に `text` / `url` / PNG が渡り、文面と URL は X ボタンのものと一致(`navigator.share` はスタブ。デスクトップの Chromium には共有シートが無い)
@@ -2431,3 +2431,31 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 - OGP Worker のカード(「Xで共有」のリンクカード)にはホスト名(22px)はあるが、ワードマークと誘い文が無い
 - 共有リンクを踏んだ人は `/?user={シェアした人}` に着地し、その人の草の盤面が始まる。自分の草に切り替える入口が画面に無い(フォームは出ず、見出しもリンクではない)
 - ライトテーマで保存したカードは、盤面だけライトで描かれる(`boardSnapshotForCard` が `getTheme()` を使う)。カードは常にダークで合成する設計で、ライトの盤面の上では煽り文(`--ink` の白)が読めない
+- カードのスコアは端末のロケールで桁区切りし(`toLocaleString()`)、投稿文は en-US で区切る。ロケールによっては、同じ共有に 2 通りの表記が並ぶ(修正前からの挙動)
+- ホスト名のリテラルが `SITE_HOST` 以外に 5 か所残っている(workers/ogp の 3 ファイル、workers/mcp/src/tools.ts、apps/web/tools/og-card.ts)
+
+### Review(2026-10-02)
+
+`/code-review high`(9 件)と `reviewer`(設計適合、Approve with nits)。対応はコミット `ca52781` と、その次のコミット。
+
+| 重大度 | 指摘 | 対応 |
+|---|---|---|
+| Medium(reviewer M1) | `text` / `url` を添えたデータを先に `canShare` へ渡していた。WebKit はファイル共有(Web Share の Level 2)が無効でも、このデータに真を返す。その構成では画像の無い共有シートが開き、修正前なら行われていたダウンロードにも進まない(reviewer が WebKit の `Navigator.cpp` を読み、修正前後の関数を動かして確認) | 判定をファイルだけのデータに戻し、通ったあとで添えたデータを `canShare` に通す。この状態を再現するテストを追加 |
+| Medium(reviewer M2) | 文書と台帳が `canShare` を「実機で画像が落ちたときの受け皿」のように書いていた。`canShare` はデータの形式しか確かめない | DESIGN-VISUAL §8、`saveCanvasImage` のコメント、台帳の行を書き直した。実機で画像を落とす共有先が見つかったときの扱いも §8 に記録 |
+| Low(reviewer L1) | 既存の 3 つの挙動(Web Share が無い / キャンセル / それ以外の失敗)にテストが無い | share-sheet.test.ts に 3 件追加 |
+| Low(reviewer L2、code-review) | リザルト画面が保存ボタンへ投稿文とリンクを渡す配線を、どのテストも見ていない | session.test.ts に 1 件追加(保存ボタンの引数と X ボタンの href を比較) |
+| Low(reviewer L3) | カードのテストが、誘い文の位置と下余白を見ていない | share-image.test.ts に 2 件追加 |
+| Low(reviewer L4) | §8 が、詰めた間隔 3 つのうち 2 つしか挙げていない | 34 → 32 を追記 |
+| Low(reviewer L5) | この節にレビューの記録が無い | この表 |
+| code-review | 共有データの選び方が冗長 / スコアの文字サイズ 40 が 2 か所 / `SITE_HOST` のテストが恒真 / チェック項目に証拠が無い | `ca52781` で対応 |
+| code-review | 添えたデータの共有が失敗したとき、ファイルだけで再試行しない | 対応しない。`share()` は呼ばれた時点でユーザー操作の権利を消費するので、2 回目の呼び出しは拒否される(reviewer が仕様と WebKit のソースで確認) |
+| code-review | 投稿文と URL を 2 か所で組み立てている / ホスト名のリテラルが残っている | 対応しない。前者は core の公開関数を増やすことになり、後者は Worker 側の変更になる。「見つけたが直していないもの」に記録 |
+
+reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `--ridge` を明記するよう指摘 → 修正。6 行目は reviewer からは再現不可)。Assumptions は 1・2 行目が成立、3 行目はリポジトリからは確認不可、4 行目は根拠の書き方が誤り(M2)→ 修正。
+
+### 自己クイズ(2026-10-02)
+
+1. **一番リスクの高い行は?** `saveCanvasImage` の `navigator.share(shareData)`。文面とリンクを添えたデータを実機の共有先がどう扱うかは、この環境では確かめられない。安全だと言える範囲は「ファイル共有に対応しない環境では修正前と同じくダウンロードになる」「キャンセルと失敗の扱いは修正前と同じ」まで(どちらもテストあり)
+2. **壊す入力・状態は?** 39 文字のユーザー名はキャプション行だけに影響し、プロダクトの 1 行とは重ならない。桁の多いスコアは、ワードマークが下の行へ移ったので以前より余裕がある。Plex の取得に失敗すると誘い文とホスト名が代替書体になるが、誘い文の右端とホスト名の左端は約 190px 離れており重ならない
+3. **テストしていないこと**: 実機の共有シート(上記)。OGP Worker と拡張は触っておらず、既存テストが通ることだけ確認
+4. **計画との矛盾**: 当初は「ワードマークの下にホスト名を 1 行足す」つもりだったが、実物に重ねた試作で罫線つきの 1 行に変えた(Notes)。`canShare` の判定順はレビューで誤りと分かり、直した

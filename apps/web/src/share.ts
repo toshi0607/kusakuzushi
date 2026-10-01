@@ -151,7 +151,7 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   // 出回ることがあり、画像はリンクにならない。名前(ワードマーク)、見た人も
   // 遊べること(誘い文)、行き先(ホスト名)を、読める文字で描いておく。
   // 誘い文とホスト名は BODY_FONT で描く。DISPLAY_FONT は index.html で `text=`
-  // サブセットを取得しており、ホスト名の英小文字を含まない。
+  // サブセットを取得しており、ホスト名の英小文字の大半を含まない。
   const ruleY = y + SCORE_FONT_SIZE + 16;
   ctx.strokeStyle = SHARE_COLORS.ridge;
   ctx.lineWidth = 2;
@@ -224,17 +224,21 @@ export async function saveResultImage(
  *
  * `caption` を渡すと、共有シートへ画像と一緒に投稿文と共有リンクも渡す。
  * 画像だけを渡すと、共有シートから X などへ投稿したときにリンクが付かない。
- * ファイルと text / url の併用を受け付けない環境では、画像だけの共有に戻す。
+ * `canShare` が確かめるのはデータの形式までで、共有先のアプリが画像を受け取るか
+ * どうかは確かめられない。
  */
 export async function saveCanvasImage(canvas: HTMLCanvasElement, username: string, caption?: ShareCaption): Promise<void> {
   const blob = await canvasToBlob(canvas);
   const fileName = `kusakuzushi-${username}.png`;
   const file = new File([blob], fileName, { type: "image/png" });
   const fileOnly: ShareData = { files: [file] };
-  const captioned: ShareData | undefined = caption ? { ...fileOnly, text: caption.text, url: caption.url } : undefined;
-  const shareData = captioned && navigator.canShare?.(captioned) ? captioned : fileOnly;
 
-  if (navigator.canShare?.(shareData)) {
+  // 共有シートを使うかどうかは、ファイルだけのデータで尋ねる。text / url を添えた
+  // データだと、ファイル共有に対応しない WebKit でも canShare が真を返し、画像の
+  // 無い共有シートが開く(ダウンロードにも進まない)。
+  if (navigator.canShare?.(fileOnly)) {
+    const captioned: ShareData | undefined = caption ? { ...fileOnly, text: caption.text, url: caption.url } : undefined;
+    const shareData = captioned && navigator.canShare(captioned) ? captioned : fileOnly;
     try {
       await navigator.share(shareData);
       return;
