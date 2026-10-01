@@ -20,6 +20,8 @@ function stubRecordingContext(): DrawnText[] {
     fillRect: vi.fn(),
     drawImage: vi.fn(),
     beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
     roundRect: vi.fn(),
     clip: vi.fn(),
     stroke: vi.fn(),
@@ -28,6 +30,7 @@ function stubRecordingContext(): DrawnText[] {
     fillText: (text: string, x: number, y: number) => {
       drawn.push({ text, x, y, font: ctx.font });
     },
+    measureText: (text: string) => ({ width: text.length * 10 }),
     fillStyle: "",
     strokeStyle: "",
     lineWidth: 1,
@@ -91,7 +94,7 @@ describe("composeResultImage", () => {
   });
 
   it("keeps every line inside the 630px card when the taunt is present", () => {
-    // #given the tallest case: state label + taunt + stats + wordmark
+    // #given the tallest case: state label + taunt + stats + product line
     const drawn = stubRecordingContext();
     // #when
     composeResultImage(sourceBoard(), "toshi0607", {
@@ -116,11 +119,54 @@ describe("composeResultImage", () => {
       cleared: false,
       taunt: null,
     });
-    // #then only the handle, the stats and the wordmark are drawn
+    // #then the result and the product line are drawn, with no clear-only taunt
     expect(drawn.map((entry) => entry.text)).toEqual([
       "@toshi0607",
       "スコア 8,200 / 刈り取り率 64%",
       "草崩し",
+      "あなたの GitHub の草も刈れる",
+      "kusakuzushi.toshi0607.com",
     ]);
+  });
+
+  it.each([
+    [
+      "a cleared card",
+      {
+        score: 12340,
+        percentage: 100,
+        cleared: true,
+        taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
+      },
+    ],
+    ["a gameOver card", { score: 8200, percentage: 64, cleared: false, taunt: null }],
+  ])("ends %s with the product line: wordmark, invitation, site host", (_name, result) => {
+    // #given a result card in either terminal state
+    const drawn = stubRecordingContext();
+    // #when
+    composeResultImage(sourceBoard(), "toshi0607", result);
+    // #then
+    expect(drawn.slice(-3).map((entry) => entry.text)).toEqual([
+      "草崩し",
+      "あなたの GitHub の草も刈れる",
+      "kusakuzushi.toshi0607.com",
+    ]);
+  });
+
+  it("sets the invitation and the site host in the body face", () => {
+    // #given a gameOver card and a display face whose `text=` subset lacks the host's lowercase letters
+    const drawn = stubRecordingContext();
+    // #when
+    composeResultImage(sourceBoard(), "toshi0607", {
+      score: 8200,
+      percentage: 64,
+      cleared: false,
+      taunt: null,
+    });
+    // #then missing glyphs cannot silently fall back from DotGothic16
+    const productCopy = drawn.filter(
+      (entry) => entry.text === "あなたの GitHub の草も刈れる" || entry.text === "kusakuzushi.toshi0607.com",
+    );
+    expect(productCopy.map((entry) => entry.font.includes("DotGothic16"))).toEqual([false, false]);
   });
 });

@@ -6,7 +6,7 @@
  * 「盤面を焼いたリザルトカード」の合成。
  */
 
-import { MARQUEE_COLOR } from "@kusakuzushi/core";
+import { MARQUEE_COLOR, SITE_HOST } from "@kusakuzushi/core";
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -60,12 +60,28 @@ const SHARE_WIDTH = 1200;
 const SHARE_HEIGHT = 630;
 /** 最長 30 字(§6)が盤面幅 1080px に 1 行で収まる上限。 */
 const TAUNT_FONT_SIZE = 34;
+const WORDMARK_FONT_SIZE = 36;
+const PRODUCT_LINE_FONT_SIZE = 28;
 export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
 export const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
 
 /**
+ * カードを見た人に向けた一言。保存した画像は、投稿文もリンクも無いまま単独で
+ * 出回ることがある。画像はリンクにならないので、見た人も自分の草で遊べること
+ * と行き先(`SITE_HOST`)は、読める文字としてカードに描いておく。
+ */
+export const SHARE_INVITATION = "あなたの GitHub の草も刈れる";
+
+/** 共有シートへ画像と一緒に渡す、投稿文と共有リンク。 */
+export type ShareCaption = {
+  text: string;
+  url: string;
+};
+
+/**
  * ゲーム canvas の最終盤面を 1200x630(OGP 比)のリザルトカードに合成する。
- * 盤面スナップショット + @username + 成績 + ワードマーク。
+ * 上から、盤面スナップショット、リザルト(@username と成績)、罫線、
+ * プロダクトの 1 行(ワードマーク + 誘い文 + ホスト名)。
  */
 export function composeResultImage(source: HTMLCanvasElement, username: string, result: ShareResult): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
@@ -80,11 +96,12 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   ctx.fillRect(0, 0, SHARE_WIDTH, SHARE_HEIGHT);
 
   // 盤面は 8:3。880 幅だとカード下部に 130px の空白が残るので、左右 60px の
-  // 余白まで広げて縦の重心を戻す(1080 x 405 + 見出し行で 630 をほぼ使い切る)。
+  // 余白まで広げる。1080 x 405 の盤面、リザルト 2 行、プロダクトの 1 行で、
+  // 630 を上下 30px の余白まで使う。
   const boardWidth = 1080;
   const boardHeight = Math.round((boardWidth * source.height) / source.width);
   const boardX = (SHARE_WIDTH - boardWidth) / 2;
-  const boardY = 44;
+  const boardY = 30;
 
   if (typeof ctx.roundRect === "function") {
     ctx.save();
@@ -118,21 +135,45 @@ export function composeResultImage(source: HTMLCanvasElement, username: string, 
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
 
-  let y = boardY + boardHeight + 40;
+  let y = boardY + boardHeight + 26;
 
   ctx.fillStyle = SHARE_COLORS.faint;
   ctx.font = `24px ${BODY_FONT}`;
   ctx.fillText(`@${username}${result.cleared ? " ― 完全刈り取り" : ""}`, boardX, y);
-  y += 34;
+  y += 32;
 
   ctx.fillStyle = SHARE_COLORS.ink;
   ctx.font = `40px ${DISPLAY_FONT}`;
   ctx.fillText(`スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`, boardX, y);
 
+  // 罫線から下はプロダクトの 1 行。保存した画像は投稿文もリンクも無いまま単独で
+  // 出回ることがあり、画像はリンクにならない。名前(ワードマーク)、見た人も
+  // 遊べること(誘い文)、行き先(ホスト名)を、読める文字で描いておく。
+  // 誘い文とホスト名は BODY_FONT で描く。DISPLAY_FONT は index.html で `text=`
+  // サブセットを取得しており、ホスト名の英小文字を含まない。
+  const ruleY = y + 40 + 16;
+  ctx.strokeStyle = SHARE_COLORS.ridge;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(boardX, ruleY);
+  ctx.lineTo(boardX + boardWidth, ruleY);
+  ctx.stroke();
+
+  const wordmarkY = ruleY + 15;
   ctx.fillStyle = SHARE_COLORS.marquee;
-  ctx.font = `36px ${DISPLAY_FONT}`;
+  ctx.font = `${WORDMARK_FONT_SIZE}px ${DISPLAY_FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillText("草崩し", boardX, wordmarkY);
+  const wordmarkWidth = ctx.measureText("草崩し").width;
+
+  const productTextY = wordmarkY + (WORDMARK_FONT_SIZE - PRODUCT_LINE_FONT_SIZE) / 2;
+  ctx.font = `${PRODUCT_LINE_FONT_SIZE}px ${BODY_FONT}`;
+  ctx.fillStyle = SHARE_COLORS.ink;
+  ctx.fillText(SHARE_INVITATION, boardX + wordmarkWidth + 24, productTextY);
+
+  ctx.fillStyle = SHARE_COLORS.marquee;
   ctx.textAlign = "right";
-  ctx.fillText("草崩し", boardX + boardWidth, y);
+  ctx.fillText(SITE_HOST, boardX + boardWidth, productTextY);
   ctx.textAlign = "left";
 
   return canvas;
@@ -158,29 +199,46 @@ async function loadCardGlyphs(texts: readonly string[]): Promise<void> {
 }
 
 /** リザルトカードを合成して保存/共有する(リザルト画面の「画像を保存」)。 */
-export async function saveResultImage(source: HTMLCanvasElement, username: string, result: ShareResult): Promise<void> {
+export async function saveResultImage(
+  source: HTMLCanvasElement,
+  username: string,
+  result: ShareResult,
+  caption?: ShareCaption,
+): Promise<void> {
   await loadCardGlyphs([
     `@${username} ― 完全刈り取り`,
     `スコア ${result.score.toLocaleString()} / 刈り取り率 ${result.percentage}%`,
     "草崩し",
+    SHARE_INVITATION,
+    SITE_HOST,
     result.taunt ?? "",
   ]);
-  await saveCanvasImage(composeResultImage(source, username, result), username);
+  await saveCanvasImage(composeResultImage(source, username, result), username, caption);
 }
 
 /**
  * Saves a snapshot of `canvas` as `kusakuzushi-{username}.png`. Uses the Web
  * Share API when the platform can share files (mobile Safari/Chrome), and
  * falls back to a plain download link otherwise.
+ *
+ * `caption` を渡すと、共有シートへ画像と一緒に投稿文と共有リンクも渡す。
+ * 画像だけを渡すと、共有シートから X などへ投稿したときにリンクが付かない。
+ * ファイルと text / url の併用を受け付けない環境では、画像だけの共有に戻す。
  */
-export async function saveCanvasImage(canvas: HTMLCanvasElement, username: string): Promise<void> {
+export async function saveCanvasImage(canvas: HTMLCanvasElement, username: string, caption?: ShareCaption): Promise<void> {
   const blob = await canvasToBlob(canvas);
   const fileName = `kusakuzushi-${username}.png`;
   const file = new File([blob], fileName, { type: "image/png" });
+  const fileOnly: ShareData = { files: [file] };
+  const captioned: ShareData | undefined = caption
+    ? { files: [file], text: caption.text, url: caption.url }
+    : undefined;
+  const canShareCaptioned = captioned !== undefined && navigator.canShare?.(captioned);
+  const shareData = canShareCaptioned ? captioned : fileOnly;
 
-  if (navigator.canShare?.({ files: [file] })) {
+  if (canShareCaptioned || navigator.canShare?.(fileOnly)) {
     try {
-      await navigator.share({ files: [file] });
+      await navigator.share(shareData);
       return;
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
