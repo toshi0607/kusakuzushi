@@ -94,7 +94,9 @@ type ContributionGrid = {
 ### 共有機能(MVPスコープ)
 
 1. **X共有ボタン**: `https://x.com/intent/post?text=...&url=https://<domain>/?user={name}`
-   テキスト例: 「toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340」
+   テキストは 2 行。1 行目が結果、2 行目が見た人に向けた誘い文とタグ(保存画像のプロダクトの 1 行と同じ文言。DESIGN-VISUAL.md §8):
+   「toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340」
+   「あなたの GitHub の草も刈れる #草崩し」
 2. **リザルト画像**: 最終盤面を 1200x630 のカードに合成して `toBlob()` → ダウンロード / Web Share API(モバイル)。サーバー不要。
    カードには誘い文とホスト名を印字し、共有シートには投稿文と共有 URL も渡す。画像だけが出回っても、見た人が本体へ辿れるようにするため(体裁は DESIGN-VISUAL.md §8)
 3. **動的OGP**(Phase 2): `workers/ogp` で `og:image` を生成(satori / workers-og)。
@@ -124,6 +126,7 @@ contribution 数を持たないため、拡張のブロックには `count = lev
 つまり拡張のスコアは実 contributions から出る web のスコアと桁が違い、`ContributionGrid.total` も
 contributions 数ではない。同じ `#草崩し` に比較できない数字が 2 種類流れるほうが、率だけを言うより悪い。
 率は分子・分母が同じ重みなので、両版で同じ意味を保つ。
+結果の行のあとには、web と同じ誘い文とタグの行(「あなたの GitHub の草も刈れる #草崩し」)が続く。
 
 文面と共有 URL の組み立ては web と共有する(`packages/core/src/share-link.ts`)— ハッシュタグと
 `/share/{user}` の形を 1 箇所に閉じるため。

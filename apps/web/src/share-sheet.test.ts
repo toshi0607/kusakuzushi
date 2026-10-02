@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { saveCanvasImage } from "./share";
 
 const CAPTION = {
-  text: "toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340 #草崩し",
+  text: "toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340\nあなたの GitHub の草も刈れる #草崩し",
   url: "https://kusakuzushi.toshi0607.com/share/toshi0607?s=12340&p=87",
 };
 

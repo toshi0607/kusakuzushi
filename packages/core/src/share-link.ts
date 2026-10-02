@@ -20,6 +20,12 @@ const SITE_URL = `https://${SITE_HOST}`;
 export const SHARE_HASHTAG = "#草崩し";
 
 /**
+ * 投稿や保存画像を見た人に向けた一言。X の投稿文と、web の保存画像
+ * (apps/web/src/share.ts)が同じ文言を使う。
+ */
+export const SHARE_INVITATION = "あなたの GitHub の草も刈れる";
+
+/**
  * The canonical share URL for `username`'s result. Served by the OGP Worker
  * (`workers/ogp`): crawlers get OGP-tagged HTML whose image reflects the
  * score/percentage carried in `s`/`p`, humans get redirected to the app.
@@ -42,6 +48,15 @@ function buildPostIntentUrl(text: string, shareUrl: string): string {
 }
 
 /**
+ * 結果の 1 行のあとで改行し、誘い文とタグを置く。結果だけの投稿では、見た人に
+ * 「自分の草でも遊べる」ことが伝わらない。X は投稿文のあとに共有 URL を続ける
+ * ので、誘い文の行の直後がリンクになる。
+ */
+function withInvitation(resultLine: string): string {
+  return `${resultLine}\n${SHARE_INVITATION} ${SHARE_HASHTAG}`;
+}
+
+/**
  * Builds an `x.com/intent/post` URL announcing `username`'s harvest result.
  * web 版用 — 実 contributions 数とスコアの両方を持っているのは web だけ。
  */
@@ -54,7 +69,9 @@ export function buildIntentUrl(username: string, totalContributions: number, per
 
 /** The post body behind `buildIntentUrl`, for callers that show the text itself (the MCP tools do). */
 export function buildIntentText(username: string, totalContributions: number, percentage: number, score: number): string {
-  return `${username} の草 ${totalContributions.toLocaleString("en-US")} contributions を ${percentage}% 刈り取った🌱 スコア ${score.toLocaleString("en-US")} ${SHARE_HASHTAG}`;
+  return withInvitation(
+    `${username} の草 ${totalContributions.toLocaleString("en-US")} contributions を ${percentage}% 刈り取った🌱 スコア ${score.toLocaleString("en-US")}`,
+  );
 }
 
 /**
@@ -77,5 +94,5 @@ export function buildHarvestIntentUrl(username: string, percentage: number): str
 
 /** The post body behind `buildHarvestIntentUrl`. */
 export function buildHarvestIntentText(username: string, percentage: number): string {
-  return `${username} の草を GitHub 上で ${percentage}% 刈り取った🌱 ${SHARE_HASHTAG}`;
+  return withInvitation(`${username} の草を GitHub 上で ${percentage}% 刈り取った🌱`);
 }
