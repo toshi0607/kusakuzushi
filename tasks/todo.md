@@ -2489,7 +2489,7 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 
 | Assumption | Status | Evidence |
 |---|---|---|
-| PR #92 は未マージで、main の core は `SITE_HOST` を公開していない | VERIFIED | `gh pr view 92` が `state: OPEN`(2026-10-02)。`packages/core/src/share-link.ts` の `SITE_URL` は非公開の定数 |
+| PR #92 はマージ済みで、main の core は `SITE_HOST` を公開している | VERIFIED | `gh pr view 92` が `mergedAt: 2026-10-02T02:42:20Z`(11:42 JST)。着手時(11:36)は `state: OPEN` で、作業中にマージされた。main を取り込み(マージコミット 74f314c)、ホスト名は `@kusakuzushi/core/share-link` の `SITE_HOST` から読む形に変えた(Notes) |
 | 追加する文字のうち、現在のサブセットに無いのは「る」だけ | VERIFIED | `FONT_TEXT` を node で読み、「草崩し」「あなたの GitHub の草も刈れる」とホスト名の各字を照合。「し」は煽り文に含まれているので入っているだけで、カードの固定文字列としては書かれていない |
 | tools/verify-worker.mjs はカード画像の文字を検査していない | VERIFIED | `checkScorelessShare` が見るのはクローラー向け HTML と og:image の URL。og.png は status と content-type だけ(同ファイルのコメント「PNG 本体の文字は取り出せない」) |
 | ローカルの `wrangler dev` は Cache API の中身を `workers/ogp/.wrangler/state` に残す。消さずに同じ URL を取ると旧カードが返る | VERIFIED | 同じ URL の 2 回目が 2ms で返った。再起動前に `.wrangler/state` を消す |
@@ -2503,7 +2503,8 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 - [x] fonts.ts のサブセットを、公開した固定文字列から組み立てる — `CARD_FIXED_TEXT` から誘い文を外すと、fonts.test.ts の 8 件が `['る']` で落ちることを確認(確認後に戻し、`git diff --quiet` で差分なし)
 - [x] 実物の PNG を描いて目視する(gameOver / クリア / スコア無し / 草を取得できないユーザー / 39 文字のユーザー名)— 下記「検証」
 - [x] DESIGN-VISUAL.md §8 と DESIGN.md の動的 OGP の項を更新する — `grep -c "fonts.ts\` に文字を足すこと" DESIGN-VISUAL.md` が 0(§8 の旧記述が残っていない)
-- [x] `pnpm -r test` と `pnpm -r build` が exit 0 — core 72 / ogp 141 / web 98 / extension 80 / mcp 12
+- [x] main(PR #92 のマージ後)を取り込み、ホスト名を core の `SITE_HOST` から読む — `pnpm --filter @kusakuzushi/ogp build` exit 0(`tsc` が `@kusakuzushi/core/share-link` を解決できる)
+- [x] `pnpm -r test` と `pnpm -r build` が exit 0 — main の取り込み後で core 72 / ogp 141 / web 110 / extension 80 / mcp 12
 - [ ] `/code-review high` と reviewer(設計適合)
 - [ ] PR を開く(マージしない)
 
@@ -2513,21 +2514,23 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 - 画素の計測(6 枚とも同じ値): 罫線は y 504..505、x 56..1143。プロダクトの 1 行は y 533..567 で、ワードマーク x 58..160、誘い文 x 192..569、ホスト名 x 783..1135。誘い文とホスト名の間は 213px。toshi0607 の 5 枚は、文字と草がコンテンツ枠(x 56..1143、y 56..573)に収まっている。結果テキストの下端から罫線までは、いちばん詰まるクリアのカードで 76px
 - 縮小: 幅 506px と 360px に縮めた 3 状態を目視。ワードマーク、誘い文、ホスト名のどれも読める
 - 修正前との比較: 同じ手順で修正前の 4 枚を取得してある。結果テキストの文字サイズと位置関係は変わらず、中央の塊が 19px 上へ動いた(下端の行の高さが約 32px から 70px に増え、その差の半分)
+- main の取り込みと `SITE_HOST` への切り替えのあと、同じ 6 枚を描き直した。目視と計測に使った 6 枚とバイト単位で一致する(`cmp`)
 
 ### Notes
 
-- 実装は Codex(gpt-6.1-sol)に 2 回委譲した。1 回目は下端の 1 行と固定文字列の公開、2 回目は行の左右揃えの修正。寸法と色は保存画像の 1 行(ワードマーク 36px アンバー、誘い文 28px、ホスト名 28px アンバー、罫線 2px)に合わせ、実物を見て変えずに採用した
+- 実装は Codex(gpt-6.1-sol)に 2 回委譲した。1 回目は下端の 1 行と固定文字列の公開、2 回目は行の左右揃えの修正。`SITE_HOST` への切り替え(import と定数の数行)は自分で編集した。寸法と色は保存画像の 1 行(ワードマーク 36px アンバー、誘い文 28px、ホスト名 28px アンバー、罫線 2px)に合わせ、実物を見て変えずに採用した
 - 文字サイズは、既存テストが使う 26 / 30 / 34 / 40 / 48px を避けた。既存テストは「gameOver カードに 34px が無い」「煽り文カードに 48px が無い」を見ており、同じ値を下端で使うと別の理由で落ちる
 - **計画からの変更: `justify-content:space-between` をやめた。** 1 回目の実装は行をこれで振り分けていたが、実物の PNG では行が罫線の両端から内側に寄っていた(左 54px、間 109px、右 60px。余白の比がほぼ 1:2:1)。作業用フォルダの試作 Worker で 5 通りを 1 枚に並べて比べ、`flex:1` / `flex-grow:1` / `margin-left:auto` は両端に揃い、`space-between` は `width:100%` を足しても寄ったままだと確かめた。ユニットテストは HTML の文字列しか見ないので、この崩れは実物を描くまで分からなかった
 - ホスト名の右端(x 1135)は、罫線の右端(x 1143)より 8px 内側にある。修正前の 22px のホスト名も 6px 内側だった(文字サイズに比例している)。satori が測る文字幅が字面より広いためとみられる。触っていない
 - tools/verify-worker.mjs は変えていない。カード画像の文字は検査しておらず(Assumptions 3 行目)、今回の変更で結果が変わる分岐が無い
-- 手元の `wrangler dev` を起動し直した 4 回のうち 2 回、最初の og.png だけ 60 秒待っても応答が返らなかった(1 回は変更前のコード)。`wrangler dev` のリクエストトレースでは、そのリクエストの jogruber への fetch が完了していない。フォントは取得できていたとみられる(次のリクエストがフォントを取り直していない)。同じ時刻に curl で jogruber を直接叩くと 1.2〜1.5 秒で返る。原因は特定していない。検証では、最初に捨てる URL を 1 回叩いてから本番の 6 枚を取得した
+- **計画からの変更: main を取り込み、ホスト名を core の `SITE_HOST` から読む形にした。** 着手時(11:36)に未マージだった PR #92 が、11:42 にマージされていた。計画を書いた 11:52 には確認し直しておらず、気づいたのは 12:10 で、`git diff --stat origin/main` に web と core の差分が出たため(lessons 2026-10-02)。計画は「`SITE_HOST` は無いのでホスト名をリテラルで持つ」前提だった。取り込みで衝突したのはこのファイルだけで、両方が末尾に節を足していた。誘い文は `apps/web/src/share.ts` の `SHARE_INVITATION` と同じ文言を Worker にも書いた。core へ移すと web の変更とデプロイを伴うので、この PR では行わない
+- 手元の `wrangler dev` を起動し直した 5 回のうち 2 回、最初の og.png だけ 60 秒待っても応答が返らなかった(1 回は変更前のコード)。`wrangler dev` のリクエストトレースでは、そのリクエストの jogruber への fetch が完了していない。フォントは取得できていたとみられる(次のリクエストがフォントを取り直していない)。同じ時刻に curl で jogruber を直接叩くと 1.2〜1.5 秒で返る。原因は特定していない。検証では、最初に捨てる URL を 1 回叩いてから本番の 6 枚を取得した
 
 ### 見つけたが直していないもの
 
 - jogruber への fetch にタイムアウトが無い(`workers/ogp/src/github-grid.ts`)。上流の応答が止まると描画の Promise が終わらず、`inFlightRenders` の登録も消えない。手元では、止まった URL は `wrangler dev` を再起動するまで応答しなくなった。本番で同じことが起きるかは確かめていない
 - 39 文字のユーザー名は、gameOver カードの 1 行目(48px 太字)がコンテンツ枠の右へ 17px はみ出す(x 1160)。本番の現行カードでも同じ値で、今回の変更によるものではない。下端の行には影響しない
-- 誘い文は、PR #92 がマージされると `apps/web/src/share.ts` の `SHARE_INVITATION` と `workers/ogp/src/og-image-html.ts` の `INVITATION` の 2 か所に同じ文字列が残る。ホスト名も core の `SITE_HOST` とは別のリテラルのまま。#92 のマージ後に、誘い文を core へ移して両方から読む形にできる
-- DESIGN-VISUAL §6 の末尾の項は、煽り文を変えたら `workers/ogp/src/fonts.ts` に字を足すよう書いている。`fonts.ts` は 2026-07-26 から `CLEAR_MESSAGES` を読んでおり、この記述は以前から実装と合っていない(§8 側の同じ記述は今回直した)
+- 誘い文が `apps/web/src/share.ts` の `SHARE_INVITATION` と `workers/ogp/src/og-image-html.ts` の `INVITATION` の 2 か所にある。core(`share-link.ts`)へ移して両方から読めば 1 か所になる。web の変更とデプロイを伴うので、別の PR にする
+- ホスト名のリテラルが `workers/ogp/src/index.ts` と `ogp-page.ts` の `SITE_URL` に残っている(カードの印字は今回 `SITE_HOST` に切り替えた)
 - ワードマークの書体は Noto Sans JP の太字で、保存画像の DotGothic16 とは揃えていない。satori に読み込ませる書体を増やしていない
 
