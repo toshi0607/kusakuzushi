@@ -105,4 +105,60 @@ describe("buildOgImageHtml", () => {
     expect(html).toContain("font-size:48px");
     expect(html).toContain("font-size:40px");
   });
+
+  it("prints the product line after the result in the saved image's order", () => {
+    // #given a no-taunt card
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: null, taunt: null });
+    // #then
+    expect(html).toMatch(/刈り取った[\s\S]*草崩し[\s\S]*あなたの GitHub の草も刈れる[\s\S]*kusakuzushi\.toshi0607\.com/);
+  });
+
+  it.each([
+    { score: 8200, percentage: 64, taunt: null },
+    { score: 12340, percentage: 100, taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？" },
+    { score: null, percentage: 87 },
+  ])("prints the product line for a card with score $score and percentage $percentage", (input) => {
+    // #given a no-taunt, cleared, or score-less card
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", gridSvgDataUri: null, ...input });
+    // #then
+    const missing = ["草崩し", "あなたの GitHub の草も刈れる", "kusakuzushi.toshi0607.com"].filter(
+      (text) => !html.includes(text),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("declares display:flex in the style of every div and span for satori", () => {
+    // #given a cleared card with a score and a grid (the most elements)
+    const input = {
+      user: "toshi0607",
+      score: 12340,
+      percentage: 100,
+      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
+      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
+    };
+    // #when
+    const html = buildOgImageHtml(input);
+    const missing = (html.match(/<(?:div|span)\b[^>]*>/g) ?? []).filter(
+      (tag) => !/style="[^"]*display:flex;/.test(tag),
+    );
+    // #then
+    expect(missing).toEqual([]);
+  });
+
+  it("prints no HTML entities when the request needs no escaping", () => {
+    // #given a valid username and a base64 grid data URI
+    const input = {
+      user: "toshi0607",
+      score: 12340,
+      percentage: 100,
+      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
+      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
+    };
+    // #when
+    const html = buildOgImageHtml(input);
+    // #then
+    expect(html).not.toMatch(/&[a-zA-Z#][a-zA-Z0-9]*;/);
+  });
 });

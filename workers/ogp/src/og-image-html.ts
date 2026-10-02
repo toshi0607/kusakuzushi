@@ -10,7 +10,29 @@ import { escapeHtml } from "./html-escape";
 const BACKGROUND_COLOR = "#0d1117";
 const TEXT_COLOR = "#e6edf3";
 const ACCENT_COLOR = "#39d353";
-const SITE_LABEL = "kusakuzushi.toshi0607.com";
+// Same value as core's MARQUEE_COLOR, repeated here because it is only exported
+// from the package root, which re-exports renderer.ts and its DOM types and cannot
+// be imported in a Worker (see the comment at the top of og-image.ts).
+const WORDMARK_COLOR = "#ffb224";
+const RULE_COLOR = "#30363d";
+export const WORDMARK = "草崩し";
+export const INVITATION = "あなたの GitHub の草も刈れる";
+export const SITE_LABEL = "kusakuzushi.toshi0607.com";
+
+function resultPhrase(percentage: string): string {
+  return `の草を ${percentage}% 刈り取った`;
+}
+
+function scoreLabel(score: string): string {
+  return `スコア ${score}`;
+}
+
+/**
+ * Every character the template itself prints whatever the request. fonts.ts
+ * builds the font subset from this: a character the card prints but the subset
+ * lacks renders as tofu with no error and a 200 response.
+ */
+export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + INVITATION + SITE_LABEL;
 
 export type OgImageHtmlInput = {
   user: string;
@@ -47,12 +69,12 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   const resultLine = input.taunt
     ? `<div style="display:flex; flex-wrap:wrap; font-size:26px; line-height:1.4; color:${TEXT_COLOR}; opacity:0.7;">
       <span style="display:flex; font-weight:700;">${user}</span>
-      <span style="display:flex; margin-left:12px;">の草を ${percentage}% 刈り取った</span>
+      <span style="display:flex; margin-left:12px;">${resultPhrase(percentage)}</span>
     </div>
     <div style="display:flex; font-size:34px; line-height:1.35; color:${TEXT_COLOR}; margin-top:14px;">${escapeHtml(input.taunt)}</div>`
     : `<div style="display:flex; flex-wrap:wrap; font-size:48px; line-height:1.4; color:${TEXT_COLOR};">
       <span style="display:flex; font-weight:700;">${user}</span>
-      <span style="display:flex; margin-left:14px;">の草を ${percentage}% 刈り取った</span>
+      <span style="display:flex; margin-left:14px;">${resultPhrase(percentage)}</span>
     </div>`;
 
   // No HTML entities (&nbsp; etc.): workers-og's HTMLRewriter parser passes
@@ -61,16 +83,25 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   const scoreLine =
     input.score === null
       ? ""
-      : `<div style="display:flex; font-size:${input.taunt ? 30 : 40}px; color:${ACCENT_COLOR}; margin-top:20px;">スコア ${escapeHtml(input.score.toLocaleString("en-US"))}</div>`;
+      : `<div style="display:flex; font-size:${input.taunt ? 30 : 40}px; color:${ACCENT_COLOR}; margin-top:20px;">${scoreLabel(escapeHtml(input.score.toLocaleString("en-US")))}</div>`;
 
+  // On X the link card is mostly this image: the product line says what it is
+  // (wordmark), that the viewer can play too (invitation), and where to go (host).
+  // The order matches the saved result image (apps/web/src/share.ts, DESIGN-VISUAL.md §8).
+  // The rule separates the result (who / how much) from the product line.
   return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
   <div style="display:flex;">${gridSection}</div>
   <div style="display:flex; flex-direction:column; flex:1; justify-content:center;">
     ${resultLine}
     ${scoreLine}
   </div>
-  <div style="display:flex; justify-content:flex-end;">
-    <span style="display:flex; font-size:22px; color:${TEXT_COLOR};">${SITE_LABEL}</span>
+  <div style="display:flex; height:2px; background:${RULE_COLOR};"></div>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+    <div style="display:flex; align-items:center;">
+      <span style="display:flex; font-size:36px; font-weight:700; color:${WORDMARK_COLOR};">${WORDMARK}</span>
+      <span style="display:flex; margin-left:24px; font-size:28px; color:${TEXT_COLOR};">${INVITATION}</span>
+    </div>
+    <span style="display:flex; font-size:28px; color:${WORDMARK_COLOR};">${SITE_LABEL}</span>
   </div>
 </div>`;
 }

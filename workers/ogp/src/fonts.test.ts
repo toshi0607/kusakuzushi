@@ -2,6 +2,7 @@ import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
 import { describe, expect, it } from "vitest";
 
 import { FONT_TEXT } from "./fonts";
+import { buildOgImageHtml, CARD_FIXED_TEXT } from "./og-image-html";
 
 /**
  * The font is fetched as a `text=`-subset from Google Fonts, so a character
@@ -19,12 +20,44 @@ describe("FONT_TEXT", () => {
   });
 
   it("covers the card's own fixed strings", () => {
-    // #given the result phrase, the site label and the digits/punctuation
+    // #given the card's fixed strings and the digits/punctuation
     const covered = new Set(FONT_TEXT);
     // #when
-    const missing = [...new Set("の草を刈り取ったスコア草崩kusakuzushi.toshi0607.com0123456789%,.- ")].filter(
+    const missing = [...new Set(CARD_FIXED_TEXT + "0123456789%,.- ")].filter(
       (char) => !covered.has(char),
     );
+    // #then
+    expect(missing).toEqual([]);
+  });
+
+  it("covers every character of the product line", () => {
+    // #given the wordmark, invitation, and host printed on the card
+    const covered = new Set(FONT_TEXT);
+    // #when
+    const missing = [...new Set("草崩し" + "あなたの GitHub の草も刈れる" + "kusakuzushi.toshi0607.com")].filter(
+      (char) => !covered.has(char),
+    );
+    // #then
+    expect(missing).toEqual([]);
+  });
+
+  it.each([
+    { user: "toshi0607", score: 1234567, percentage: 56, gridSvgDataUri: null, taunt: null },
+    { user: "octo-cat", score: null, percentage: 87, gridSvgDataUri: null },
+    ...CLEAR_MESSAGES.map((message) => ({
+      user: "toshi0607",
+      score: 1234,
+      percentage: 100,
+      gridSvgDataUri: null,
+      taunt: message,
+    })),
+  ])("covers every character the built card prints (user $user, percentage $percentage, taunt $taunt)", (input) => {
+    // #given every supported result variant and each clear message
+    const covered = new Set(FONT_TEXT);
+    // #when
+    const html = buildOgImageHtml(input);
+    const text = html.replace(/<[^>]*>/g, "").replace(/\n/g, "");
+    const missing = [...new Set(text)].filter((char) => !covered.has(char));
     // #then
     expect(missing).toEqual([]);
   });

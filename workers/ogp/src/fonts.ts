@@ -15,12 +15,12 @@
 
 import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
 
+import { CARD_FIXED_TEXT } from "./og-image-html";
+
 const FONT_FAMILY = "Noto Sans JP";
 
-/** The card's own fixed strings: the result phrase and the site label. */
-const CARD_TEXT =
-  "の草を刈り取ったスコア草崩" +
-  "kusakuzushi.toshi0607.com" +
+/** Characters a request can add: a GitHub username and score/percentage digits and separators. */
+const REQUEST_TEXT =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
   "%,.- ";
 
@@ -28,12 +28,13 @@ const CARD_TEXT =
  * Every character the card can print, deduplicated (the subset is a set of
  * glyphs — repeats only make the request URL longer).
  *
- * The clear taunts come from core's own table rather than a copy pasted here:
+ * The card's fixed strings and clear taunts come from the modules that own them
+ * rather than a copy pasted here:
  * a character the copy uses but the subset misses renders as tofu, and that
  * failure is invisible until someone looks at a real PNG (2026-07-26: it
  * shipped exactly that way for one render).
  */
-export const FONT_TEXT = [...new Set(CARD_TEXT + CLEAR_MESSAGES.join(""))].join("");
+export const FONT_TEXT = [...new Set(CARD_FIXED_TEXT + REQUEST_TEXT + CLEAR_MESSAGES.join(""))].join("");
 
 // Google's css2 endpoint serves WOFF2 (which satori cannot parse) to modern
 // browsers; this old-Safari User-Agent makes it fall back to a TTF URL.
