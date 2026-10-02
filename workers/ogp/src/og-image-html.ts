@@ -5,6 +5,9 @@
  * flex container needs an explicit `display:flex`.
  */
 
+// The `/share-link` subpath, not the package root — see og-image.ts.
+import { SITE_HOST } from "@kusakuzushi/core/share-link";
+
 import { escapeHtml } from "./html-escape";
 
 const BACKGROUND_COLOR = "#0d1117";
@@ -15,9 +18,12 @@ const ACCENT_COLOR = "#39d353";
 // be imported in a Worker (see the comment at the top of og-image.ts).
 const WORDMARK_COLOR = "#ffb224";
 const RULE_COLOR = "#30363d";
-export const WORDMARK = "草崩し";
-export const INVITATION = "あなたの GitHub の草も刈れる";
-export const SITE_LABEL = "kusakuzushi.toshi0607.com";
+const WORDMARK = "草崩し";
+// The same wording as the saved result image's SHARE_INVITATION
+// (apps/web/src/share.ts). Repeated here because a Worker cannot import from
+// apps/web; change both together. The host is core's SITE_HOST, the constant
+// the share URL itself is built from.
+const INVITATION = "あなたの GitHub の草も刈れる";
 
 function resultPhrase(percentage: string): string {
   return `の草を ${percentage}% 刈り取った`;
@@ -32,7 +38,7 @@ function scoreLabel(score: string): string {
  * builds the font subset from this: a character the card prints but the subset
  * lacks renders as tofu with no error and a 200 response.
  */
-export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + INVITATION + SITE_LABEL;
+export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + INVITATION + SITE_HOST;
 
 export type OgImageHtmlInput = {
   user: string;
@@ -107,7 +113,7 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
       <span style="display:flex; font-size:36px; font-weight:700; color:${WORDMARK_COLOR};">${WORDMARK}</span>
       <span style="display:flex; margin-left:24px; font-size:28px; color:${TEXT_COLOR};">${INVITATION}</span>
     </div>
-    <span style="display:flex; font-size:28px; color:${WORDMARK_COLOR};">${SITE_LABEL}</span>
+    <span style="display:flex; font-size:28px; color:${WORDMARK_COLOR};">${SITE_HOST}</span>
   </div>
 </div>`;
 }
