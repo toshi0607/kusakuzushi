@@ -2,7 +2,7 @@ import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
 import { describe, expect, it } from "vitest";
 
 import { FONT_TEXT } from "./fonts";
-import { buildOgImageHtml, CARD_FIXED_TEXT } from "./og-image-html";
+import { buildOgImageHtml } from "./og-image-html";
 
 /**
  * The font is fetched as a `text=`-subset from Google Fonts, so a character
@@ -19,11 +19,11 @@ describe("FONT_TEXT", () => {
     expect(missing).toEqual([]);
   });
 
-  it("covers the card's own fixed strings", () => {
-    // #given the card's fixed strings and the digits/punctuation
+  it("covers the result phrase, the score label and the digits and punctuation of a request", () => {
+    // #given the result phrase, score label, and request digits/punctuation
     const covered = new Set(FONT_TEXT);
     // #when
-    const missing = [...new Set(CARD_FIXED_TEXT + "0123456789%,.- ")].filter(
+    const missing = [...new Set("の草を % 刈り取った" + "スコア " + "0123456789%,.- ")].filter(
       (char) => !covered.has(char),
     );
     // #then
@@ -49,6 +49,14 @@ describe("FONT_TEXT", () => {
     {
       name: "score-less card",
       input: { user: "octo-cat", score: null, percentage: 87, gridSvgDataUri: null },
+    },
+    {
+      name: "card with a grid",
+      input: { user: "toshi0607", score: 1234, percentage: 56, gridSvgDataUri: "data:image/svg+xml;base64,AAAA", taunt: null },
+    },
+    {
+      name: "score-less cleared card",
+      input: { user: "toshi0607", score: null, percentage: 100, gridSvgDataUri: null, taunt: CLEAR_MESSAGES[0] },
     },
     ...CLEAR_MESSAGES.map((message) => ({
       name: `cleared card: ${message}`,

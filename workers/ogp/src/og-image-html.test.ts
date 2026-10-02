@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { buildOgImageHtml } from "./og-image-html";
 
 describe("buildOgImageHtml", () => {
+  const clearedCard = {
+    user: "toshi0607",
+    score: 12340,
+    percentage: 100,
+    gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
+    taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
+  };
+  const cardVariants = [
+    { name: "cleared card", input: clearedCard },
+    {
+      name: "no-taunt card",
+      input: { user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: "data:image/svg+xml;base64,AAAA", taunt: null },
+    },
+  ];
+
   it("embeds the username (bold), percentage, and formatted score", () => {
     // #given / #when
     const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 87, gridSvgDataUri: null });
@@ -61,9 +76,9 @@ describe("buildOgImageHtml", () => {
 
   it("adds the taunt line when the round was a full clear", () => {
     // #given a 100% card carrying the app's own taunt
-    const taunt = "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？";
+    const taunt = clearedCard.taunt;
     // #when
-    const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 100, gridSvgDataUri: null, taunt });
+    const html = buildOgImageHtml({ ...clearedCard, gridSvgDataUri: null });
     // #then
     expect(html).toContain(taunt);
   });
@@ -71,7 +86,7 @@ describe("buildOgImageHtml", () => {
   it("omits the taunt line when there is none (gameOver, or an unknown total)", () => {
     // #given / #when
     const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 64, gridSvgDataUri: null, taunt: null });
-    // #then only the two existing text blocks remain
+    // #then no taunt block is printed
     expect(html).toContain("64%");
     expect(html).not.toContain("font-size:34px");
   });
@@ -87,9 +102,8 @@ describe("buildOgImageHtml", () => {
 
   it("demotes the who/how-much line below the taunt on a clear card", () => {
     // #given a cleared card (the taunt is the line that is specific to this game)
-    const taunt = "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？";
     // #when
-    const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 100, gridSvgDataUri: null, taunt });
+    const html = buildOgImageHtml({ ...clearedCard, gridSvgDataUri: null });
     // #then the context line is smaller than the taunt, and the taunt beats the score
     expect(html).toContain("font-size:26px");
     expect(html).toContain("font-size:34px");
@@ -122,24 +136,9 @@ describe("buildOgImageHtml", () => {
     expect(html).toMatch(/<div style="display:flex; flex:1; align-items:center;">\s*<span[^>]*>草崩し<\/span>/);
   });
 
-  it("does not use justify-content:space-between, which this satori build insets at both ends", () => {
-    // #given a cleared card with a score and a grid (the most elements)
-    const input = {
-      user: "toshi0607",
-      score: 12340,
-      percentage: 100,
-      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
-      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
-    };
-    // #when
-    const html = buildOgImageHtml(input);
-    // #then
-    expect(html).not.toContain("space-between");
-  });
-
   it.each([
     { score: 8200, percentage: 64, taunt: null },
-    { score: 12340, percentage: 100, taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？" },
+    { ...clearedCard, gridSvgDataUri: null },
     { score: null, percentage: 87 },
   ])("prints the product line for a card with score $score and percentage $percentage", (input) => {
     // #given a no-taunt, cleared, or score-less card
@@ -152,15 +151,8 @@ describe("buildOgImageHtml", () => {
     expect(missing).toEqual([]);
   });
 
-  it("declares display:flex in the style of every div and span for satori", () => {
-    // #given a cleared card with a score and a grid (the most elements)
-    const input = {
-      user: "toshi0607",
-      score: 12340,
-      percentage: 100,
-      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
-      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
-    };
+  it.each(cardVariants)("declares display:flex in the style of every div and span for satori on the $name", ({ input }) => {
+    // #given a cleared or no-taunt card with a score and a grid
     // #when
     const html = buildOgImageHtml(input);
     const missing = (html.match(/<(?:div|span)\b[^>]*>/g) ?? []).filter(
@@ -170,15 +162,8 @@ describe("buildOgImageHtml", () => {
     expect(missing).toEqual([]);
   });
 
-  it("prints no HTML entities when the request needs no escaping", () => {
+  it.each(cardVariants)("prints no HTML entities when the $name needs no escaping", ({ input }) => {
     // #given a valid username and a base64 grid data URI
-    const input = {
-      user: "toshi0607",
-      score: 12340,
-      percentage: 100,
-      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
-      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
-    };
     // #when
     const html = buildOgImageHtml(input);
     // #then

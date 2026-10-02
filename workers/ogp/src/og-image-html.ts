@@ -3,9 +3,16 @@
  * Plain string templating (not JSX) — `workers-og`'s `ImageResponse` accepts
  * an HTML string directly and parses it via `HTMLRewriter`. Every satori
  * flex container needs an explicit `display:flex`.
+ * Whitespace between sibling elements in the template is not ignored:
+ * workers-og keeps each whitespace-only text node, and satori lays it out as
+ * a zero-size flex item. Do not distribute space by item count across children
+ * written on separate lines (`justify-content:space-between` / `space-around` /
+ * `space-evenly`, `gap`); use margins or `flex:1`.
  */
 
 // The `/share-link` subpath, not the package root — see og-image.ts.
+// SITE_HOST is the constant the share URL itself is built from, so the host
+// printed on the card cannot drift from the link's.
 import { SITE_HOST } from "@kusakuzushi/core/share-link";
 
 import { escapeHtml } from "./html-escape";
@@ -21,8 +28,7 @@ const RULE_COLOR = "#30363d";
 const WORDMARK = "草崩し";
 // The same wording as the saved result image's SHARE_INVITATION
 // (apps/web/src/share.ts). Repeated here because a Worker cannot import from
-// apps/web; change both together. The host is core's SITE_HOST, the constant
-// the share URL itself is built from.
+// apps/web; change both together.
 const INVITATION = "あなたの GitHub の草も刈れる";
 
 function resultPhrase(percentage: string): string {
@@ -37,6 +43,9 @@ function scoreLabel(score: string): string {
  * Every character the template itself prints whatever the request. fonts.ts
  * builds the font subset from this: a character the card prints but the subset
  * lacks renders as tofu with no error and a 200 response.
+ * Add any new literal printed by the template to this constant. fonts.test.ts
+ * renders the card variants and fails when a printed character is missing
+ * from the subset.
  */
 export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + INVITATION + SITE_HOST;
 
@@ -95,12 +104,13 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   // (wordmark), that the viewer can play too (invitation), and where to go (host).
   // The order matches the saved result image (apps/web/src/share.ts, DESIGN-VISUAL.md §8).
   // The rule separates the result (who / how much) from the product line.
-  // The left group grows (flex:1) so the host reaches the rule's right end,
-  // the same way the result block above uses flex:1. Avoid justify-content:space-between:
-  // this satori build (workers-og 0.0.27) puts free space at both ends as well.
-  // Measured on the real PNG on 2026-10-02: the 1088px row was inset 54px on
-  // the left and 60px on the right, with 109px between the two items;
-  // width:100% on the row did not change that.
+  // The left group grows (flex:1) to push the host to the rule's right end.
+  // justify-content:space-between would not do that here: the newlines between
+  // the row's children are zero-size flex items (see the file header), so free
+  // space is spread over four gaps instead of one. Measured on the real PNG on
+  // 2026-10-02: the wordmark started 54px in from the rule's left end and the
+  // host ended 60px before its right end, with 109px between them. The same row
+  // without whitespace between its children aligns to both ends with space-between.
   return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
   <div style="display:flex;">${gridSection}</div>
   <div style="display:flex; flex-direction:column; flex:1; justify-content:center;">

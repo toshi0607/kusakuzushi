@@ -9,8 +9,9 @@
  * Fonts are subset via the `text` param to keep the fetched TTF small, but the
  * subset must be independent of any single request's username so the module-
  * scope cache below can serve every request without re-fetching: it covers
- * the fixed Japanese phrases plus every character a GitHub username or the
- * score/percentage/domain text could ever contain.
+ * the card's fixed strings (from og-image-html.ts), the clear taunts, and every
+ * character a GitHub username or the score and percentage of a request could
+ * contain.
  */
 
 import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
@@ -19,7 +20,11 @@ import { CARD_FIXED_TEXT } from "./og-image-html";
 
 const FONT_FAMILY = "Noto Sans JP";
 
-/** Characters a request can add: a GitHub username and score/percentage digits and separators. */
+/**
+ * Characters a request can add: a GitHub username and score/percentage digits
+ * and separators. `%`, `.` and the space also appear in the card's fixed
+ * strings; keep them here so this list does not depend on the card's wording.
+ */
 const REQUEST_TEXT =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
   "%,.- ";
