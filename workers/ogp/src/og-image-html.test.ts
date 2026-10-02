@@ -1,4 +1,6 @@
+import { SHARE_INVITATION, SITE_HOST } from "@kusakuzushi/core/share-link";
 import { describe, expect, it } from "vitest";
+
 import { buildOgImageHtml } from "./og-image-html";
 
 describe("buildOgImageHtml", () => {
@@ -120,12 +122,43 @@ describe("buildOgImageHtml", () => {
     expect(html).toContain("font-size:40px");
   });
 
-  it("prints the product line after the result in the saved image's order", () => {
+  it("prints the product line above the result, in the saved image's order", () => {
     // #given a no-taunt card
     // #when
     const html = buildOgImageHtml({ user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: null, taunt: null });
     // #then
-    expect(html).toMatch(/刈り取った[\s\S]*草崩し[\s\S]*あなたの GitHub の草も刈れる[\s\S]*kusakuzushi\.toshi0607\.com/);
+    const positions = ["草崩し", SHARE_INVITATION, SITE_HOST, "刈り取った"].map((text) => html.indexOf(text));
+    expect(
+      positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])),
+    ).toBe(true);
+  });
+
+  it("keeps the bottom of the card clear for X's title label", () => {
+    // #given a cleared card
+    // #when
+    const html = buildOgImageHtml(clearedCard);
+    // #then
+    expect(html).toContain("padding:56px 56px 126px;");
+  });
+
+  it("draws a rule under the product line", () => {
+    // #given a cleared card
+    // #when
+    const html = buildOgImageHtml(clearedCard);
+    // #then
+    expect(html).toMatch(/<\/span>\s*<\/div>\s*<div style="display:flex; height:2px; margin-top:16px; background:#30363d;"><\/div>/);
+  });
+
+  it("paints neither the product line nor the rule green", () => {
+    // #given a cleared card
+    // #when
+    const html = buildOgImageHtml(clearedCard);
+    const gridIndex = html.indexOf('<div style="display:flex; margin-top:20px;">');
+    if (gridIndex === -1) {
+      throw new Error("Expected the grid container before checking the product line and rule colors");
+    }
+    // #then
+    expect(html.slice(0, gridIndex)).not.toContain("#39d353");
   });
 
   it("grows the product line's left group so the host reaches the right edge", () => {
@@ -145,7 +178,7 @@ describe("buildOgImageHtml", () => {
     // #when
     const html = buildOgImageHtml({ user: "toshi0607", gridSvgDataUri: null, ...input });
     // #then
-    const missing = ["草崩し", "あなたの GitHub の草も刈れる", "kusakuzushi.toshi0607.com"].filter(
+    const missing = ["草崩し", SHARE_INVITATION, SITE_HOST].filter(
       (text) => !html.includes(text),
     );
     expect(missing).toEqual([]);

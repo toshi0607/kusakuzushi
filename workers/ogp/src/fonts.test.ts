@@ -1,4 +1,5 @@
 import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
+import { SHARE_INVITATION, SITE_HOST } from "@kusakuzushi/core/share-link";
 import { describe, expect, it } from "vitest";
 
 import { FONT_TEXT } from "./fonts";
@@ -34,7 +35,7 @@ describe("FONT_TEXT", () => {
     // #given the wordmark, invitation, and host printed on the card
     const covered = new Set(FONT_TEXT);
     // #when
-    const missing = [...new Set("草崩し" + "あなたの GitHub の草も刈れる" + "kusakuzushi.toshi0607.com")].filter(
+    const missing = [...new Set("草崩し" + SHARE_INVITATION + SITE_HOST)].filter(
       (char) => !covered.has(char),
     );
     // #then

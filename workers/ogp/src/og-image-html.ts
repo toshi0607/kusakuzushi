@@ -13,23 +13,35 @@
 // The `/share-link` subpath, not the package root — see og-image.ts.
 // SITE_HOST is the constant the share URL itself is built from, so the host
 // printed on the card cannot drift from the link's.
-import { SITE_HOST } from "@kusakuzushi/core/share-link";
+// SHARE_INVITATION is the same constant the saved result image and X post text print.
+import { SHARE_INVITATION, SITE_HOST } from "@kusakuzushi/core/share-link";
 
 import { escapeHtml } from "./html-escape";
 
 const BACKGROUND_COLOR = "#0d1117";
 const TEXT_COLOR = "#e6edf3";
 const ACCENT_COLOR = "#39d353";
-// Same value as core's MARQUEE_COLOR, repeated here because it is only exported
+// Same name and value as core's MARQUEE_COLOR, repeated here because it is only exported
 // from the package root, which re-exports renderer.ts and its DOM types and cannot
 // be imported in a Worker (see the comment at the top of og-image.ts).
-const WORDMARK_COLOR = "#ffb224";
+const MARQUEE_COLOR = "#ffb224";
 const RULE_COLOR = "#30363d";
 const WORDMARK = "草崩し";
-// The same wording as the saved result image's SHARE_INVITATION
-// (apps/web/src/share.ts). Repeated here because a Worker cannot import from
-// apps/web; change both together.
-const INVITATION = "あなたの GitHub の草も刈れる";
+
+/**
+ * X overlays the title at the bottom-left of summary_large_image cards. Measured
+ * on x.com on 2026-10-02, on real posts carrying this card: left inset 13px, top
+ * 33px above the bottom, height 20px, white 13px text on rgba(0,0,0,0.77), width
+ * equal to the title plus 16px (216px for a 22-character title). The label keeps
+ * that size on both a 518px desktop card and a 308px card on a 390px phone.
+ * In this 1200x630 image, it covers x 30..530 / y 554..600 on desktop and
+ * x 51..892 / y 503..581 on the phone. The old bottom product line's text at
+ * y 533..567 had its wordmark and invitation completely hidden on the phone
+ * and their lower 40% hidden on desktop, so the line moves to the top.
+ * 126px of bottom padding keeps the lowest text (the cleared card's score)
+ * ending at y 472, above the label zone on 390px (503) and 360px (488) phones.
+ */
+const X_LABEL_CLEARANCE = 126;
 
 function resultPhrase(percentage: string): string {
   return `の草を ${percentage}% 刈り取った`;
@@ -47,7 +59,7 @@ function scoreLabel(score: string): string {
  * renders the card variants and fails when a printed character is missing
  * from the subset.
  */
-export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + INVITATION + SITE_HOST;
+export const CARD_FIXED_TEXT = resultPhrase("") + scoreLabel("") + WORDMARK + SHARE_INVITATION + SITE_HOST;
 
 export type OgImageHtmlInput = {
   user: string;
@@ -100,10 +112,11 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
       ? ""
       : `<div style="display:flex; font-size:${input.taunt ? 30 : 40}px; color:${ACCENT_COLOR}; margin-top:20px;">${scoreLabel(escapeHtml(input.score.toLocaleString("en-US")))}</div>`;
 
-  // On X the link card is mostly this image: the product line says what it is
+  // On X the link card is mostly this image: the product line comes first, saying what it is
   // (wordmark), that the viewer can play too (invitation), and where to go (host).
   // The order matches the saved result image (apps/web/src/share.ts, DESIGN-VISUAL.md §8).
-  // The rule separates the result (who / how much) from the product line.
+  // It sits at the top because X's title label covers the image's bottom-left
+  // (see X_LABEL_CLEARANCE). The rule separates it from the grass and the result.
   // The left group grows (flex:1) to push the host to the rule's right end.
   // justify-content:space-between would not do that here: the newlines between
   // the row's children are zero-size flex items (see the file header), so free
@@ -111,19 +124,19 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   // 2026-10-02: the wordmark started 54px in from the rule's left end and the
   // host ended 60px before its right end, with 109px between them. The same row
   // without whitespace between its children aligns to both ends with space-between.
-  return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
-  <div style="display:flex;">${gridSection}</div>
+  return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px 56px ${X_LABEL_CLEARANCE}px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
+  <div style="display:flex; align-items:center;">
+    <div style="display:flex; flex:1; align-items:center;">
+      <span style="display:flex; font-size:36px; font-weight:700; color:${MARQUEE_COLOR};">${WORDMARK}</span>
+      <span style="display:flex; margin-left:24px; font-size:28px; color:${TEXT_COLOR};">${SHARE_INVITATION}</span>
+    </div>
+    <span style="display:flex; font-size:28px; color:${MARQUEE_COLOR};">${SITE_HOST}</span>
+  </div>
+  <div style="display:flex; height:2px; margin-top:16px; background:${RULE_COLOR};"></div>
+  <div style="display:flex; margin-top:20px;">${gridSection}</div>
   <div style="display:flex; flex-direction:column; flex:1; justify-content:center;">
     ${resultLine}
     ${scoreLine}
-  </div>
-  <div style="display:flex; height:2px; background:${RULE_COLOR};"></div>
-  <div style="display:flex; align-items:center; margin-top:16px;">
-    <div style="display:flex; flex:1; align-items:center;">
-      <span style="display:flex; font-size:36px; font-weight:700; color:${WORDMARK_COLOR};">${WORDMARK}</span>
-      <span style="display:flex; margin-left:24px; font-size:28px; color:${TEXT_COLOR};">${INVITATION}</span>
-    </div>
-    <span style="display:flex; font-size:28px; color:${WORDMARK_COLOR};">${SITE_HOST}</span>
   </div>
 </div>`;
 }
