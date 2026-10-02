@@ -470,7 +470,7 @@ describe("createGameRuntime (via mount)", () => {
       // #then
       const intent = new URL(link.href);
       expect(intent.origin + intent.pathname).toBe("https://x.com/intent/post");
-      expect(intent.searchParams.get("text")).toBe("toshi0607 の草を GitHub 上で 100% 刈り取った🌱\nあなたの GitHub の草も刈れる #草崩し");
+      expect(intent.searchParams.get("text")).toBe("toshi0607 の草を GitHub 上で 100% 刈り取った🌱\nあなたの草もどうですか？ #草崩し");
       expect(intent.searchParams.get("url")).toBe("https://kusakuzushi.toshi0607.com/share/toshi0607?p=100");
       expect(link.textContent).toBe("Xで共有");
     });

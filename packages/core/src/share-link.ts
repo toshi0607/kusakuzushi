@@ -23,7 +23,7 @@ export const SHARE_HASHTAG = "#草崩し";
  * 投稿や保存画像を見た人に向けた一言。X の投稿文と、web の保存画像
  * (apps/web/src/share.ts)が同じ文言を使う。
  */
-export const SHARE_INVITATION = "あなたの GitHub の草も刈れる";
+export const SHARE_INVITATION = "あなたの草もどうですか？";
 
 /**
  * The canonical share URL for `username`'s result. Served by the OGP Worker

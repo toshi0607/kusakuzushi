@@ -37,7 +37,7 @@ describe("buildIntentUrl", () => {
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe("https://x.com/intent/post");
     expect(parsed.searchParams.get("url")).toBe("https://kusakuzushi.toshi0607.com/share/toshi0607?s=12340&p=87");
-    expect(parsed.searchParams.get("text")).toBe("toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340\nあなたの GitHub の草も刈れる #草崩し");
+    expect(parsed.searchParams.get("text")).toBe("toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340\nあなたの草もどうですか？ #草崩し");
   });
 });
 
@@ -49,7 +49,7 @@ describe("buildHarvestIntentUrl", () => {
     // #then
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe("https://x.com/intent/post");
-    expect(parsed.searchParams.get("text")).toBe("toshi0607 の草を GitHub 上で 87% 刈り取った🌱\nあなたの GitHub の草も刈れる #草崩し");
+    expect(parsed.searchParams.get("text")).toBe("toshi0607 の草を GitHub 上で 87% 刈り取った🌱\nあなたの草もどうですか？ #草崩し");
     expect(parsed.searchParams.get("url")).toBe("https://kusakuzushi.toshi0607.com/share/toshi0607?p=87");
   });
 
@@ -80,8 +80,8 @@ describe("buildHarvestIntentUrl", () => {
 
     // #then
     expect([webLines[1], extensionLines[1]]).toEqual([
-      "あなたの GitHub の草も刈れる #草崩し",
-      "あなたの GitHub の草も刈れる #草崩し",
+      "あなたの草もどうですか？ #草崩し",
+      "あなたの草もどうですか？ #草崩し",
     ]);
   });
 });
