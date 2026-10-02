@@ -5,13 +5,15 @@
  * neither `canvas.toBlob` nor the Web Share API, so both are stubbed.
  */
 
+import { buildIntentText, buildShareUrl } from "@kusakuzushi/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { saveCanvasImage } from "./share";
 
+/** The caption the result screen passes: the X button's post text and share link. */
 const CAPTION = {
-  text: "toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340\nあなたの GitHub の草も刈れる #草崩し",
-  url: "https://kusakuzushi.toshi0607.com/share/toshi0607?s=12340&p=87",
+  text: buildIntentText("toshi0607", 2942, 87, 12340),
+  url: buildShareUrl("toshi0607", 87, 12340),
 };
 
 function stubCanvasBlob(): HTMLCanvasElement {

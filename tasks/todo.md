@@ -2479,10 +2479,18 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 | Assumption | Status | Evidence |
 |---|---|---|
 | X の投稿画面が `%0A` を改行として表示する | VERIFIED | アプリ内ブラウザで `x.com/intent/post` を開き、2 行で表示されるのを確認(投稿はしていない) |
-| 2 行にしても X の文字数上限に収まる | VERIFIED | 39 文字のユーザー名・7 桁のスコアでも、X の数え方(全角 2・URL 23)で 164 / 280 |
+| 2 行にしても X の文字数上限に収まる | VERIFIED | 39 文字のユーザー名・7 桁のスコアの投稿文を X の投稿画面で開き、「ポストする」が押せる状態で、文字数の輪が半分強だった。手元の概算(全角 2・URL 23 で 164 / 280)とも合う |
 
 検証:
 
 - `pnpm -r test` exit 0: core 73 / ogp 125 / web 110 / extension 80 / mcp 12。`pnpm -r build` exit 0
 - 実画面: ビルドした成果物を `vite preview` で配信し、ゲームオーバーにして「Xで共有」の href を読んだ。`text` は 2 行で、`%0A` を含む。「画像を保存」が共有シートに渡す文面も同じ
 - 拡張は `game-runtime.test.ts` が、実際のコンテンツスクリプトをリザルトバナーまで動かして href を読んでいる
+
+レビュー(`/code-review high`、6 件。不具合の指摘は無し):
+
+- DESIGN.md §4 の X ボタンの URL が古いまま(`/?user={name}`)→ `/share/{name}?s=…&p=…` に修正
+- 上の台帳で、概算だけを根拠に VERIFIED と書いていた → 実際の投稿画面で最長ケースを確認し、根拠を書き直した
+- share-sheet.test.ts の文面のリテラル → `buildIntentText` / `buildShareUrl` から作るようにした
+- 並行中の OGP カードのブランチが、同じ誘い文を Worker 側に別のリテラルで持っている → そのセッションに、core の `SHARE_INVITATION` を使うよう連絡
+- 拡張は次の版を出すまで旧文面のまま / 拡張の投稿文は 2 行とも「GitHub」と書く → 対応せず、ユーザーに報告

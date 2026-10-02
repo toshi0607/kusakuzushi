@@ -93,7 +93,7 @@ type ContributionGrid = {
 
 ### 共有機能(MVPスコープ)
 
-1. **X共有ボタン**: `https://x.com/intent/post?text=...&url=https://<domain>/?user={name}`
+1. **X共有ボタン**: `https://x.com/intent/post?text=...&url=https://<domain>/share/{name}?s=…&p=…`(共有 URL は 3 の Worker 経由)
    テキストは 2 行。1 行目が結果、2 行目が見た人に向けた誘い文とタグ(保存画像のプロダクトの 1 行と同じ文言。DESIGN-VISUAL.md §8):
    「toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340」
    「あなたの GitHub の草も刈れる #草崩し」
