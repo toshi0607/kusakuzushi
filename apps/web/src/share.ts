@@ -6,7 +6,7 @@
  * 「盤面を焼いたリザルトカード」の合成。
  */
 
-import { MARQUEE_COLOR, SITE_HOST } from "@kusakuzushi/core";
+import { MARQUEE_COLOR, SHARE_INVITATION, SITE_HOST } from "@kusakuzushi/core";
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -65,13 +65,6 @@ const WORDMARK_FONT_SIZE = 36;
 const PRODUCT_LINE_FONT_SIZE = 28;
 export const DISPLAY_FONT = '"DotGothic16", "IBM Plex Sans JP", sans-serif';
 export const BODY_FONT = '"IBM Plex Sans JP", sans-serif';
-
-/**
- * カードを見た人に向けた一言。保存した画像は、投稿文もリンクも無いまま単独で
- * 出回ることがある。画像はリンクにならないので、見た人も自分の草で遊べること
- * と行き先(`SITE_HOST`)は、読める文字としてカードに描いておく。
- */
-export const SHARE_INVITATION = "あなたの GitHub の草も刈れる";
 
 /** 共有シートへ画像と一緒に渡す、投稿文と共有リンク。 */
 export type ShareCaption = {
