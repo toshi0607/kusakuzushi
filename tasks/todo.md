@@ -2585,7 +2585,7 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 - [x] `pnpm -r test` と `pnpm -r build` が exit 0 — main の取り込み後で core 72 / ogp 141 / web 110 / extension 80 / mcp 12
 - [x] `/code-review high` と reviewer(設計適合)— 下記 Review。指摘の修正後に `pnpm --filter @kusakuzushi/ogp test` exit 0(144 件)
 - [x] プロダクトの 1 行の配置を決める — ユーザーが「上端へ移す」を選択(2026-10-02。ワードマークは 36px のまま)
-- [x] main(PR #94 のマージ後)を取り込み、1 行を上端へ移し、誘い文を core の `SHARE_INVITATION` から読む — `pnpm -r test` exit 0(core 73 / ogp 147 / web 110 / extension 80 / mcp 12)、`pnpm -r build` exit 0
+- [x] main(PR #94 のマージ後)を取り込み、1 行を上端へ移し、誘い文を core の `SHARE_INVITATION` から読む — `pnpm -r test` exit 0(core 73 / ogp 147 / web 111 / extension 80 / mcp 12。15:07 にマージされた PR #93 も取り込んだあとの値)、`pnpm -r build` exit 0
 - [x] 決まった配置で実物を描き直し、X のラベルを重ねた見え方を確かめる — 下記「検証」
 - [ ] PR を開く(マージしない)
 
