@@ -2564,32 +2564,81 @@ Worker は、同じキーへの同時リクエストを 1 本の Promise にま�
 | Assumption | Status | Evidence |
 |---|---|---|
 | vitest の偽タイマーは `AbortSignal.timeout` を進められない。`AbortController` + `setTimeout` なら進められる | VERIFIED | vitest 5.0.0 で試した。6 秒進めても `AbortSignal.timeout(5000)` は abort されず、`setTimeout` で abort する形はされた。実装は後者にする(`workers/mcp/src/tools.ts` の `fetchOgp` と同じ書き方) |
-| workerd の `fetch` は、ヘッダーを待っている間の abort で reject する | UNVERIFIED | 修正後に実物の workerd で確かめる |
-| workerd は、ヘッダーが届いたあとの abort で、本文の読み取りも reject する | UNVERIFIED | workerd のソース(`src/workerd/api/http.c++` が応答本文を `AbortableInputStream` で包む)からはそう読める。Node の `fetch` では reject した。修正後に実物の workerd で確かめる |
+| workerd の `fetch` は、ヘッダーを待っている間の abort で reject する | VERIFIED | 実物の workerd(下の「検証」)。ヘッダーを返さない上流に対して、`og.png` は 10.06 秒で草なしカード、`/api/grid` は 10.01 秒で 502 を返した。ログの理由は `network: jogruber did not answer within 10000ms` で、abort に渡した理由がそのまま届いている |
+| workerd は、ヘッダーが届いたあとの abort で、本文の読み取りも reject する | VERIFIED | 実物の workerd(下の「検証」)。ヘッダーと本文の先頭 2,000 バイトを返して止まる上流に対して、`og.png` は 10.05 秒で草なしカードを返した。上流側のサーバーでも、接続が 10.0 秒で閉じられたことを確認した。workerd のソース(`src/workerd/api/http.c++` が応答本文を `AbortableInputStream` で包む)の読みとも合う |
 | 健全な jogruber の応答は 10 秒にほぼ収まる | VERIFIED | 2026-10-02〜03 に 39 回計測。手元の Mac から 29 回(中央値 3.0 秒、最大 11.6 秒、10 秒超は 1 回)、本番の Worker 経由(`/api/grid` のキャッシュミス)で 10 回(1.0〜8.1 秒)。依頼文の「1.2〜1.5 秒」より遅く、TLS の確立だけで 0.5〜4 秒かかる回がある |
 | クライアントが切断すると、そのリクエストの `fetch` とタイマーはキャンセルされる。`waitUntil` に渡した Promise は最大 30 秒延命される | UNVERIFIED-ACCEPTED(2026-10-03) | Cloudflare の Limits ページに明記されている。手元の `wrangler dev` では再現しない(クライアントが 1 秒で切断しても、Worker は 4 秒かかる上流を待ち切ってキャッシュに書いた。手前のプロキシが切断を伝えないとみられる)。本番でしか起きない挙動なので、`waitUntil` の効果は単体テストで「決着前に渡している」ことだけを確かめる。この変更は延命するだけで、切断が伝わらない環境では何も変えない |
 | X など主要クローラーの画像取得の期限は公表されていない | VERIFIED(調べた範囲) | 一次情報があったのは Mastodon(1 回の読み取り 10 秒、合計 30 秒)と Misskey(既定 10 秒)だけ。X は「8 秒かかった画像は表示されなかった」という個人の計測が 1 件 |
 
 ### タイムアウトを 10 秒にした理由
 
-- 下限: 健全な jogruber が遅い(上の表)。5 秒にすると、計測した 39 回のうち 9 回が草なしカードになる
+- 下限: 健全な jogruber が遅い(上の表)。39 回を合わせると中央値 2.8 秒で、5 秒超が 9 回、8 秒超が 4 回、10 秒超が 1 回。5 秒にすると 9 回が打ち切られる(カードの経路なら草なしカードになる)
 - 上限 1: MCP Worker はカードを 20 秒で諦める(`OGP_TIMEOUT_MS`)。冷えた状態の描画は 4 秒ほどかかる
 - 上限 2: 切断後に `waitUntil` が延命するのは 30 秒まで。上流の待ち、描画、キャッシュへの書き込みがその中に収まる必要がある
 - クローラーの期限では決まらない。公表値がほとんど無く、X で画像が落ちた計測値(8 秒)は、健全な上流を待てる値より短い。上流が本当に止まったとき、最初の取得は間に合わない見込みが高い。草なしカードは 300 秒キャッシュされるので、クローラーが取り直せば即座に返る
 
 ### 計画
 
-- [ ] `github-grid.ts`: `UPSTREAM_TIMEOUT_MS = 10_000` と、ヘッダー待ちから本文の読み取りまでを覆う abort
-- [ ] `index.ts`: 共有する処理を、決着を待つ前に `ctx.waitUntil` へ渡す(`og.png` と `/api/grid`)
-- [ ] テスト: github-grid.test.ts / og-image.test.ts / index.test.ts。既存の `toHaveBeenCalledWith(url)` 3 か所は第 2 引数に signal が付くので更新する
-- [ ] DESIGN.md §2 に上流のタイムアウトを追記
-- [ ] `pnpm -r test` / `pnpm -r build` が exit 0
-- [ ] 実物の workerd で、修正前に応答しなかった 3 通りが 10 秒で返ることを確認
-- [ ] `/code-review high` と reviewer
+- [x] `github-grid.ts`: `UPSTREAM_TIMEOUT_MS = 10_000` と、ヘッダー待ちから本文の読み取りまでを覆う abort — `pnpm --filter @kusakuzushi/ogp test` exit 0
+- [x] `index.ts`: 共有する処理を、決着を待つ前に `ctx.waitUntil` へ渡す(`og.png` と `/api/grid`)— 同上
+- [x] テスト: github-grid.test.ts / og-image.test.ts / index.test.ts。既存の `toHaveBeenCalledWith(url)` 3 か所は第 2 引数に signal が付くので更新した — 新しいテストは、修正前のソースに対してすべて落ちる(下の「検証」)
+- [x] DESIGN.md §2 に上流のタイムアウトを追記 — `grep -c UPSTREAM_TIMEOUT_MS DESIGN.md` が 1
+- [x] `pnpm -r test` / `pnpm -r build` が exit 0 — 下の「検証」
+- [x] 実物の workerd で、修正前に応答しなかった 3 通りが 10 秒で返ることを確認 — 下の「検証」
+- [x] `/code-review high` と reviewer — 下の Review。指摘の修正後に `pnpm -r test` / `pnpm -r build` exit 0
 - [ ] PR を開く(マージしない)
+
+### 検証
+
+- `pnpm -r test` exit 0: core 73 / ogp 133 / web 111 / extension 80 / mcp 12(修正前の ogp は 125)。`pnpm -r build` exit 0
+- 新しいテストが修正を見ていることの確認: `github-grid.ts` と `index.ts` だけを修正前に戻して ogp のテストを走らせた。落ちたのは 12 件。内訳は、追加した 8 件すべて(止まる上流のテストは 5 秒のタイムアウト、`waitUntil` のテストは「0 回しか呼ばれていない」)、第 2 引数に signal を期待するよう更新した既存の 3 件、止まったユーザーの登録が残った巻き添えで落ちた既存の 1 件。戻したあと、修正後のファイルと一致することを `cmp` で確かめた
+- 実物の workerd(`wrangler dev` 4.131.0 / workerd 1.20260910.1、ポート 8791)。検証用の入口は、本物の Worker を import し、jogruber 宛ての `fetch` だけを手元のサーバーへ向け替える。手元のサーバーは、ユーザー名に応じて「ヘッダーを返さない」「ヘッダーと本文の先頭だけ返して止まる」「N ミリ秒後に返す」を切り替える
+
+| 上流の状態 | 修正前 | 修正後 |
+|---|---|---|
+| `og.png`、ヘッダーを返さない | 15 秒待って応答なし。同じ URL の再取得も応答なし | 10.06 秒で 200(草なし、`max-age=300`)。再取得は 3ms(キャッシュ) |
+| `og.png`、本文の途中で止まる | 15 秒待って応答なし。再取得も応答なし | 10.05 秒で 200(草なし、`max-age=300`)。再取得は 3ms |
+| `/api/grid`、ヘッダーを返さない | 15 秒待って応答なし。再取得も応答なし(上流への呼び出しは 1 回だけ) | 10.01 秒で 502(`no-store`)。再取得は上流を呼び直す(502 はキャッシュしない) |
+
+- 修正後は、上流側のサーバーでも、止まった接続が 10.0 秒で閉じられている。修正前は、クライアントが諦めたあとも接続が残った
+- 本物の jogruber に対して、未改変の入口で `wrangler dev` を 8 回起動し直し、毎回最初の `og.png`(`/share/toshi0607/og.png?s=1234&p=56`)を取った。6 回は 1.8〜5.3 秒で草ありのカード、2 回は 10.1 秒で草なしのカード(`max-age=300`)、応答なしは 0 回。発端の観測(5 回中 2 回、最初のリクエストが 60 秒待っても返らない)と同じ割合で上流の呼び出しが 10 秒を超え、タイムアウトが打ち切っている。この 2 回が「止まった」のか「10 秒より遅かった」のかは、この計測では区別できない
 
 ### Notes
 
 - advisor は「`wrangler dev` での再現は省いてよい」と助言した。理由は、発端の止まり方が 5 回中 2 回しか起きないことと、ほかのセッションの workerd が動いていること。発端の止まり方の再現は追わなかったが、止まる上流を手元のサーバーで作る決定的な検証は行った。単体テストは Node で動くので、workerd の `fetch` が abort をどう扱うかは実物でしか確かめられない。ポートは 8791 を使い、キャッシュの保存先はスクラッチに向けた
 - 発端の観測で `wrangler dev` の最初のリクエストが止まった原因は、今回も特定していない
 - この worktree の `node_modules` は古かった(vitest 4.1.10 / wrangler 4.114.0)。`pnpm install --frozen-lockfile` でロックファイル(vitest 5.0.0 / wrangler 4.131.0)に揃えてから計測した
+- 実装は Codex(gpt-6.1-sol)に 1 回委譲した。レビュー指摘の修正(コメントの数字、1 行の復元、テスト 2 件の主張の差し替えとユーザー名の変更)は自分で編集した
+
+### 見つけたが直していないもの
+
+- `fonts.ts` の Google Fonts 取得にタイムアウトが無い。フォントの取得が止まると描画の Promise が決着せず、同じ仕組みでカードの URL が固定される。`waitUntil` の延命も 30 秒で切れる
+- 登録が残る経路は、ほかにも 3 つある(reviewer の指摘)。rate limit の binding が応答しない場合、`cache.put` が応答しない場合(`inFlightRenders` の削除は `cacheWrite` の決着を待つ)、登録を作ったリクエストが `waitUntil` の 30 秒や CPU 上限で打ち切られた場合。`Map` を引くときに登録の古さを確かめれば、フォントの件も含めて 4 つとも塞げる
+- MCP の `render_share_card` は、スコア付きで上流が止まっていると、カード(10 秒)のあと `/api/grid`(10 秒)を続けて呼ぶ。草なしカードは総数のヘッダーを持たないため。合計がページ側の上限(`REMOTE_TIMEOUT_MS` = 20 秒)に並ぶ。修正前も、カードの取得が 20 秒で打ち切られていたので、悪化はしていない
+- カードの経路は、上流を打ち切った理由をログに出さない(`og-image.ts` の `fetchGrid` が `unavailable` の理由を捨てる)。`/api/grid` は `console.error` に出す。修正前からの挙動
+- `workers/mcp/src/tools.ts` の `OGP_TIMEOUT_MS` と `apps/web/src/webmcp/register.ts` の `REMOTE_TIMEOUT_MS` のコメントは、20 秒の理由を「冷えた描画は数秒かかる」としている。上流の待ち(10 秒)を数えていない
+- `wrangler dev` の最初のリクエストで jogruber への `fetch` が 10 秒を超える原因。8 回の起動し直しで 2 回起きた
+
+### Review(2026-10-03)
+
+`/code-review high`(8 件)と `reviewer`(設計適合、Approve with nits。Low 6 件、Medium 以上は無し)。対応はこの節と同じコミット。
+
+| 重大度 | 指摘 | 対応 |
+|---|---|---|
+| Low(reviewer L1、code-review) | `waitUntil` のテストが呼び出し回数しか見ていない。すぐ決着する Promise を渡す実装でも通る(reviewer が、`entry?.cacheWrite` を外しても 133 件通ることを確認) | 渡した Promise が、上流や描画の決着前には決着していないことを確かめる形にした。`entry?.cacheWrite` を外した実装と、`Promise.resolve()` を渡す実装の両方で落ちることを確認 |
+| Low(reviewer L2、code-review) | 台帳の 2 行が UNVERIFIED のまま、計画も未チェック。「8 件落ちた」は 12 件が正しい | 実物の workerd の結果を根拠に更新。内訳を書き直した |
+| Low(reviewer L3、code-review) | `cache.put` の失敗が黙って捨てられる。消した `ctx.waitUntil(inFlight.cacheWrite)` は、失敗をログに出していた | 描画の成功後に、従来どおり `cacheWrite` をそのまま渡す行を戻した。延命用の登録は失敗を握りつぶし、こちらは握りつぶさない。catch でログを出す案は、admission の失敗がリクエストごとに重ねて出るので採らなかった |
+| Low(reviewer L5) | 止まる上流のテスト 3 件が同じユーザー名を使う。1 件が落ちると、残った登録で後続が別の理由で落ちる | 3 件のユーザー名を分けた |
+| Low(reviewer L6) | 定数のコメントの数字が粗い(中央値は Mac の 29 回だけの値、`/api/grid` の計測を「草なしカード」と数えている)。index.ts の「30 秒に収まる」は、期限のないフォント取得を無視している | 39 回を合わせた値に書き直した(中央値 2.8 秒、5 秒超 9 回、8 秒超 4 回、10 秒超 1 回)。index.ts のコメントは、上流のタイムアウトが覆う範囲とフォント取得の件を書く形に直した |
+| Low(reviewer L4) | カードの経路は、打ち切った理由をログに出さない | 対応しない。修正前からの挙動で、「見つけたが直していないもの」に記録 |
+| code-review | フォント取得の件、MCP が上流を 2 回待つ件、隣のコメントが古い件 | 対応しない。Worker の外や今回の範囲の外で、「見つけたが直していないもの」に記録 |
+| code-review | 合流しただけのリクエストも `waitUntil` に登録する。止まる上流の代役がテスト 3 ファイルに重複している | 対応しない。前者は害がなく、`ctx` を下の関数へ通すより差分が小さい。後者は、このリポジトリのテストがファイルごとに代役を持つ書き方に合わせた |
+
+reviewer の台帳ウォーク: Constraints は 1〜7・9 が Pass(4 行目は L1 の穴つき → 修正)、8 行目は確認不可、10 行目は未実施。Assumptions は 1 行目が成立、2・3 行目は reviewer が見た時点で UNVERIFIED(→ 更新済み)、4〜6 行目は reviewer からは確認不可。reviewer は、タイマーが残る経路が無いこと(成功・404・サイズ超過のあとで `vi.getTimerCount()` が 0)と、`handleOgImage` の登録がどの結果(limiter の拒否、admission の失敗、描画の失敗、`cache.put` の失敗、合流)でも未処理の reject を増やさないことも確かめている。
+
+### 自己クイズ(2026-10-03)
+
+1. **一番リスクの高い行は?** `index.ts` の `ctx.waitUntil(admission.then((entry) => entry?.cacheWrite).catch(() => undefined))`。本番でしか起きない「切断によるキャンセル」への対処で、手元では効果を観測できない。安全だと言える範囲は、「延命するだけで、応答の内容・キャッシュ・rate limit の経路は変えない」「どの結果でも未処理の reject を増やさない」(reviewer が確認)、「既存の 125 件が、引数の更新 3 か所を除いて無変更で通る」まで
+2. **壊す入力・状態は?** 10 秒より遅い健全な応答は草なしカードになる(39 回中 1 回)。フォントの取得が止まると、今回の修正では救えない。上流が止まっている間の `/api/grid` は、呼ぶたびに 10 秒待って 502 になる(502 はキャッシュしない。rate limit はクライアントごとに 60 回/分)
+3. **テストしていないこと**: 本番の Worker での、切断によるキャンセルと `waitUntil` の延命。`clearTimeout` を消しても通るテストしかない(reviewer の変異テスト)。消した場合は、応答後にタイマーが 1 本残り、決着済みの呼び出しに abort を送るだけで、結果は変わらない
+4. **計画との矛盾**: 当初の計画は `github-grid.ts` だけの変更だった。Workers がクライアントの切断でタイマーごとキャンセルすることを調査で知り、ユーザーの決定で `index.ts` の `waitUntil` を同じ PR に入れた。レビューで、消した 1 行(`cacheWrite` をそのまま渡す)を戻した

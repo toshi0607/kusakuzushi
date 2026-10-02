@@ -366,8 +366,9 @@ async function handleOgImage(
   );
   // Register before awaiting: a client disconnect must not cancel the work
   // shared by the admission and render entries, or they would never settle
-  // and be removed. The upstream timeout plus a render and cache write fit
-  // within waitUntil's 30 s after disconnect.
+  // and be removed. waitUntil holds it for 30 s after the disconnect; the
+  // upstream timeout keeps the grid fetch inside that (the font fetch has no
+  // deadline of its own). Failures are reported on the request path below.
   ctx.waitUntil(admission.then((entry) => entry?.cacheWrite).catch(() => undefined));
 
   let inFlight: InFlightRender | null;
@@ -393,7 +394,9 @@ async function handleOgImage(
   }
 
   // A grid-less fallback card (jogruber outage) is cached briefly so the full
-  // card replaces it soon after recovery.
+  // card replaces it soon after recovery. Handed over unguarded, unlike the
+  // keep-alive above, so a failed cache write still shows up in the logs.
+  ctx.waitUntil(inFlight.cacheWrite);
   return createOgImageResponse(render);
 }
 

@@ -48,6 +48,16 @@ function createContext(): WaitContext {
   };
 }
 
+/** Whether every promise has settled by the time the pending microtasks have run. */
+async function haveSettled(promises: Promise<unknown>[]): Promise<boolean> {
+  let settled = false;
+  void Promise.allSettled(promises).then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return settled;
+}
+
 function createRenderResult(gridIncluded = true) {
   return {
     response: new Response("png"),
@@ -329,7 +339,8 @@ describe("OG image route", () => {
       await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1));
 
       // #then
-      expect(waitUntil).toHaveBeenCalledTimes(1);
+      const handed = waitUntil.mock.calls.map(([promise]) => promise);
+      expect({ handed: handed.length, settled: await haveSettled(handed) }).toEqual({ handed: 1, settled: false });
     } finally {
       resolveRender?.(createRenderResult());
       await response;
@@ -852,7 +863,7 @@ describe("grid API route", () => {
 
     try {
       // #when
-      const pending = worker.fetch(new Request("https://example.com/api/grid/toshi0607"), env, ctx);
+      const pending = worker.fetch(new Request("https://example.com/api/grid/octocat"), env, ctx);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
       await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
       const response = await pending;
@@ -878,14 +889,14 @@ describe("grid API route", () => {
 
     try {
       // #when
-      const pending = worker.fetch(new Request("https://example.com/api/grid/toshi0607"), env, first.ctx);
+      const pending = worker.fetch(new Request("https://example.com/api/grid/hubot"), env, first.ctx);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
       await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
       const outage = await pending;
       await first.settled();
       fetchMock.mockImplementation(async () => new Response(JSON.stringify(PAYLOAD)));
       const retry = createContext();
-      const response = await worker.fetch(new Request("https://example.com/api/grid/toshi0607"), env, retry.ctx);
+      const response = await worker.fetch(new Request("https://example.com/api/grid/hubot"), env, retry.ctx);
       await retry.settled();
 
       // #then
@@ -907,12 +918,13 @@ describe("grid API route", () => {
     const waitUntil = vi.spyOn(ctx, "waitUntil");
 
     // #when
-    const response = worker.fetch(new Request("https://example.com/api/grid/toshi0607"), env, ctx);
+    const response = worker.fetch(new Request("https://example.com/api/grid/defunkt"), env, ctx);
     try {
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
       // #then
-      expect(waitUntil).toHaveBeenCalledTimes(1);
+      const handed = waitUntil.mock.calls.map(([promise]) => promise);
+      expect({ handed: handed.length, settled: await haveSettled(handed) }).toEqual({ handed: 1, settled: false });
     } finally {
       release(new Response(JSON.stringify(PAYLOAD)));
       await response;

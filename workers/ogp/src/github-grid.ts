@@ -26,9 +26,10 @@ export const MAX_RESPONSE_BYTES = 64 * 1024;
  *
  * 10 s, bounded on three sides:
  * - from below: a healthy jogruber is slow. 39 calls measured on
- *   2026-10-02/03, through the deployed Worker and from a laptop: median
- *   about 3 s, a tail to 8 s, one at 11.6 s. A 5 s limit would have turned 9
- *   of them into grid-less cards, each then served from the cache for 300 s.
+ *   2026-10-02/03 (10 through the deployed Worker, 29 from a laptop): median
+ *   2.8 s, 9 over 5 s, 4 over 8 s, one over 10 s (11.6 s). A 5 s limit would
+ *   have cut off 9 of them; on the card route each cut is a grid-less card
+ *   served from the cache for 300 s.
  * - from above: the MCP Worker gives up on a card after 20 s (OGP_TIMEOUT_MS
  *   in workers/mcp/src/tools.ts), and a cold render adds about 4 s.
  * - from above: once the client disconnects, `waitUntil` keeps the work alive
