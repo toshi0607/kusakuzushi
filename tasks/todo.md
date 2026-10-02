@@ -2376,3 +2376,55 @@ reviewer の台帳ウォーク: Constraints 12 行すべて Pass(Lighthouse 行�
 4. **計画との矛盾**: D9(切替しない)は Q3 回答で覆した。D14 の「global key」は reviewer 指摘で IP ごとに改訂。D16 の deep import は exports map に改訂。いずれも台帳に記録済み
 - 2026-09-04 ゼロコード注入オン時の `pnpm lh:prod`: perf 100 ×5、script 転送 37,1xx B(予算 40,000 B、残り約 2.9 KB)、`uses-long-cache-ttl` warn。詳細は記事メモ
 
+
+## セッション: OGP カードにプロダクトの 1 行(2026-10-02)
+
+依頼: 「Xで共有」の投稿に付くリンクカード(`/share/{user}/og.png`)に、ワードマークと誘い文を足す。並びは、PR #92 が保存画像に足した 1 行(ワードマーク「草崩し」、誘い文、ホスト名)に合わせる。X のリンクカードは画像が大半を占めるので、何のプロダクトか、見た人も遊べることは、画像の中に書く。体裁の設計判断は DESIGN-VISUAL.md §8。
+
+修正前のカードが印字するプロダクトの情報は、右下のホスト名(22px)だけだった(2026-10-02、手元の `wrangler dev` で 3 状態を描いて確認)。
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| カードの下端に、ワードマーク・誘い文・ホスト名がこの順で並ぶ(ホスト名は残す) | ユーザー依頼 2026-10-02 | og-image-html.test.ts の並び順テスト、実物の PNG |
+| 誘い文は「あなたの GitHub の草も刈れる」と一字一句同じ | ユーザー依頼、PR #92 の `SHARE_INVITATION` | テストの文字列一致 |
+| 結果テキストの主従を変えない(煽り文カードは 26 / 34 / 30px、gameOver カードは 48 / 40px) | ユーザー依頼、DESIGN-VISUAL §8 | 既存の font-size テストがそのまま通る |
+| `score === null`(拡張からの共有)のカードは、スコア行を出さず、プロダクトの 1 行は出す | ユーザー依頼 | テスト、`?p=87` の実物 |
+| カードが印字する文字は、すべてフォントのサブセットに入っている | ユーザー依頼、lessons 2026-07-26 | fonts.test.ts、実物の PNG に豆腐が無い |
+| satori の HTML に HTML エンティティを書かない。要素には `display:flex` を明示する | ユーザー依頼、og-image-html.ts の既存コメント | og-image-html.test.ts |
+| コンテンツ幅 1088px からはみ出さない | ユーザー依頼 | 実物の PNG の画素を測る |
+| キャッシュを破棄する仕組みを足さない。既存の共有リンクは旧カードのまま残ることを PR に書く | ユーザー依頼 | diff に URL とキャッシュキーの変更が無い、PR 本文 |
+| 追加する文字と罫線に緑を使わない | DESIGN-VISUAL §0 | og-image-html.ts の色指定 |
+| Worker から core のルートを import しない(renderer.ts の DOM 型で `tsc` が落ちる) | og-image.ts の既存コメント | `pnpm -r build` |
+| og-image-html.test.ts、DESIGN-VISUAL §8、tools/verify-worker.mjs、この節を同期する | ユーザー依頼 | diff |
+| `pnpm -r test` と `pnpm -r build` が exit 0 | ユーザー依頼 | コマンドの終了コード |
+| PR を開く。自分ではマージしない(main へのマージで Worker がデプロイされる) | ユーザー依頼 | — |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| PR #92 は未マージで、main の core は `SITE_HOST` を公開していない | VERIFIED | `gh pr view 92` が `state: OPEN`(2026-10-02)。`packages/core/src/share-link.ts` の `SITE_URL` は非公開の定数 |
+| 追加する文字のうち、現在のサブセットに無いのは「る」だけ | VERIFIED | `FONT_TEXT` を node で読み、「草崩し」「あなたの GitHub の草も刈れる」とホスト名の各字を照合。「し」は煽り文に含まれているので入っているだけで、カードの固定文字列としては書かれていない |
+| tools/verify-worker.mjs はカード画像の文字を検査していない | VERIFIED | `checkScorelessShare` が見るのはクローラー向け HTML と og:image の URL。og.png は status と content-type だけ(同ファイルのコメント「PNG 本体の文字は取り出せない」) |
+| ローカルの `wrangler dev` は Cache API の中身を `workers/ogp/.wrangler/state` に残す。消さずに同じ URL を取ると旧カードが返る | VERIFIED | 同じ URL の 2 回目が 2ms で返った。再起動前に `.wrangler/state` を消す |
+| satori が、空の div(高さと背景色だけ)の罫線と `justify-content:space-between` の行を描ける | UNVERIFIED | 実物の PNG で確かめる |
+| X のカード表示幅(約 500px、スマホで約 360px)に縮めても 1 行が読める | UNVERIFIED | 実物の PNG を縮小して目視する。X 上の実表示はデプロイ後にしか見られない |
+
+### 計画
+
+- [ ] og-image-html.ts の下端を「罫線 + プロダクトの 1 行」にし、カードの固定文字列を公開する
+- [ ] fonts.ts のサブセットを、公開した固定文字列から組み立てる
+- [ ] 実物の PNG を描いて目視する(gameOver / クリア / スコア無し / 草を取得できないユーザー / 39 文字のユーザー名)
+- [ ] DESIGN-VISUAL.md §8 と DESIGN.md の動的 OGP の項を更新する
+- [ ] `pnpm -r test` と `pnpm -r build` が exit 0
+- [ ] `/code-review high` と reviewer(設計適合)
+- [ ] PR を開く(マージしない)
+
+### Notes
+
+- 実装は Codex(codex-sol)に委譲する。寸法と色の出発点は保存画像(ワードマーク 36px アンバー、誘い文 28px、ホスト名 28px アンバー、罫線 2px)で、実物を見て決める
+- 文字サイズは、既存テストが使う 26 / 30 / 34 / 40 / 48px を避ける。既存テストは「gameOver カードに 34px が無い」「煽り文カードに 48px が無い」を見ており、同じ値を下端で使うと別の理由で落ちる
+- 手元で最初に描いた 1 枚だけ、60 秒待っても応答が返らなかった。ログの並びから、satori の初期化より前(草かフォントの取得)で止まっていたとみられる。`wrangler dev` を再起動したあとは再現していない。原因は特定していない
+
