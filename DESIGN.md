@@ -95,7 +95,8 @@ type ContributionGrid = {
 
 1. **X共有ボタン**: `https://x.com/intent/post?text=...&url=https://<domain>/?user={name}`
    テキスト例: 「toshi0607 の草 2,942 contributions を 87% 刈り取った🌱 スコア 12,340」
-2. **リザルト画像**: ゲーム canvas をそのまま `toBlob()` → ダウンロード / Web Share API(モバイル)。サーバー不要
+2. **リザルト画像**: 最終盤面を 1200x630 のカードに合成して `toBlob()` → ダウンロード / Web Share API(モバイル)。サーバー不要。
+   カードには誘い文とホスト名を印字し、共有シートには投稿文と共有 URL も渡す。画像だけが出回っても、見た人が本体へ辿れるようにするため(体裁は DESIGN-VISUAL.md §8)
 3. **動的OGP**(Phase 2): `workers/ogp` で `og:image` を生成(satori / workers-og)。
    共有URLをWorker経由(`/share/{user}?s=…`)にし、クローラーにはOGP付きHTML、人間には本体へリダイレクト
    `s`(スコア)は**任意**。無いリンク(= 拡張からの共有、§5)ではカードのスコア行を出さない —
