@@ -2619,7 +2619,7 @@ Worker は、同じキーへの同時リクエストを 1 本の Promise にま�
 - [x] `pnpm -r test` / `pnpm -r build` が exit 0 — 下の「検証」
 - [x] 実物の workerd で、修正前に応答しなかった 3 通りが 10 秒で返ることを確認 — 下の「検証」
 - [x] `/code-review high` と reviewer — 下の Review。指摘の修正後に `pnpm -r test` / `pnpm -r build` exit 0
-- [x] PR を開く(マージしない)— PR の URL は PR 本文とこのブランチの履歴を参照
+- [x] PR を開く(マージしない)— PR #100(2026-10-03。`gh pr view 100` が `state: OPEN`)
 
 ### 検証
 
