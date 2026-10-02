@@ -204,6 +204,9 @@ button:disabled {
  * 共有リンクで着地したセッションでは、この行に「自分の草を刈る」が並ぶ
  * (DESIGN-VISUAL §3)。ステータスとリンクをそれぞれ折り返しの単位にして、
  * 狭い幅ではリンクだけが次の行へ送られるようにする。
+ * 折り返したときの行間 3px は、リンクのフォーカスリング(文字の外側 4px)が上の行の
+ * 文字に掛からないための最小値(4px にすると 39 文字のユーザー名で `.stage` の
+ * min-height を 0.3px 超える)。
  */
 .session-status {
   display: flex;
@@ -211,6 +214,7 @@ button:disabled {
   justify-content: center;
   align-items: baseline;
   column-gap: 12px;
+  row-gap: 3px;
   margin: 0;
   font-size: 0.8125rem;
   color: var(--ink-faint);
@@ -218,18 +222,24 @@ button:disabled {
 
 /*
  * 文字は --ink、下線だけアンバー。塗りのボタンにしないのは、盤面のすぐ上に
- * アンバーの面を足すと玉と視線を取り合うから(§3)。上下 6px の余白はタップ
- * 領域を 34px に広げるためで、同じだけ負のマージンを当てて行の高さは変えない。
+ * アンバーの面を足すと玉と視線を取り合うから(§3)。タップ領域は ::after で
+ * 上下 6px ずつ広げて 34px にする。リンク自身の余白で広げると、フォーカス
+ * リングまで一緒に広がって、折り返したときに上の行の文字に重なる。
  */
 .session-switch {
-  padding-block: 6px;
-  margin-block: -6px;
+  position: relative;
   color: var(--ink);
   white-space: nowrap;
   text-decoration: underline;
   text-decoration-color: var(--marquee);
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
+}
+
+.session-switch::after {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
 }
 
 /* 盤面とタッチレールは一体。レールは可動域の真下でだけ意味を持つ */

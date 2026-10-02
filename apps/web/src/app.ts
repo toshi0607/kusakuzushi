@@ -201,9 +201,9 @@ export function initApp(root: HTMLElement): AppController {
     stage.replaceChildren(view);
   }
 
-  function showForm(initialUsername: string, errorMessage?: string): HTMLInputElement {
+  function showForm(initialUsername: string, errorMessage?: string, retryKeepsLink = false): HTMLInputElement {
     const { view, attractHost, input } = buildFormView(initialUsername, errorMessage, (username) => {
-      void startFlow(username);
+      void startFlow(username, retryKeepsLink && username === initialUsername);
     });
     swapStage(errorMessage === undefined ? "idle" : "error", initialUsername || null, view);
     attractCleanup = createAttract(attractHost, currentTheme);
@@ -228,9 +228,10 @@ export function initApp(root: HTMLElement): AppController {
     statusText.textContent = `@${username} ― ${grid.total.toLocaleString()} contributions`;
     status.appendChild(statusText);
     if (arrivedByLink) {
-      status.appendChild(buildSessionSwitch(() => {
-        clearUsernameQuery();
+      status.append(" ", buildSessionSwitch(() => {
+        // Swap first so a failed swap leaves the address describing the stage.
         const input = showForm("");
+        clearUsernameQuery();
         input.focus();
       }));
     }
@@ -254,7 +255,7 @@ export function initApp(root: HTMLElement): AppController {
       }
       showSession(username, grid, arrivedByLink);
     } catch (error) {
-      showForm(username, errorMessageFor(error));
+      showForm(username, errorMessageFor(error), arrivedByLink);
     }
   }
 

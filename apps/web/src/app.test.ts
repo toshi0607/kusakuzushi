@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchGrid } from "./api";
 import { initApp, type AppController } from "./app";
+import { createAttract } from "./attract";
 import { createSession, type SessionHandle, type SessionHandlers, type SessionSnapshot } from "./session";
 
 vi.mock("./api", async (importOriginal) => {
@@ -52,7 +53,7 @@ function grassGrid(username = "octocat"): ContributionGrid {
   return toGrid(username, cells);
 }
 
-function mountApp(url: string): MountedApp {
+function mountApp(url: string, rejectFirstFetch = false): MountedApp {
   window.history.replaceState(null, "", url);
   document.body.innerHTML = `
     <div id="app">
@@ -65,6 +66,9 @@ function mountApp(url: string): MountedApp {
 
   const sessions: StubbedSession[] = [];
   vi.mocked(fetchGrid).mockResolvedValue(grassGrid());
+  if (rejectFirstFetch) {
+    vi.mocked(fetchGrid).mockRejectedValueOnce(new Error("boom"));
+  }
   vi.mocked(createSession).mockImplementation((_container, username, _grid, _getTheme, handlers) => {
     const handle: SessionHandle = {
       destroy: vi.fn(),
@@ -104,7 +108,7 @@ describe("initApp link-arrival sessions", () => {
 
     // #when
     const view = await waitForSession(root);
-    const link = view.querySelector<HTMLAnchorElement>(".session-switch");
+    const link = view.querySelector<HTMLAnchorElement>(".session-status > .session-switch");
 
     // #then
     expect({ text: link?.textContent, href: link?.getAttribute("href") }).toEqual({ text: "自分の草を刈る", href: "/" });
@@ -119,6 +123,17 @@ describe("initApp link-arrival sessions", () => {
 
     // #then
     expect(sessions[0]?.username).toBe("octocat");
+  });
+
+  it("共有リンクで着地するとステータスと切り替えリンクの文字列を空白で区切る", async () => {
+    // #given
+    const { root } = mountApp("/?user=octocat");
+
+    // #when
+    const view = await waitForSession(root);
+
+    // #then
+    expect(view.querySelector(".session-status")?.textContent).toBe("@octocat ― 28 contributions 自分の草を刈る");
   });
 
   it("フォームから始めたセッションには切り替えリンクを表示しない", async () => {
@@ -149,16 +164,131 @@ describe("initApp link-arrival sessions", () => {
     expect(view.querySelector(".session-switch")).toBeNull();
   });
 
-  it("共有リンクから始めたセッションは再開後も切り替えリンクを表示する", async () => {
+  it("フォームから始めたセッションのステータスは span だけを含む", async () => {
     // #given
-    const { root, sessions } = mountApp("/?user=octocat");
-    await waitForSession(root);
+    const { root } = mountApp("/");
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!input || !form) throw new Error("username form fixture not found");
+    input.value = "octocat";
+
+    // #when
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const view = await waitForSession(root);
+    const status = view.querySelector(".session-status");
+    if (!status) throw new Error("session status not found");
+
+    // #then
+    expect(Array.from(status.childNodes).map((n) => n.nodeName)).toEqual(["SPAN"]);
+  });
+
+  it("フォームから始めたセッションは再開後も切り替えリンクを表示しない", async () => {
+    // #given
+    const { root, sessions } = mountApp("/");
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!input || !form) throw new Error("username form fixture not found");
+    input.value = "octocat";
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const view = await waitForSession(root);
 
     // #when
     sessions[0]?.handlers.onRestart();
+    const restartedView = root.querySelector(".view-session");
 
     // #then
-    expect(root.querySelector(".session-switch")).not.toBeNull();
+    expect({ rebuilt: restartedView !== view, link: restartedView?.querySelector(".session-switch") }).toEqual({ rebuilt: true, link: null });
+  });
+
+  it("共有リンクから始めたセッションは再開後も切り替えリンクを表示する", async () => {
+    // #given
+    const { root, sessions } = mountApp("/?user=octocat");
+    const view = await waitForSession(root);
+
+    // #when
+    sessions[0]?.handlers.onRestart();
+    const restartedView = root.querySelector(".view-session");
+
+    // #then
+    expect({ rebuilt: restartedView !== view, hasLink: restartedView?.querySelector(".session-switch") != null }).toEqual({ rebuilt: true, hasLink: true });
+  });
+
+  it("共有ユーザーからフォームへ切り替えると自分のセッションと URL に更新する", async () => {
+    // #given
+    const { root, sessions } = mountApp("/?user=octocat");
+    const view = await waitForSession(root);
+    const link = view.querySelector(".session-switch");
+    if (!link) throw new Error("session switch link not found");
+
+    // #when
+    plainClick(link);
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!input || !form) throw new Error("username form fixture not found");
+    input.value = "monalisa";
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const ownView = await waitForSession(root);
+
+    // #then
+    expect({ username: sessions[1]?.username, link: ownView.querySelector(".session-switch"), search: window.location.search }).toEqual({ username: "monalisa", link: null, search: "?user=monalisa" });
+  });
+
+  it("共有リンクの取得に失敗して同じ名前で再試行すると切り替えリンクを表示する", async () => {
+    // #given
+    const { root } = mountApp("/?user=octocat", true);
+    await vi.waitFor(() => {
+      expect(root.querySelector(".error-message")).not.toBeNull();
+    });
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!form) throw new Error("username form fixture not found");
+
+    // #when
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const view = await waitForSession(root);
+
+    // #then
+    expect(view.querySelector(".session-status > .session-switch")).not.toBeNull();
+  });
+
+  it("共有リンクの取得に失敗して別の名前を送信すると切り替えリンクを表示しない", async () => {
+    // #given
+    const { root } = mountApp("/?user=octocat", true);
+    await vi.waitFor(() => {
+      expect(root.querySelector(".error-message")).not.toBeNull();
+    });
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!input || !form) throw new Error("username form fixture not found");
+    input.value = "monalisa";
+
+    // #when
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const view = await waitForSession(root);
+
+    // #then
+    expect(view.querySelector(".session-switch")).toBeNull();
+  });
+
+  it("フォームの取得に失敗して同じ名前で再試行しても切り替えリンクを表示しない", async () => {
+    // #given
+    const { root } = mountApp("/", true);
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+    const form = root.querySelector<HTMLFormElement>("form");
+    if (!input || !form) throw new Error("username form fixture not found");
+    input.value = "octocat";
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => {
+      expect(root.querySelector(".error-message")).not.toBeNull();
+    });
+    const retryForm = root.querySelector<HTMLFormElement>("form");
+    if (!retryForm) throw new Error("username form fixture not found");
+
+    // #when
+    retryForm.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    const view = await waitForSession(root);
+
+    // #then
+    expect(view.querySelector(".session-switch")).toBeNull();
   });
 
   it("切り替えリンクを押すと空のユーザー名フォームへ差し替える", async () => {
@@ -231,7 +361,7 @@ describe("initApp link-arrival sessions", () => {
     expect(sessions[0]?.handle.destroy).toHaveBeenCalledOnce();
   });
 
-  it("修飾キー付きクリックはブラウザーに任せてセッションを残す", async () => {
+  it.each(["metaKey", "ctrlKey", "shiftKey", "altKey"] as const)("%s 付きクリックはブラウザーに任せてセッションを残す", async (modifier) => {
     // #given
     const { root } = mountApp("/?user=octocat");
     const view = await waitForSession(root);
@@ -244,10 +374,33 @@ describe("initApp link-arrival sessions", () => {
     }, { once: true });
 
     // #when
-    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, metaKey: true }));
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, [modifier]: true }));
 
     // #then
     expect({ defaultPrevented, session: root.querySelector(".view-session") }).toEqual({ defaultPrevented: false, session: view });
+  });
+
+  it("フォームへの切り替えが失敗すると URL の user パラメーターを残す", async () => {
+    // #given
+    const { root } = mountApp("/?user=octocat");
+    const view = await waitForSession(root);
+    const link = view.querySelector(".session-switch");
+    if (!link) throw new Error("session switch link not found");
+    vi.mocked(createAttract).mockImplementationOnce(() => {
+      throw new Error("attract failed");
+    });
+    // DOM dispatch reports listener exceptions through window.error instead of throwing.
+    window.addEventListener("error", (event) => {
+      if (event.error instanceof Error && event.error.message === "attract failed") {
+        event.preventDefault();
+      }
+    }, { once: true });
+
+    // #when
+    plainClick(link);
+
+    // #then
+    expect(window.location.search).toBe("?user=octocat");
   });
 
   it("切り替えリンクを押した後のスナップショットは空のフォームを示す", async () => {
