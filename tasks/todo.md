@@ -2532,3 +2532,64 @@ reviewer の台帳ウォーク: Constraints 6 行は Pass(2 行目は罫線の `
 ### 見つけたが直していないもの
 
 - クリア直前に壊れたブロックの破片(1 ブロック 6 粒、寿命 0.5 秒)は、壊れた時点の画面テーマの緑のまま写る。破片の色は core の renderer が生成時に確定させており、今回の最小修正(session.ts の 1 行)の範囲外
+
+## セッション: 上流の fetch が止まるとカードの URL が固定される件(2026-10-02〜03)
+
+依頼: OGP Worker(`workers/ogp`)が jogruber を呼ぶ `fetch` にタイムアウトが無い。上流が止まると、その URL は以後ずっと応答しなくなる。仕組みを確かめ、タイムアウトを足し、テストを書き、PR を開く(マージしない)。発端の観測は、未マージの PR #95 のブランチにある節「OGP カードにプロダクトの 1 行」の Notes と「見つけたが直していないもの」。
+
+### 止まる仕組み(未修正のコードで確認)
+
+Worker は、同じキーへの同時リクエストを 1 本の Promise にまとめる。置き場所はモジュールスコープの `Map` で、`og.png` は `inFlightRenders`、`/api/grid` は `inFlightGrids`。登録は、その Promise が決着したときに消える。上流の `fetch` が決着しないと登録は残り、同じキーの後続リクエストは決着しない Promise を待つ。
+
+- 単体テスト(コミットしない検証用): 上流が応答しないユーザーでは、`og.png` と `/api/grid` のどちらも、1 回目が返らず、同じ URL の 2 回目も返らなかった。上流への呼び出しは 1 回だけで、2 回目は 1 回目の Promise に合流している。別のユーザーの URL は 200 で返る
+- 実物の workerd(`wrangler dev` 4.131.0 / workerd 1.20260910.1。jogruber 宛ての `fetch` だけを手元のサーバーへ向け替えた検証用の入口を使った): 上流がヘッダーを返さない場合も、ヘッダーのあと本文の途中で止まる場合も、15 秒待って応答なし。同じ URL をもう一度取っても応答なし
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| 上流が止まったら `{ status: "unavailable" }` にする。カードは草なしで返り(300 秒キャッシュ)、`/api/grid` は 502 になる | ユーザー依頼 2026-10-02 | 単体テスト、実物の workerd |
+| 期限は、ヘッダー待ちと本文の読み取りの両方にかかる | 止まる仕組み(本文の途中でも止まる) | github-grid.test.ts(本文で止まる上流)、実物の workerd |
+| タイムアウトの値は、Worker とクローラーの制限を見て決め、理由を書き残す | ユーザー依頼 | `UPSTREAM_TIMEOUT_MS` のコメント、この節、PR 本文 |
+| クライアントが先に切断しても登録が残らないよう、共有する処理を `ctx.waitUntil` に渡す(同じ PR に入れる) | ユーザーの決定 2026-10-03(「おすすめでよい」) | index.test.ts |
+| テストは既存の書き方に合わせる(`#given/#when/#then`、1 テスト 1 つの論理的な主張) | ユーザー依頼 | diff |
+| `og-image-html.ts` / `fonts.ts` には触らない(PR #95 と重なる) | 並行中の PR #95 | `git diff --stat` |
+| 値を変えたら、その値を文章で繰り返している箇所も同じコミットで直す | lessons 2026-07-27 | 旧値・新値で grep |
+| 時間で変わる事実(main の先頭、ほかの PR の状態)は、計画・委譲・PR の直前に取り直す | lessons 2026-10-02 | `git fetch` と `gh pr list` の時刻 |
+| `pnpm -r test` と `pnpm -r build` が exit 0 | ユーザー依頼 | コマンドの終了コード |
+| PR を開く。自分ではマージしない(main へのマージで Worker がデプロイされる) | ユーザー依頼 | — |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| vitest の偽タイマーは `AbortSignal.timeout` を進められない。`AbortController` + `setTimeout` なら進められる | VERIFIED | vitest 5.0.0 で試した。6 秒進めても `AbortSignal.timeout(5000)` は abort されず、`setTimeout` で abort する形はされた。実装は後者にする(`workers/mcp/src/tools.ts` の `fetchOgp` と同じ書き方) |
+| workerd の `fetch` は、ヘッダーを待っている間の abort で reject する | UNVERIFIED | 修正後に実物の workerd で確かめる |
+| workerd は、ヘッダーが届いたあとの abort で、本文の読み取りも reject する | UNVERIFIED | workerd のソース(`src/workerd/api/http.c++` が応答本文を `AbortableInputStream` で包む)からはそう読める。Node の `fetch` では reject した。修正後に実物の workerd で確かめる |
+| 健全な jogruber の応答は 10 秒にほぼ収まる | VERIFIED | 2026-10-02〜03 に 39 回計測。手元の Mac から 29 回(中央値 3.0 秒、最大 11.6 秒、10 秒超は 1 回)、本番の Worker 経由(`/api/grid` のキャッシュミス)で 10 回(1.0〜8.1 秒)。依頼文の「1.2〜1.5 秒」より遅く、TLS の確立だけで 0.5〜4 秒かかる回がある |
+| クライアントが切断すると、そのリクエストの `fetch` とタイマーはキャンセルされる。`waitUntil` に渡した Promise は最大 30 秒延命される | UNVERIFIED-ACCEPTED(2026-10-03) | Cloudflare の Limits ページに明記されている。手元の `wrangler dev` では再現しない(クライアントが 1 秒で切断しても、Worker は 4 秒かかる上流を待ち切ってキャッシュに書いた。手前のプロキシが切断を伝えないとみられる)。本番でしか起きない挙動なので、`waitUntil` の効果は単体テストで「決着前に渡している」ことだけを確かめる。この変更は延命するだけで、切断が伝わらない環境では何も変えない |
+| X など主要クローラーの画像取得の期限は公表されていない | VERIFIED(調べた範囲) | 一次情報があったのは Mastodon(1 回の読み取り 10 秒、合計 30 秒)と Misskey(既定 10 秒)だけ。X は「8 秒かかった画像は表示されなかった」という個人の計測が 1 件 |
+
+### タイムアウトを 10 秒にした理由
+
+- 下限: 健全な jogruber が遅い(上の表)。5 秒にすると、計測した 39 回のうち 9 回が草なしカードになる
+- 上限 1: MCP Worker はカードを 20 秒で諦める(`OGP_TIMEOUT_MS`)。冷えた状態の描画は 4 秒ほどかかる
+- 上限 2: 切断後に `waitUntil` が延命するのは 30 秒まで。上流の待ち、描画、キャッシュへの書き込みがその中に収まる必要がある
+- クローラーの期限では決まらない。公表値がほとんど無く、X で画像が落ちた計測値(8 秒)は、健全な上流を待てる値より短い。上流が本当に止まったとき、最初の取得は間に合わない見込みが高い。草なしカードは 300 秒キャッシュされるので、クローラーが取り直せば即座に返る
+
+### 計画
+
+- [ ] `github-grid.ts`: `UPSTREAM_TIMEOUT_MS = 10_000` と、ヘッダー待ちから本文の読み取りまでを覆う abort
+- [ ] `index.ts`: 共有する処理を、決着を待つ前に `ctx.waitUntil` へ渡す(`og.png` と `/api/grid`)
+- [ ] テスト: github-grid.test.ts / og-image.test.ts / index.test.ts。既存の `toHaveBeenCalledWith(url)` 3 か所は第 2 引数に signal が付くので更新する
+- [ ] DESIGN.md §2 に上流のタイムアウトを追記
+- [ ] `pnpm -r test` / `pnpm -r build` が exit 0
+- [ ] 実物の workerd で、修正前に応答しなかった 3 通りが 10 秒で返ることを確認
+- [ ] `/code-review high` と reviewer
+- [ ] PR を開く(マージしない)
+
+### Notes
+
+- advisor は「`wrangler dev` での再現は省いてよい」と助言した。理由は、発端の止まり方が 5 回中 2 回しか起きないことと、ほかのセッションの workerd が動いていること。発端の止まり方の再現は追わなかったが、止まる上流を手元のサーバーで作る決定的な検証は行った。単体テストは Node で動くので、workerd の `fetch` が abort をどう扱うかは実物でしか確かめられない。ポートは 8791 を使い、キャッシュの保存先はスクラッチに向けた
+- 発端の観測で `wrangler dev` の最初のリクエストが止まった原因は、今回も特定していない
+- この worktree の `node_modules` は古かった(vitest 4.1.10 / wrangler 4.114.0)。`pnpm install --frozen-lockfile` でロックファイル(vitest 5.0.0 / wrangler 4.131.0)に揃えてから計測した
