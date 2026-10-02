@@ -19,7 +19,7 @@ import {
 
 import { createPaddleRail } from "./paddle-rail";
 import { saveResultImage } from "./share";
-import { watchTheme } from "./theme";
+import { watchTheme, WEB_DARK_THEME } from "./theme";
 
 /** Paddle speed, in px/sec, while an arrow key is held. */
 const KEY_MOVE_SPEED_PX_PER_SEC = 480;
@@ -197,6 +197,9 @@ export function createSession(
   /**
    * 共有カード用の盤面。画面の canvas をそのまま渡すと HUD(SCORE / LIFE)が
    * 焼き込まれ、カードのキャプションと同じ数字が二重に出る(DESIGN-VISUAL §8)。
+   * 配色は画面のテーマではなく `WEB_DARK_THEME` に固定する。カードは常に夜の
+   * 配色で合成され、煽り文も明るいインクで盤面の上に載るので、ライトの盤面を
+   * 渡すと文が読めなくなる。
    * 描画コンテキストが取れない環境では画面の canvas で妥協する — HUD が二重に
    * 写るほうが、画像が保存できないよりましなので。
    */
@@ -206,7 +209,7 @@ export function createSession(
     snapshot.height = DEFAULT_CONFIG.canvasHeight;
     const snapshotCtx = snapshot.getContext("2d");
     if (!snapshotCtx) return canvas;
-    render(snapshotCtx, game, getTheme(), { reveal: 1, hud: false });
+    render(snapshotCtx, game, WEB_DARK_THEME, { reveal: 1, hud: false });
     return snapshot;
   }
 

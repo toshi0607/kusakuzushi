@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSession } from "./session";
 import { saveResultImage } from "./share";
+import { WEB_DARK_THEME } from "./theme";
 
 // Saving draws a card and opens a download or a share sheet; here only what
 // the result screen hands over is of interest.
@@ -417,5 +418,26 @@ describe("createSession result actions", () => {
     const text = searchParams.get("text");
     const url = searchParams.get("url");
     expect(vi.mocked(saveResultImage).mock.calls.map((call) => call[3])).toEqual([{ text, url }]);
+  });
+
+  it("paints the saved card's board in the night theme while the screen is light", () => {
+    // #given a cleared board on a light screen (mountSession plays in
+    // LIGHT_THEME). Every canvas shares the one stub context, and on a board
+    // with no bricks a frame's only `fillRect` is its background.
+    harness = mountSession({ grid: clearedGrid(3000) });
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    harness.raf.drain(16);
+    const ctx = document.createElement("canvas").getContext("2d");
+    const backgrounds: unknown[] = [];
+    vi.spyOn(ctx!, "fillRect").mockImplementation(() => {
+      backgrounds.push(ctx!.fillStyle);
+    });
+    // #when
+    const saveButton = [...harness.container.querySelectorAll<HTMLButtonElement>(".result-actions button")].find(
+      (button) => button.textContent === "画像を保存",
+    );
+    saveButton?.click();
+    // #then the card's ink is near-white, so the board under it must be the dark one
+    expect(backgrounds).toEqual([WEB_DARK_THEME.colors[0]]);
   });
 });
