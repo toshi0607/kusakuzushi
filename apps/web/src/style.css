@@ -83,6 +83,12 @@ body {
   line-height: 1.2;
 }
 
+/* 見出しは `/` へのリンクだが、見た目は見出しのまま(DESIGN-VISUAL §3) */
+.site-header h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
 .subtitle {
   margin: 4px 0 0;
   color: var(--ink-faint);
@@ -194,10 +200,36 @@ button:disabled {
   margin: 0;
 }
 
+/*
+ * 共有リンクで着地したセッションでは、この行に「自分の草を刈る」が並ぶ
+ * (DESIGN-VISUAL §3)。ステータスとリンクをそれぞれ折り返しの単位にして、
+ * 狭い幅ではリンクだけが次の行へ送られるようにする。
+ */
 .session-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  column-gap: 12px;
   margin: 0;
   font-size: 0.8125rem;
   color: var(--ink-faint);
+}
+
+/*
+ * 文字は --ink、下線だけアンバー。塗りのボタンにしないのは、盤面のすぐ上に
+ * アンバーの面を足すと玉と視線を取り合うから(§3)。上下 6px の余白はタップ
+ * 領域を 34px に広げるためで、同じだけ負のマージンを当てて行の高さは変えない。
+ */
+.session-switch {
+  padding-block: 6px;
+  margin-block: -6px;
+  color: var(--ink);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-color: var(--marquee);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
 }
 
 /* 盤面とタッチレールは一体。レールは可動域の真下でだけ意味を持つ */
