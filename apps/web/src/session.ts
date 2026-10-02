@@ -6,7 +6,9 @@
 
 import type { ContributionGrid, GameState, Theme } from "@kusakuzushi/core";
 import {
+  buildIntentText,
   buildIntentUrl,
+  buildShareUrl,
   clearMessageFor,
   DEFAULT_CONFIG,
   Game,
@@ -286,6 +288,11 @@ export function createSession(
         percentage: pct,
         cleared: state === "clear",
         taunt: state === "clear" ? clearMessageFor(grid.total) : null,
+      }, {
+        // 共有シートには「Xで共有」と同じ投稿文と共有リンクも渡す
+        // (画像だけだと、そこから作った投稿にリンクが付かない)。
+        text: buildIntentText(username, grid.total, pct, game.score),
+        url: buildShareUrl(username, pct, game.score),
       })
         .catch(() => {
           saveButton.textContent = "保存に失敗しました";

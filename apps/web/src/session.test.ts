@@ -3,9 +3,10 @@
  *
  * Covers the input wiring in `createSession`, which the rail's own unit
  * tests cannot see: which surface owns touch, and where the arrow keys
- * start from. jsdom has no 2D canvas context and no rAF worth the name, so
- * this stubs both — enough to run a real `Game` and read the paddle back
- * out of it. Mirrors the harness in apps/extension/src/game-runtime.test.ts.
+ * start from, plus the result overlay's actions. jsdom has no 2D canvas
+ * context and no rAF worth the name, so this stubs both — enough to run a
+ * real `Game` and read the paddle back out of it. Mirrors the harness in
+ * apps/extension/src/game-runtime.test.ts.
  */
 
 import type { ContributionGrid } from "@kusakuzushi/core";
@@ -13,6 +14,11 @@ import { clearMessageFor, DEFAULT_CONFIG, LIGHT_THEME, toGrid } from "@kusakuzus
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSession } from "./session";
+import { saveResultImage } from "./share";
+
+// Saving draws a card and opens a download or a share sheet; here only what
+// the result screen hands over is of interest.
+vi.mock("./share", () => ({ saveResultImage: vi.fn(() => Promise.resolve()) }));
 
 /** A 480px-wide board at x=0: half the canvas resolution, so 1px = 2 canvas px. */
 const BOARD = { left: 0, top: 0, width: 480, height: 240 };
@@ -378,5 +384,38 @@ describe("createSession clear overlay", () => {
     // #then
     expect(overlay?.querySelector("h2")?.textContent).toBe("ゲームオーバー");
     expect(overlay?.querySelector(".result-taunt")).toBeNull();
+  });
+});
+
+describe("createSession result actions", () => {
+  let harness: Harness | null = null;
+
+  beforeEach(() => {
+    document.body.replaceChildren();
+    harness = null;
+  });
+
+  afterEach(() => {
+    harness?.destroy();
+    vi.restoreAllMocks();
+  });
+
+  it("hands the save button the same post text and link as the X button", () => {
+    // #given a cleared board on the result screen
+    vi.mocked(saveResultImage).mockClear();
+    harness = mountSession({ grid: clearedGrid(3000) });
+    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
+    harness.raf.drain(16);
+    // #when
+    const saveButton = [...harness.container.querySelectorAll<HTMLButtonElement>(".result-actions button")].find(
+      (button) => button.textContent === "画像を保存",
+    );
+    saveButton?.click();
+    // #then
+    const href = harness.container.querySelector<HTMLAnchorElement>("a.share-button")?.href;
+    const searchParams = new URL(href!).searchParams;
+    const text = searchParams.get("text");
+    const url = searchParams.get("url");
+    expect(vi.mocked(saveResultImage).mock.calls.map((call) => call[3])).toEqual([{ text, url }]);
   });
 });

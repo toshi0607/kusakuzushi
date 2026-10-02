@@ -7,7 +7,14 @@
  * 揃っていないと意味がない。DOM にも fetch にも依存しない。
  */
 
-const SITE_URL = "https://kusakuzushi.toshi0607.com";
+/**
+ * サイトのホスト名。共有 URL の起点であり、保存用のリザルト画像に行き先として
+ * 印字する表記でもある(apps/web/src/share.ts)。画像に書く行き先とリンクの
+ * 行き先を別々の文字列で持つと、ドメインを変えたときに片方だけ古いまま残る。
+ */
+export const SITE_HOST = "kusakuzushi.toshi0607.com";
+
+const SITE_URL = `https://${SITE_HOST}`;
 
 /** 投稿文の末尾に必ず付くタグ。web / 拡張どちらの共有もこれで辿れる。 */
 export const SHARE_HASHTAG = "#草崩し";
