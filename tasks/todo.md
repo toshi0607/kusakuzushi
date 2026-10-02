@@ -2619,11 +2619,12 @@ Worker は、同じキーへの同時リクエストを 1 本の Promise にま�
 - [x] `pnpm -r test` / `pnpm -r build` が exit 0 — 下の「検証」
 - [x] 実物の workerd で、修正前に応答しなかった 3 通りが 10 秒で返ることを確認 — 下の「検証」
 - [x] `/code-review high` と reviewer — 下の Review。指摘の修正後に `pnpm -r test` / `pnpm -r build` exit 0
-- [ ] PR を開く(マージしない)
+- [x] PR を開く(マージしない)— PR の URL は PR 本文とこのブランチの履歴を参照
 
 ### 検証
 
 - `pnpm -r test` exit 0: core 73 / ogp 133 / web 111 / extension 80 / mcp 12(修正前の ogp は 125)。`pnpm -r build` exit 0
+- 作業中にマージされた #96 を取り込んだあと(マージコミット b0e80b0)にも走らせた: core 74 / ogp 133 / web 111 / extension 80 / mcp 12、`pnpm -r build` exit 0。衝突したのはこのファイルの末尾だけで、両方の節を残した
 - 新しいテストが修正を見ていることの確認: `github-grid.ts` と `index.ts` だけを修正前に戻して ogp のテストを走らせた。落ちたのは 12 件。内訳は、追加した 8 件すべて(止まる上流のテストは 5 秒のタイムアウト、`waitUntil` のテストは「0 回しか呼ばれていない」)、第 2 引数に signal を期待するよう更新した既存の 3 件、止まったユーザーの登録が残った巻き添えで落ちた既存の 1 件。戻したあと、修正後のファイルと一致することを `cmp` で確かめた
 - 実物の workerd(`wrangler dev` 4.131.0 / workerd 1.20260910.1、ポート 8791)。検証用の入口は、本物の Worker を import し、jogruber 宛ての `fetch` だけを手元のサーバーへ向け替える。手元のサーバーは、ユーザー名に応じて「ヘッダーを返さない」「ヘッダーと本文の先頭だけ返して止まる」「N ミリ秒後に返す」を切り替える
 
