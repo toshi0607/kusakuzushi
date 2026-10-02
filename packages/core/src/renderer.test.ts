@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, Game } from "./game";
 import type { GameConfig } from "./game";
 import type { Cell, ContributionGrid } from "./model";
-import { LIGHT_THEME, render } from "./renderer";
+import { DARK_THEME, LIGHT_THEME, render } from "./renderer";
 
 /** A single-column grid where `rowLevels[row]` sets that day's level directly. */
 function makeGrid(rowLevels: Array<0 | 1 | 2 | 3 | 4>): ContributionGrid {
@@ -139,6 +139,25 @@ describe("render", () => {
     const styles = second.fillRects.map((call) => call.fillStyle);
     expect(styles).toContain(LIGHT_THEME.colors[3]);
     expect(styles).not.toContain(LIGHT_THEME.colors[1]);
+  });
+
+  it("draws particles in the theme of the frame being drawn, not the theme the brick was destroyed under", () => {
+    // #given a level-3 brick destroyed and rendered under the light theme
+    const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 3]));
+    const brick = game.liveBricks[0];
+    render(makeFakeContext().ctx, game, LIGHT_THEME);
+    brick.level = 0;
+    brick.alive = false;
+    render(makeFakeContext().ctx, game, LIGHT_THEME);
+
+    // #when the same game is drawn under the dark theme
+    const dark = makeFakeContext();
+    render(dark.ctx, game, DARK_THEME);
+
+    // #then its particles are the dark level-3 green, not the light one
+    const styles = dark.fillRects.map((call) => call.fillStyle);
+    expect(styles).toContain(DARK_THEME.colors[3]);
+    expect(styles).not.toContain(LIGHT_THEME.colors[3]);
   });
 
   it("draws one spare ball per remaining life, in the accent colour and clear of the grass", () => {
