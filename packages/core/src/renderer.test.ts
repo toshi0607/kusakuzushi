@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_CONFIG, Game } from "./game";
 import type { GameConfig } from "./game";
 import type { Cell, ContributionGrid } from "./model";
@@ -139,6 +139,39 @@ describe("render", () => {
     const styles = second.fillRects.map((call) => call.fillStyle);
     expect(styles).toContain(LIGHT_THEME.colors[3]);
     expect(styles).not.toContain(LIGHT_THEME.colors[1]);
+  });
+
+  it("stops moving particles once the game has ended, so every repaint of the final board is the same", () => {
+    vi.useFakeTimers({ now: 0 });
+    try {
+      // #given particles from a just-destroyed level-3 brick, which a later frame moves while the game is on
+      const game = new Game(makeGrid([0, 0, 0, 0, 0, 0, 3]));
+      const brick = game.liveBricks[0];
+      render(makeFakeContext().ctx, game, LIGHT_THEME);
+      brick.level = 0;
+      brick.alive = false;
+      const spawned = makeFakeContext();
+      render(spawned.ctx, game, LIGHT_THEME);
+      vi.setSystemTime(50);
+      const lastPlayed = makeFakeContext();
+      render(lastPlayed.ctx, game, LIGHT_THEME);
+      const particleRects = (fake: FakeContext): FillRectCall[] =>
+        fake.fillRects.filter((call) => call.fillStyle === LIGHT_THEME.colors[3]);
+      expect(particleRects(lastPlayed)).not.toEqual(particleRects(spawned));
+
+      // #when the game is cleared and the board is repainted later on
+      game.launch();
+      game.update(0.001);
+      expect(game.state).toBe("clear");
+      vi.setSystemTime(100);
+      const repaint = makeFakeContext();
+      render(repaint.ctx, game, LIGHT_THEME);
+
+      // #then the particles stay where the last frame left them
+      expect(particleRects(repaint)).toEqual(particleRects(lastPlayed));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("draws one spare ball per remaining life, in the accent colour and clear of the grass", () => {
