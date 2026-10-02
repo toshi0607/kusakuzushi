@@ -15,10 +15,14 @@
  * 草に描くワードマークを独自に描き直さないための制約(lessons.md 2026-07-25)。
  * 余白のノイズ草は Math.random なので再生成のたびに微妙に変わる — 装飾なので
  * 差分が出ること自体は問題ない。
+ *
+ * 並びは上から、ワードマーク、タグライン + ホスト名、盤面。下端は空けておく。
+ * X は summary_large_image のカード画像の左下にタイトルのラベルを重ねて描き、
+ * 幅 360px のスマホではこの画像の y 488 から下が隠れる(DESIGN-VISUAL.md §8)。
  */
 
 import type { ContributionGrid } from "@kusakuzushi/core";
-import { DEFAULT_CONFIG, Game, computeLayout, render } from "@kusakuzushi/core";
+import { DEFAULT_CONFIG, Game, SITE_HOST, computeLayout, render } from "@kusakuzushi/core";
 
 import { buildDemoGrid } from "../src/demo-grid";
 import { BODY_FONT, DISPLAY_FONT, SHARE_COLORS } from "../src/share";
@@ -27,22 +31,30 @@ import { WEB_DARK_THEME } from "../src/theme";
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
 
-const BOARD_WIDTH = 1000;
-const BOARD_X = (CARD_WIDTH - BOARD_WIDTH) / 2;
-const BOARD_Y = 72;
+const CARD_PADDING = 56;
+const BOARD_WIDTH = CARD_WIDTH - CARD_PADDING * 2;
+const BOARD_X = CARD_PADDING;
 const BOARD_RADIUS = 12;
+
+/**
+ * X のタイトルのラベルが覆い始める y(1200x630 換算)。x.com で 2026-10-02 に実測した
+ * ラベルは、カードの下端から 33px 上に上端があり、高さ 20px。幅 308px のカード
+ * (幅 390px のスマホ)で y 503 から、幅 278px のカード(幅 360px のスマホ)で
+ * y 488 から隠れる。文字と盤面はこれより上に収める。
+ */
+const X_LABEL_TOP = 480;
 
 /** 草の下端とボールの上に残す余白(盤面の元解像度基準)。 */
 const GRASS_BOTTOM_PADDING = 28;
 const BALL_TOP_PADDING = 8;
 
+const TITLE_TOP = 50;
 const TITLE_SIZE = 60;
-const TAGLINE_SIZE = 26;
-const TITLE_GAP = 42;
-const TAGLINE_GAP = 12;
+const TAGLINE_SIZE = 28;
+const TAGLINE_GAP = 10;
+const BOARD_GAP = 28;
 
 const TAGLINE = "GitHub の草を、ブロック崩しで刈り取ろう";
-const SITE_LABEL = "kusakuzushi.toshi0607.com";
 
 /** アトラクト画面と同じ盤面(ワードマーク + パドル + ボール)を 1 フレーム描く。 */
 function renderBoard(grid: ContributionGrid): HTMLCanvasElement {
@@ -99,6 +111,23 @@ export function composeOgCard(): HTMLCanvasElement {
   ctx.fillStyle = SHARE_COLORS.soil;
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  ctx.fillStyle = SHARE_COLORS.marquee;
+  ctx.font = `${TITLE_SIZE}px ${DISPLAY_FONT}`;
+  ctx.fillText("草崩し", BOARD_X, TITLE_TOP);
+
+  const taglineTop = TITLE_TOP + TITLE_SIZE + TAGLINE_GAP;
+  ctx.font = `${TAGLINE_SIZE}px ${BODY_FONT}`;
+  ctx.fillStyle = SHARE_COLORS.faint;
+  ctx.fillText(TAGLINE, BOARD_X, taglineTop);
+
+  ctx.fillStyle = SHARE_COLORS.marquee;
+  ctx.textAlign = "right";
+  ctx.fillText(SITE_HOST, BOARD_X + BOARD_WIDTH, taglineTop);
+  ctx.textAlign = "left";
+
   const grid = buildDemoGrid();
   const board = renderBoard(grid);
   const slices = computeBoardSlices(grid);
@@ -106,12 +135,16 @@ export function composeOgCard(): HTMLCanvasElement {
   const grassHeight = Math.round(slices.grassHeight * scale);
   const paddleHeight = Math.round(slices.paddleHeight * scale);
   const boardHeight = grassHeight + paddleHeight;
+  const boardY = taglineTop + TAGLINE_SIZE + BOARD_GAP;
+  if (boardY + boardHeight > X_LABEL_TOP) {
+    throw new Error(`盤面の下端 y ${boardY + boardHeight} が X のラベルの帯(y ${X_LABEL_TOP} から)に入っています`);
+  }
 
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(BOARD_X, BOARD_Y, BOARD_WIDTH, boardHeight, BOARD_RADIUS);
+  ctx.roundRect(BOARD_X, boardY, BOARD_WIDTH, boardHeight, BOARD_RADIUS);
   ctx.clip();
-  ctx.drawImage(board, 0, 0, board.width, slices.grassHeight, BOARD_X, BOARD_Y, BOARD_WIDTH, grassHeight);
+  ctx.drawImage(board, 0, 0, board.width, slices.grassHeight, BOARD_X, boardY, BOARD_WIDTH, grassHeight);
   ctx.drawImage(
     board,
     0,
@@ -119,7 +152,7 @@ export function composeOgCard(): HTMLCanvasElement {
     board.width,
     slices.paddleHeight,
     BOARD_X,
-    BOARD_Y + grassHeight,
+    boardY + grassHeight,
     BOARD_WIDTH,
     paddleHeight,
   );
@@ -128,25 +161,8 @@ export function composeOgCard(): HTMLCanvasElement {
   ctx.strokeStyle = SHARE_COLORS.ridge;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(BOARD_X, BOARD_Y, BOARD_WIDTH, boardHeight, BOARD_RADIUS);
+  ctx.roundRect(BOARD_X, boardY, BOARD_WIDTH, boardHeight, BOARD_RADIUS);
   ctx.stroke();
-
-  const titleTop = BOARD_Y + boardHeight + TITLE_GAP;
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-
-  ctx.fillStyle = SHARE_COLORS.marquee;
-  ctx.font = `${TITLE_SIZE}px ${DISPLAY_FONT}`;
-  ctx.fillText("草崩し", BOARD_X, titleTop);
-
-  const taglineTop = titleTop + TITLE_SIZE + TAGLINE_GAP;
-  ctx.fillStyle = SHARE_COLORS.faint;
-  ctx.font = `${TAGLINE_SIZE}px ${BODY_FONT}`;
-  ctx.fillText(TAGLINE, BOARD_X, taglineTop);
-
-  ctx.textAlign = "right";
-  ctx.fillText(SITE_LABEL, BOARD_X + BOARD_WIDTH, taglineTop);
-  ctx.textAlign = "left";
 
   return canvas;
 }

@@ -13,7 +13,7 @@ const SAVE_ENDPOINT = "/__save-card?target=og";
 // 使用する字面をすべて指定して load を待ってから合成する。
 const FONT_LOADS: readonly [string, string][] = [
   ['60px "DotGothic16"', "草崩し"],
-  ['26px "IBM Plex Sans JP"', "GitHubの草を、ブロック崩しで刈り取ろうkusakuzushi.toshi0607.com"],
+  ['28px "IBM Plex Sans JP"', "GitHubの草を、ブロック崩しで刈り取ろうkusakuzushi.toshi0607.com"],
 ];
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
