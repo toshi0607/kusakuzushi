@@ -75,12 +75,16 @@ type Particle = {
   life: number;
   maxLife: number;
   size: number;
-  color: string;
+  /**
+   * The brick's level (1..4), not a colour: the colour is looked up at draw
+   * time, so one Game drawn under two themes gets each theme's green.
+   */
+  level: number;
 };
 
 type RendererState = {
   destroyedKeys: Set<string>;
-  /** Level each brick last had while alive — the colour its particles keep. */
+  /** Level each brick last had while alive — the level its particles keep. */
   lastAliveLevels: Map<string, number>;
   particles: Particle[];
   lastTimeMs: number;
@@ -106,10 +110,10 @@ function fillRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, widt
   }
 }
 
-function spawnParticles(particles: Particle[], brick: Brick, theme: Theme, level: number): void {
+function spawnParticles(particles: Particle[], brick: Brick, level: number): void {
   const cx = brick.rect.x + brick.rect.width / 2;
   const cy = brick.rect.y + brick.rect.height / 2;
-  const color = theme.particleColor ?? theme.colors[Math.min(Math.max(level, 1), 4)];
+  const clampedLevel = Math.min(Math.max(level, 1), 4);
   const count = 6;
 
   for (let i = 0; i < count; i++) {
@@ -123,7 +127,7 @@ function spawnParticles(particles: Particle[], brick: Brick, theme: Theme, level
       life: 0.5,
       maxLife: 0.5,
       size: 2 + Math.random() * 2,
-      color,
+      level: clampedLevel,
     });
   }
 }
@@ -234,7 +238,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
       state.lastAliveLevels.set(key, brick.level);
     } else if (!state.destroyedKeys.has(key)) {
       state.destroyedKeys.add(key);
-      spawnParticles(state.particles, brick, theme, state.lastAliveLevels.get(key) ?? brick.level);
+      spawnParticles(state.particles, brick, state.lastAliveLevels.get(key) ?? brick.level);
     }
   }
   updateParticles(state.particles, dt);
@@ -268,7 +272,7 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
 
   for (const particle of state.particles) {
     ctx.globalAlpha = Math.max(particle.life / particle.maxLife, 0);
-    ctx.fillStyle = particle.color;
+    ctx.fillStyle = theme.particleColor ?? theme.colors[particle.level];
     ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
   }
   ctx.globalAlpha = 1;
