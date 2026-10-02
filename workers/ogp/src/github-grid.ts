@@ -18,6 +18,28 @@ export const JOGRUBER_API_BASE = "https://github-contributions-api.jogruber.de/v
 // metadata while keeping an untrusted upstream body inexpensive to parse.
 export const MAX_RESPONSE_BYTES = 64 * 1024;
 
+/**
+ * How long one upstream call may take, response headers and body together,
+ * before it is given up as `unavailable`. Without a deadline a stalled
+ * upstream never settles the promise that concurrent requests share
+ * (index.ts), and that key stays stuck for the isolate's lifetime.
+ *
+ * 10 s, bounded on three sides:
+ * - from below: a healthy jogruber is slow. 39 calls measured on
+ *   2026-10-02/03, through the deployed Worker and from a laptop: median
+ *   about 3 s, a tail to 8 s, one at 11.6 s. A 5 s limit would have turned 9
+ *   of them into grid-less cards, each then served from the cache for 300 s.
+ * - from above: the MCP Worker gives up on a card after 20 s (OGP_TIMEOUT_MS
+ *   in workers/mcp/src/tools.ts), and a cold render adds about 4 s.
+ * - from above: once the client disconnects, `waitUntil` keeps the work alive
+ *   for at most 30 s (index.ts); the wait, the render and the cache write
+ *   all have to fit.
+ * Crawler deadlines do not settle it. Only Mastodon (10 s per read) and
+ * Misskey (10 s) publish one; for X the one data point is an image that took
+ * 8 s and was dropped, which is shorter than a healthy upstream can need.
+ */
+export const UPSTREAM_TIMEOUT_MS = 10_000;
+
 export type JogruberResult =
   | {
       status: "ok";
@@ -88,15 +110,29 @@ async function readBoundedText(response: Response): Promise<string> {
 
 /**
  * Fetches `user`'s last-year calendar. Never throws: a network error, a
- * non-2xx status, an oversized body, or a payload that fails validation all
+ * non-2xx status, an oversized body, a payload that fails validation, or an
+ * upstream that does not finish answering within `UPSTREAM_TIMEOUT_MS` all
  * come back as `unavailable`, and only the upstream's own 404 as `not-found`,
  * so callers decide between "fall back" and "tell the user" without
  * re-deriving that from exceptions.
  */
 export async function fetchJogruberContributions(user: string): Promise<JogruberResult> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`jogruber did not answer within ${UPSTREAM_TIMEOUT_MS}ms`)),
+    UPSTREAM_TIMEOUT_MS,
+  );
+  try {
+    return await requestContributions(user, controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestContributions(user: string, signal: AbortSignal): Promise<JogruberResult> {
   let response: Response;
   try {
-    response = await fetch(`${JOGRUBER_API_BASE}/${encodeURIComponent(user)}?y=last`);
+    response = await fetch(`${JOGRUBER_API_BASE}/${encodeURIComponent(user)}?y=last`, { signal });
   } catch (error) {
     return { status: "unavailable", reason: `network: ${error instanceof Error ? error.message : String(error)}` };
   }
