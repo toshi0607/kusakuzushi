@@ -2660,7 +2660,7 @@ Worker は、同じキーへの同時リクエストを 1 本の Promise にま�
 | 重大度 | 指摘 | 対応 |
 |---|---|---|
 | Low(reviewer L1、code-review) | `waitUntil` のテストが呼び出し回数しか見ていない。すぐ決着する Promise を渡す実装でも通る(reviewer が、`entry?.cacheWrite` を外しても 133 件通ることを確認) | 渡した Promise が、上流や描画の決着前には決着していないことを確かめる形にした。`entry?.cacheWrite` を外した実装と、`Promise.resolve()` を渡す実装の両方で落ちることを確認 |
-| Low(reviewer L2、code-review) | 台帳の 2 行が UNVERIFIED のまま、計画も未チェック。「8 件落ちた」は 12 件が正しい | 実物の workerd の結果を根拠に更新。内訳を書き直した |
+| Low(reviewer L2、code-review) | 台帳の 2 行が未検証のまま、計画も未チェック。「8 件落ちた」は 12 件が正しい | 実物の workerd の結果を根拠に更新。内訳を書き直した |
 | Low(reviewer L3、code-review) | `cache.put` の失敗が黙って捨てられる。消した `ctx.waitUntil(inFlight.cacheWrite)` は、失敗をログに出していた | 描画の成功後に、従来どおり `cacheWrite` をそのまま渡す行を戻した。延命用の登録は失敗を握りつぶし、こちらは握りつぶさない。catch でログを出す案は、admission の失敗がリクエストごとに重ねて出るので採らなかった |
 | Low(reviewer L5) | 止まる上流のテスト 3 件が同じユーザー名を使う。1 件が落ちると、残った登録で後続が別の理由で落ちる | 3 件のユーザー名を分けた |
 | Low(reviewer L6) | 定数のコメントの数字が粗い(中央値は Mac の 29 回だけの値、`/api/grid` の計測を「草なしカード」と数えている)。index.ts の「30 秒に収まる」は、期限のないフォント取得を無視している | 39 回を合わせた値に書き直した(中央値 2.8 秒、5 秒超 9 回、8 秒超 4 回、10 秒超 1 回)。index.ts のコメントは、上流のタイムアウトが覆う範囲とフォント取得の件を書く形に直した |
@@ -2668,7 +2668,7 @@ Worker は、同じキーへの同時リクエストを 1 本の Promise にま�
 | code-review | フォント取得の件、MCP が上流を 2 回待つ件、隣のコメントが古い件 | 対応しない。Worker の外や今回の範囲の外で、「見つけたが直していないもの」に記録 |
 | code-review | 合流しただけのリクエストも `waitUntil` に登録する。止まる上流の代役がテスト 3 ファイルに重複している | 対応しない。前者は害がなく、`ctx` を下の関数へ通すより差分が小さい。後者は、このリポジトリのテストがファイルごとに代役を持つ書き方に合わせた |
 
-reviewer の台帳ウォーク: Constraints は 1〜7・9 が Pass(4 行目は L1 の穴つき → 修正)、8 行目は確認不可、10 行目は未実施。Assumptions は 1 行目が成立、2・3 行目は reviewer が見た時点で UNVERIFIED(→ 更新済み)、4〜6 行目は reviewer からは確認不可。reviewer は、タイマーが残る経路が無いこと(成功・404・サイズ超過のあとで `vi.getTimerCount()` が 0)と、`handleOgImage` の登録がどの結果(limiter の拒否、admission の失敗、描画の失敗、`cache.put` の失敗、合流)でも未処理の reject を増やさないことも確かめている。
+reviewer の台帳ウォーク: Constraints は 1〜7・9 が Pass(4 行目は L1 の穴つき → 修正)、8 行目は確認不可、10 行目は未実施。Assumptions は 1 行目が成立、2・3 行目は reviewer が見た時点で未検証(→ 更新済み)、4〜6 行目は reviewer からは確認不可。reviewer は、タイマーが残る経路が無いこと(成功・404・サイズ超過のあとで `vi.getTimerCount()` が 0)と、`handleOgImage` の登録がどの結果(limiter の拒否、admission の失敗、描画の失敗、`cache.put` の失敗、合流)でも未処理の reject を増やさないことも確かめている。
 
 ### 自己クイズ(2026-10-03)
 
