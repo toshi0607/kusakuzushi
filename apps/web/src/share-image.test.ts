@@ -124,7 +124,7 @@ describe("composeResultImage", () => {
       "@toshi0607",
       "スコア 8,200 / 刈り取り率 64%",
       "草崩し",
-      "あなたの GitHub の草も刈れる",
+      "あなたの草もどうですか？",
       "kusakuzushi.toshi0607.com",
     ]);
   });
@@ -148,7 +148,7 @@ describe("composeResultImage", () => {
     // #then
     expect(drawn.slice(-3).map((entry) => entry.text)).toEqual([
       "草崩し",
-      "あなたの GitHub の草も刈れる",
+      "あなたの草もどうですか？",
       "kusakuzushi.toshi0607.com",
     ]);
   });
@@ -165,7 +165,7 @@ describe("composeResultImage", () => {
     });
     // #then missing glyphs cannot silently fall back from DotGothic16
     const productCopy = drawn.filter(
-      (entry) => entry.text === "あなたの GitHub の草も刈れる" || entry.text === "kusakuzushi.toshi0607.com",
+      (entry) => entry.text === "あなたの草もどうですか？" || entry.text === "kusakuzushi.toshi0607.com",
     );
     expect(productCopy.map((entry) => entry.font.includes("DotGothic16"))).toEqual([false, false]);
   });
@@ -182,7 +182,7 @@ describe("composeResultImage", () => {
     });
     // #then
     const wordmark = drawn.find((entry) => entry.text === "草崩し");
-    const invitation = drawn.find((entry) => entry.text === "あなたの GitHub の草も刈れる");
+    const invitation = drawn.find((entry) => entry.text === "あなたの草もどうですか？");
     expect(invitation!.x).toBeGreaterThan(wordmark!.x);
   });
 
