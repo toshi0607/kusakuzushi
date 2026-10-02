@@ -38,8 +38,11 @@ const WORDMARK = "草崩し";
  * x 51..892 / y 503..581 on the phone. The old bottom product line's text at
  * y 533..567 had its wordmark and invitation completely hidden on the phone
  * and their lower 40% hidden on desktop, so the line moves to the top.
- * 126px of bottom padding keeps the lowest text (the cleared card's score)
- * ending at y 472, above the label zone on 390px (503) and 360px (488) phones.
+ * 126px of bottom padding keeps the score line ending at y 472 for the cleared
+ * card and at y 487 for a gameOver card whose name (21+ characters) wraps the
+ * 48px line, above the label zone on a 390px phone (y 503). The 360px phone
+ * (label from about y 488) was not measured and is extrapolated from the label
+ * keeping its size; there a wrapped name's score line just touches the label.
  */
 const X_LABEL_CLEARANCE = 126;
 
@@ -93,14 +96,20 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   // 誰が何%かは文脈として小さく、煽り文が主役。タイムラインで最初に読まれる
   // 1 行が「の草を 100% 刈り取った」だと、どのブロック崩しでも成立してしまう。
   // 30 字 x 34px = 1020px でコンテンツ幅 1088px に 1 行で収まる。
+  //
+  // gameOver 側の 48px の行は、ユーザー名が 21〜22 字を超えると 2 行に折り返す。
+  // 行間 1.4 のままだと、スコア行の下端が y 496 まで下がり、X のラベル(幅 360px
+  // 前後のスマホで y 488 から)にかかる。行間を 1.2 にして y 487 に収める。
+  // 名前は nowrap にする: ハイフンを含む長い名前はハイフンで折れて 3 行になり、
+  // 下の行とスコアが重なって描かれる(2026-10-02 実レンダリングで確認)。
   const resultLine = input.taunt
     ? `<div style="display:flex; flex-wrap:wrap; font-size:26px; line-height:1.4; color:${TEXT_COLOR}; opacity:0.7;">
       <span style="display:flex; font-weight:700;">${user}</span>
       <span style="display:flex; margin-left:12px;">${resultPhrase(percentage)}</span>
     </div>
     <div style="display:flex; font-size:34px; line-height:1.35; color:${TEXT_COLOR}; margin-top:14px;">${escapeHtml(input.taunt)}</div>`
-    : `<div style="display:flex; flex-wrap:wrap; font-size:48px; line-height:1.4; color:${TEXT_COLOR};">
-      <span style="display:flex; font-weight:700;">${user}</span>
+    : `<div style="display:flex; flex-wrap:wrap; font-size:48px; line-height:1.2; color:${TEXT_COLOR};">
+      <span style="display:flex; font-weight:700; white-space:nowrap;">${user}</span>
       <span style="display:flex; margin-left:14px;">${resultPhrase(percentage)}</span>
     </div>`;
 

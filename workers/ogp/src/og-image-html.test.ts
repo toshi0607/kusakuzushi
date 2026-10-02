@@ -23,7 +23,7 @@ describe("buildOgImageHtml", () => {
     // #given / #when
     const html = buildOgImageHtml({ user: "toshi0607", score: 12340, percentage: 87, gridSvgDataUri: null });
     // #then
-    expect(html).toContain('font-weight:700;">toshi0607</span>');
+    expect(html).toContain('font-weight:700; white-space:nowrap;">toshi0607</span>');
     expect(html).toContain("87%");
     expect(html).toContain("スコア 12,340");
     expect(html).toContain("kusakuzushi.toshi0607.com");
@@ -37,7 +37,7 @@ describe("buildOgImageHtml", () => {
     // #then 率と名前は残り、スコア行だけが消える
     expect(html).not.toContain("スコア");
     expect(html).toContain("87%");
-    expect(html).toContain('font-weight:700;">toshi0607</span>');
+    expect(html).toContain('font-weight:700; white-space:nowrap;">toshi0607</span>');
   });
 
   it("uses the GitHub-dark background and accent colors", () => {
@@ -159,6 +159,22 @@ describe("buildOgImageHtml", () => {
     }
     // #then
     expect(html.slice(0, gridIndex)).not.toContain("#39d353");
+  });
+
+  it("keeps a long username on one line so a hyphen cannot split it", () => {
+    // #given a gameOver card for a hyphenated name wider than the content box at 48px
+    // #when
+    const html = buildOgImageHtml({ user: "aaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbb", score: 1234, percentage: 56, gridSvgDataUri: null, taunt: null });
+    // #then the name span cannot wrap at the hyphen and push the score onto the phrase
+    expect(html).toContain('white-space:nowrap;">aaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbb</span>');
+  });
+
+  it("tightens the gameOver result line so a wrapped name keeps the score above X's label", () => {
+    // #given a gameOver card (a 21+ character name wraps this line onto two)
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: null, taunt: null });
+    // #then
+    expect(html).toContain("font-size:48px; line-height:1.2;");
   });
 
   it("grows the product line's left group so the host reaches the right edge", () => {
