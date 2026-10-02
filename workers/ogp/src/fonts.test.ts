@@ -42,16 +42,25 @@ describe("FONT_TEXT", () => {
   });
 
   it.each([
-    { user: "toshi0607", score: 1234567, percentage: 56, gridSvgDataUri: null, taunt: null },
-    { user: "octo-cat", score: null, percentage: 87, gridSvgDataUri: null },
+    {
+      name: "no-taunt card",
+      input: { user: "toshi0607", score: 1234567, percentage: 56, gridSvgDataUri: null, taunt: null },
+    },
+    {
+      name: "score-less card",
+      input: { user: "octo-cat", score: null, percentage: 87, gridSvgDataUri: null },
+    },
     ...CLEAR_MESSAGES.map((message) => ({
-      user: "toshi0607",
-      score: 1234,
-      percentage: 100,
-      gridSvgDataUri: null,
-      taunt: message,
+      name: `cleared card: ${message}`,
+      input: {
+        user: "toshi0607",
+        score: 1234,
+        percentage: 100,
+        gridSvgDataUri: null,
+        taunt: message,
+      },
     })),
-  ])("covers every character the built card prints (user $user, percentage $percentage, taunt $taunt)", (input) => {
+  ])("covers every character the $name prints", ({ input }) => {
     // #given every supported result variant and each clear message
     const covered = new Set(FONT_TEXT);
     // #when

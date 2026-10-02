@@ -89,6 +89,12 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
   // (wordmark), that the viewer can play too (invitation), and where to go (host).
   // The order matches the saved result image (apps/web/src/share.ts, DESIGN-VISUAL.md §8).
   // The rule separates the result (who / how much) from the product line.
+  // The left group grows (flex:1) so the host reaches the rule's right end,
+  // the same way the result block above uses flex:1. Avoid justify-content:space-between:
+  // this satori build (workers-og 0.0.27) puts free space at both ends as well.
+  // Measured on the real PNG on 2026-10-02: the 1088px row was inset 54px on
+  // the left and 60px on the right, with 109px between the two items;
+  // width:100% on the row did not change that.
   return `<div style="display:flex; flex-direction:column; width:1200px; height:630px; padding:56px; background:${BACKGROUND_COLOR}; font-family:'Noto Sans JP';">
   <div style="display:flex;">${gridSection}</div>
   <div style="display:flex; flex-direction:column; flex:1; justify-content:center;">
@@ -96,8 +102,8 @@ export function buildOgImageHtml(input: OgImageHtmlInput): string {
     ${scoreLine}
   </div>
   <div style="display:flex; height:2px; background:${RULE_COLOR};"></div>
-  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
-    <div style="display:flex; align-items:center;">
+  <div style="display:flex; align-items:center; margin-top:16px;">
+    <div style="display:flex; flex:1; align-items:center;">
       <span style="display:flex; font-size:36px; font-weight:700; color:${WORDMARK_COLOR};">${WORDMARK}</span>
       <span style="display:flex; margin-left:24px; font-size:28px; color:${TEXT_COLOR};">${INVITATION}</span>
     </div>

@@ -114,6 +114,29 @@ describe("buildOgImageHtml", () => {
     expect(html).toMatch(/刈り取った[\s\S]*草崩し[\s\S]*あなたの GitHub の草も刈れる[\s\S]*kusakuzushi\.toshi0607\.com/);
   });
 
+  it("grows the product line's left group so the host reaches the right edge", () => {
+    // #given a no-taunt card
+    // #when
+    const html = buildOgImageHtml({ user: "toshi0607", score: 8200, percentage: 64, gridSvgDataUri: null, taunt: null });
+    // #then
+    expect(html).toMatch(/<div style="display:flex; flex:1; align-items:center;">\s*<span[^>]*>草崩し<\/span>/);
+  });
+
+  it("does not use justify-content:space-between, which this satori build insets at both ends", () => {
+    // #given a cleared card with a score and a grid (the most elements)
+    const input = {
+      user: "toshi0607",
+      score: 12340,
+      percentage: 100,
+      gridSvgDataUri: "data:image/svg+xml;base64,AAAA",
+      taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？",
+    };
+    // #when
+    const html = buildOgImageHtml(input);
+    // #then
+    expect(html).not.toContain("space-between");
+  });
+
   it.each([
     { score: 8200, percentage: 64, taunt: null },
     { score: 12340, percentage: 100, taunt: "地道に積み上げてきたものが崩れ去っていく気分はいかがですか？" },
