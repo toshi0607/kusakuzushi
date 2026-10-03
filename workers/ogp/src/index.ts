@@ -139,7 +139,10 @@ async function handleGridApi(request: Request, user: string, env: Env, ctx: Exec
         inFlightGrids.delete(cacheKey.url);
       }
     };
-    void pending.then(remove, remove);
+    // A client that gives up mid-fetch must not cancel the upstream work
+    // this shared entry is waiting on. Keep it alive until it settles,
+    // or the entry would never be removed and later requests would hang.
+    ctx.waitUntil(pending.then(remove, remove));
   }
 
   const response = (await pending).clone();
@@ -353,16 +356,24 @@ async function handleOgImage(
     }
   }
 
+  const admission = getOrCreateInFlightRender(
+    cache,
+    cacheKey,
+    params.user,
+    params.score,
+    params.percentage,
+    env.OGP_RENDER_RATE_LIMITER,
+  );
+  // Register before awaiting: a client disconnect must not cancel the work
+  // shared by the admission and render entries, or they would never settle
+  // and be removed. waitUntil holds it for 30 s after the disconnect; the
+  // upstream timeout keeps the grid fetch inside that (the font fetch has no
+  // deadline of its own). Failures are reported on the request path below.
+  ctx.waitUntil(admission.then((entry) => entry?.cacheWrite).catch(() => undefined));
+
   let inFlight: InFlightRender | null;
   try {
-    inFlight = await getOrCreateInFlightRender(
-      cache,
-      cacheKey,
-      params.user,
-      params.score,
-      params.percentage,
-      env.OGP_RENDER_RATE_LIMITER,
-    );
+    inFlight = await admission;
   } catch {
     return serviceUnavailable("og image generation");
   }
@@ -383,7 +394,8 @@ async function handleOgImage(
   }
 
   // A grid-less fallback card (jogruber outage) is cached briefly so the full
-  // card replaces it soon after recovery.
+  // card replaces it soon after recovery. Handed over unguarded, unlike the
+  // keep-alive above, so a failed cache write still shows up in the logs.
   ctx.waitUntil(inFlight.cacheWrite);
   return createOgImageResponse(render);
 }

@@ -228,8 +228,12 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, theme: Theme =
   const config = game.config;
   const state = getState(game);
 
+  // Game time stops at gameOver/clear (callers stop calling `game.update`),
+  // so particle time stops with it: every repaint of the final board — the
+  // saved result card, a theme-flip redraw — shows the same debris.
+  const ended = game.state === "gameOver" || game.state === "clear";
   const now = Date.now();
-  const dt = Math.min(Math.max((now - state.lastTimeMs) / 1000, 0), MAX_FRAME_DT);
+  const dt = ended ? 0 : Math.min(Math.max((now - state.lastTimeMs) / 1000, 0), MAX_FRAME_DT);
   state.lastTimeMs = now;
 
   for (const brick of game.liveBricks) {
