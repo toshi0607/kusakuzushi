@@ -58,6 +58,12 @@ function syncUsernameQuery(username: string): void {
   window.history.replaceState(null, "", url.toString());
 }
 
+function clearUsernameQuery(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("user");
+  window.history.replaceState(null, "", url.toString());
+}
+
 /**
  * シェル(見出し / ステージ枠 / フッター)は index.html が持つ。JS で組み立てると
  * First Contentful Paint がバンドルのダウンロードと実行を待つことになり、
@@ -72,7 +78,7 @@ function findStage(root: HTMLElement): HTMLElement {
   return stage;
 }
 
-function buildFormView(initialUsername: string, errorMessage: string | undefined, onSubmit: (username: string) => void): { view: HTMLElement; attractHost: HTMLElement } {
+function buildFormView(initialUsername: string, errorMessage: string | undefined, onSubmit: (username: string) => void): { view: HTMLElement; attractHost: HTMLElement; input: HTMLInputElement } {
   const section = document.createElement("section");
   section.className = "view view-form";
 
@@ -120,7 +126,7 @@ function buildFormView(initialUsername: string, errorMessage: string | undefined
     }
   });
 
-  return { view: section, attractHost };
+  return { view: section, attractHost, input };
 }
 
 function buildLoadingView(username: string): HTMLElement {
@@ -154,6 +160,25 @@ function buildEmptyView(onBack: () => void): HTMLElement {
   return section;
 }
 
+/**
+ * Builds a real link to `/` so modified clicks still open the top page in a
+ * new tab; only the plain click becomes an in-place swap (DESIGN-VISUAL.md §3).
+ */
+function buildSessionSwitch(onSwitch: () => void): HTMLAnchorElement {
+  const link = document.createElement("a");
+  link.className = "session-switch";
+  link.href = "/";
+  link.textContent = "自分の草を刈る";
+  link.addEventListener("click", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    onSwitch();
+  });
+  return link;
+}
+
 export function initApp(root: HTMLElement): AppController {
   const stage = findStage(root);
   let session: SessionHandle | null = null;
@@ -176,12 +201,13 @@ export function initApp(root: HTMLElement): AppController {
     stage.replaceChildren(view);
   }
 
-  function showForm(initialUsername: string, errorMessage?: string): void {
-    const { view, attractHost } = buildFormView(initialUsername, errorMessage, (username) => {
-      void startFlow(username);
+  function showForm(initialUsername: string, errorMessage?: string, retryKeepsLink = false): HTMLInputElement {
+    const { view, attractHost, input } = buildFormView(initialUsername, errorMessage, (username) => {
+      void startFlow(username, retryKeepsLink && username === initialUsername);
     });
     swapStage(errorMessage === undefined ? "idle" : "error", initialUsername || null, view);
     attractCleanup = createAttract(attractHost, currentTheme);
+    return input;
   }
 
   function showLoading(username: string): void {
@@ -192,23 +218,33 @@ export function initApp(root: HTMLElement): AppController {
     swapStage("empty", username, buildEmptyView(() => showForm(username)));
   }
 
-  function showSession(username: string, grid: ContributionGrid): void {
+  function showSession(username: string, grid: ContributionGrid, arrivedByLink: boolean): void {
     const container = document.createElement("div");
     container.className = "view view-session";
 
     const status = document.createElement("p");
     status.className = "session-status";
-    status.textContent = `@${username} ― ${grid.total.toLocaleString()} contributions`;
+    const statusText = document.createElement("span");
+    statusText.textContent = `@${username} ― ${grid.total.toLocaleString()} contributions`;
+    status.appendChild(statusText);
+    if (arrivedByLink) {
+      status.append(" ", buildSessionSwitch(() => {
+        // Swap first so a failed swap leaves the address describing the stage.
+        const input = showForm("");
+        clearUsernameQuery();
+        input.focus();
+      }));
+    }
     container.appendChild(status);
 
     // The session's own state is the phase from here on; `stage_` keeps the user.
     swapStage("loading", username, container);
     session = createSession(container, username, grid, currentTheme, {
-      onRestart: () => showSession(username, grid),
+      onRestart: () => showSession(username, grid, arrivedByLink),
     });
   }
 
-  async function startFlow(username: string): Promise<void> {
+  async function startFlow(username: string, arrivedByLink = false): Promise<void> {
     syncUsernameQuery(username);
     showLoading(username);
     try {
@@ -217,15 +253,15 @@ export function initApp(root: HTMLElement): AppController {
         showEmpty(username);
         return;
       }
-      showSession(username, grid);
+      showSession(username, grid, arrivedByLink);
     } catch (error) {
-      showForm(username, errorMessageFor(error));
+      showForm(username, errorMessageFor(error), arrivedByLink);
     }
   }
 
   const initialUsername = new URLSearchParams(window.location.search).get("user");
   if (initialUsername) {
-    void startFlow(initialUsername);
+    void startFlow(initialUsername, true);
   } else {
     showForm("");
   }

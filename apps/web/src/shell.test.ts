@@ -23,6 +23,11 @@ const html = readFileSync(fileURLToPath(new URL("../index.html", import.meta.url
 const appInnerHtml = html.match(/<div id="app">([\s\S]*?)<\/div>\s*<script/)?.[1] ?? "";
 
 describe("index.html のページシェル", () => {
+  it("見出しが JavaScript に依存しないトップページへのリンクを持つ", () => {
+    // #then
+    expect(appInnerHtml).toContain('<h1><a href="/">草崩し</a></h1>');
+  });
+
   it("LCP 要素になる見出しとサブタイトルを静的マークアップとして持つ", () => {
     // #then — この 2 つは app.ts ではなく HTML が持っていること
     expect(appInnerHtml).toContain("草崩し");
