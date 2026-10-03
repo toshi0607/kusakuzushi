@@ -2946,3 +2946,5 @@ reviewer の台帳ウォーク(レビュー時点): Constraints 13 行のうち 
 最初の push で e2e が落ちた。原因は、テストから参照するために `index.ts` から `IN_FLIGHT_MAX_AGE_MS` を export したこと。workerd はエントリーモジュールの名前付き export をすべてハンドラとして読むので、`Incorrect type for map entry 'IN_FLIGHT_MAX_AGE_MS'` で Worker が起動しない。単体テストと `tsc` は通るので、手元では検出できなかった(lessons に追記)。
 
 対応: 定数と `InFlightMap` を `workers/ogp/src/in-flight.ts` に移し、`index.ts` の export は `default` だけに戻した。手元の `wrangler dev`(ポート 8793)で起動し、`/share/toshi0607` がクローラー UA で 200 を返すことを確認した。`pnpm -r test` / `pnpm -r build` exit 0。
+
+修正後の CI は、e2e の 7 件(WebMCP の 3 件を含む)を含めてすべて通った。手元の `pnpm test:e2e` は WebMCP の 3 件(`remote.*` のツール呼び出し)が「Tool was executed but the invocation failed」で落ちるが、origin/main を同じ Mac の別 worktree で回しても同じ 3 件が落ちるので、この変更とは無関係で、この環境の問題(同じマシンで別セッションの `wrangler dev` が動いている状態。dev registry の古い登録を消しても変わらず、原因は未特定)。
