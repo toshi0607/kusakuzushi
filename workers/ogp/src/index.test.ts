@@ -8,8 +8,9 @@ vi.mock("./og-image", () => ({
   renderOgImage: renderOgImageMock,
 }));
 
-import worker, { IN_FLIGHT_MAX_AGE_MS } from "./index";
+import worker from "./index";
 import { UPSTREAM_TIMEOUT_MS } from "./github-grid";
+import { IN_FLIGHT_MAX_AGE_MS } from "./in-flight";
 
 type WaitContext = {
   ctx: ExecutionContext;

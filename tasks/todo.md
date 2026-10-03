@@ -2940,3 +2940,9 @@ reviewer の台帳ウォーク(レビュー時点): Constraints 13 行のうち 
 | 描画は終わっていて `cache.put` だけが止まった登録も、30 秒で捨てて描き直す | 対応しない。二重作業は limiter が抑え、結果は変わらない。「見つけたが直していないもの」の合流の件と同じ割り切り |
 | 止まる `fetch` の代役 `neverAnswers` が 3 つのテストファイルに重複 | 対応しない。#100 のレビューで、ファイルごとに代役を持つ書き方に合わせると決めた |
 | `handleGridApi` が同じ Promise を `pending` と `created` の 2 つの名前で持つ | 対応しない。`release` に渡す値を `const` で捕まえるためで、非 null アサーションを避けた結果 |
+
+### 追記: CI の e2e が落ちた(2026-10-03)
+
+最初の push で e2e が落ちた。原因は、テストから参照するために `index.ts` から `IN_FLIGHT_MAX_AGE_MS` を export したこと。workerd はエントリーモジュールの名前付き export をすべてハンドラとして読むので、`Incorrect type for map entry 'IN_FLIGHT_MAX_AGE_MS'` で Worker が起動しない。単体テストと `tsc` は通るので、手元では検出できなかった(lessons に追記)。
+
+対応: 定数と `InFlightMap` を `workers/ogp/src/in-flight.ts` に移し、`index.ts` の export は `default` だけに戻した。手元の `wrangler dev`(ポート 8793)で起動し、`/share/toshi0607` がクローラー UA で 200 を返すことを確認した。`pnpm -r test` / `pnpm -r build` exit 0。
