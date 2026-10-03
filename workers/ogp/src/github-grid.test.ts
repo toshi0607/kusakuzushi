@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchJogruberContributions } from "./github-grid";
+import { fetchJogruberContributions, UPSTREAM_TIMEOUT_MS } from "./github-grid";
 
 const VALID_RESPONSE = {
   total: { lastYear: 1 },
@@ -10,9 +10,16 @@ const VALID_RESPONSE = {
   ],
 };
 
+// An upstream that never sends response headers: like the real fetch, it rejects with the signal's reason on abort.
+const neverAnswers = (_url: string, init?: RequestInit) =>
+  new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+  });
+
 describe("fetchJogruberContributions", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("returns the verbatim payload and the parsed cells on success", async () => {
@@ -25,7 +32,10 @@ describe("fetchJogruberContributions", () => {
     expect(result.json).toEqual(VALID_RESPONSE);
     expect(result.text).toBe(JSON.stringify(VALID_RESPONSE));
     expect(result.contributions).toHaveLength(2);
-    expect(fetch).toHaveBeenCalledWith("https://github-contributions-api.jogruber.de/v4/octocat?y=last");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://github-contributions-api.jogruber.de/v4/octocat?y=last",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("encodes the username into the upstream path", async () => {
@@ -33,13 +43,68 @@ describe("fetchJogruberContributions", () => {
 
     await fetchJogruberContributions("a b");
 
-    expect(fetch).toHaveBeenCalledWith("https://github-contributions-api.jogruber.de/v4/a%20b?y=last");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://github-contributions-api.jogruber.de/v4/a%20b?y=last",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("reports the upstream's own 404 as not-found", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 404 })));
 
     await expect(fetchJogruberContributions("nobody")).resolves.toEqual({ status: "not-found" });
+  });
+
+  it("reports an upstream that never answers as unavailable once the timeout passes", async () => {
+    // #given
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(neverAnswers));
+
+    // #when
+    const result = fetchJogruberContributions("octocat");
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+
+    // #then
+    await expect(result).resolves.toMatchObject({ status: "unavailable" });
+  });
+
+  it("keeps waiting for a slow upstream until the timeout", async () => {
+    // #given
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(neverAnswers));
+
+    // #when
+    const result = fetchJogruberContributions("octocat");
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS - 1);
+
+    // #then
+    await expect(Promise.race([result, Promise.resolve("pending")])).resolves.toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(1);
+    await result;
+  });
+
+  it("reports a body that stalls after the headers as unavailable once the timeout passes", async () => {
+    // #given
+    vi.useFakeTimers();
+    // Headers arrive, the body never finishes: like the real fetch, the body stream errors with the signal's reason on abort.
+    const stallsMidBody = async (_url: string, init?: RequestInit) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"contributions":['));
+            init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", vi.fn(stallsMidBody));
+
+    // #when
+    const result = fetchJogruberContributions("octocat");
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+
+    // #then
+    await expect(result).resolves.toMatchObject({ status: "unavailable" });
   });
 
   it("reports other non-2xx statuses, network errors, and malformed payloads as unavailable", async () => {
