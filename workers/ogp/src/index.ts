@@ -38,6 +38,25 @@ const VIA_MCP = "mcp";
 const TOTAL_HEADER = "x-kusakuzushi-total";
 /** How long a fetched calendar is served from the edge before jogruber is asked again. */
 const GRID_MAX_AGE_SECONDS = 600;
+/**
+ * How old a shared in-flight entry (the Maps below) may be before a later
+ * request treats it as abandoned and starts its own work in its place.
+ * An entry is removed when its promise settles, so one that never settles
+ * would pin its key for the isolate's lifetime and every later request for
+ * that key would wait forever. That can still happen after the upstream and
+ * font deadlines: a rate-limit binding that never answers, a `cache.put`
+ * that never settles, or the request that created the entry being cut off
+ * (waitUntil's 30 s cap after a client disconnect, or the CPU limit) — in
+ * which case its timers are gone too, so only a check made by a later,
+ * live request can notice.
+ *
+ * 30 s: above the slowest healthy entry (limiter, then the 10 s upstream
+ * fetch and the 10 s font load in parallel, then a cold render of about
+ * 4 s and the cache write — roughly 15 s), and equal to the longest a
+ * cut-off request can have kept its entry alive; past it, nobody is
+ * working on the entry any more.
+ */
+export const IN_FLIGHT_MAX_AGE_MS = 30_000;
 type Env = {
   OGP_RENDER_RATE_LIMITER: RateLimit;
   MCP_RENDER_RATE_LIMITER: RateLimit;
@@ -47,10 +66,44 @@ type InFlightRender = {
   render: Promise<OgImageRender>;
   cacheWrite: Promise<void>;
 };
-const inFlightRenders = new Map<string, InFlightRender>();
-const pendingRenderAdmissions = new Map<string, Promise<InFlightRender | null>>();
+/**
+ * A Map whose lookups refuse an entry that is `IN_FLIGHT_MAX_AGE_MS` or
+ * older: see that constant. `release` is the compare-and-delete the
+ * settle callbacks use; it never evicts on age, so a stale callback can
+ * only remove its own entry.
+ */
+class InFlightMap<T> {
+  private readonly entries = new Map<string, { value: T; startedAt: number }>();
+
+  get(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) {
+      return undefined;
+    }
+    const age = Date.now() - entry.startedAt;
+    if (age >= IN_FLIGHT_MAX_AGE_MS) {
+      console.error("abandoned in-flight entry replaced", key, `${age}ms old`);
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: T): void {
+    this.entries.set(key, { value, startedAt: Date.now() });
+  }
+
+  release(key: string, value: T): void {
+    if (this.entries.get(key)?.value === value) {
+      this.entries.delete(key);
+    }
+  }
+}
+
+const inFlightRenders = new InFlightMap<InFlightRender>();
+const pendingRenderAdmissions = new InFlightMap<Promise<InFlightRender | null>>();
 /** Concurrent misses for one user share one upstream fetch (and one limiter token). */
-const inFlightGrids = new Map<string, Promise<Response>>();
+const inFlightGrids = new InFlightMap<Promise<Response>>();
 
 function notFound(): Response {
   return new Response("Not Found", { status: 404 });
@@ -132,12 +185,11 @@ async function handleGridApi(request: Request, user: string, env: Env, ctx: Exec
   // requests that both missed the cache share one admission and one fetch.
   let pending = inFlightGrids.get(cacheKey.url);
   if (!pending) {
-    pending = admitAndFetchGrid(request, user, env);
-    inFlightGrids.set(cacheKey.url, pending);
+    const created = admitAndFetchGrid(request, user, env);
+    pending = created;
+    inFlightGrids.set(cacheKey.url, created);
     const remove = () => {
-      if (inFlightGrids.get(cacheKey.url) === pending) {
-        inFlightGrids.delete(cacheKey.url);
-      }
+      inFlightGrids.release(cacheKey.url, created);
     };
     // A client that gives up mid-fetch must not cancel the upstream work
     // this shared entry is waiting on. Keep it alive until it settles,
@@ -231,9 +283,7 @@ function createInFlightRender(
   const entry = { render, cacheWrite };
   inFlightRenders.set(cacheKey.url, entry);
   const removeEntry = () => {
-    if (inFlightRenders.get(cacheKey.url) === entry) {
-      inFlightRenders.delete(cacheKey.url);
-    }
+    inFlightRenders.release(cacheKey.url, entry);
   };
   void cacheWrite.then(removeEntry, removeEntry);
   return entry;
@@ -286,9 +336,7 @@ function getOrCreateInFlightRender(
   });
   pendingRenderAdmissions.set(cacheKey.url, admission);
   const removeAdmission = () => {
-    if (pendingRenderAdmissions.get(cacheKey.url) === admission) {
-      pendingRenderAdmissions.delete(cacheKey.url);
-    }
+    pendingRenderAdmissions.release(cacheKey.url, admission);
   };
   void admission.then(removeAdmission, removeAdmission);
   return admission;
@@ -367,8 +415,9 @@ async function handleOgImage(
   // Register before awaiting: a client disconnect must not cancel the work
   // shared by the admission and render entries, or they would never settle
   // and be removed. waitUntil holds it for 30 s after the disconnect; the
-  // upstream timeout keeps the grid fetch inside that (the font fetch has no
-  // deadline of its own). Failures are reported on the request path below.
+  // upstream and font deadlines keep the render inside that, and an entry
+  // that still outlives it is replaced on the next lookup
+  // (IN_FLIGHT_MAX_AGE_MS). Failures are reported on the request path below.
   ctx.waitUntil(admission.then((entry) => entry?.cacheWrite).catch(() => undefined));
 
   let inFlight: InFlightRender | null;
