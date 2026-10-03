@@ -46,6 +46,16 @@ export const FONT_TEXT = [...new Set(CARD_FIXED_TEXT + REQUEST_TEXT + CLEAR_MESS
 const TTF_USER_AGENT =
   "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; de-at) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1";
 
+/**
+ * How long loading one weight may take — the css2 lookup, the TTF download
+ * and its body together — before the load is given up. Without it a stalled
+ * Google Fonts request would never settle the render promise concurrent
+ * requests share (index.ts). 10 s, the same as the jogruber deadline
+ * (github-grid.ts UPSTREAM_TIMEOUT_MS): the two run in parallel in
+ * renderOgImage, so this adds nothing to the slowest healthy render.
+ */
+export const FONT_TIMEOUT_MS = 10_000;
+
 export type OgFont = {
   name: string;
   data: ArrayBuffer;
@@ -54,12 +64,25 @@ export type OgFont = {
 };
 
 async function loadSubsetFont(weight: number): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Google Fonts did not answer within ${FONT_TIMEOUT_MS}ms`)),
+    FONT_TIMEOUT_MS,
+  );
+  try {
+    return await requestSubsetFont(weight, controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestSubsetFont(weight: number, signal: AbortSignal): Promise<ArrayBuffer> {
   const cssUrl =
     `https://fonts.googleapis.com/css2` +
     `?family=${encodeURIComponent(FONT_FAMILY)}:wght@${weight}` +
     `&text=${encodeURIComponent(FONT_TEXT)}`;
 
-  const cssResponse = await fetch(cssUrl, { headers: { "user-agent": TTF_USER_AGENT } });
+  const cssResponse = await fetch(cssUrl, { headers: { "user-agent": TTF_USER_AGENT }, signal });
   if (!cssResponse.ok) {
     throw new Error(`Google Fonts css2 request failed: ${cssResponse.status}`);
   }
@@ -70,7 +93,7 @@ async function loadSubsetFont(weight: number): Promise<ArrayBuffer> {
     throw new Error("No TTF/OTF font URL in the css2 response");
   }
 
-  const fontResponse = await fetch(fontUrl);
+  const fontResponse = await fetch(fontUrl, { signal });
   if (!fontResponse.ok) {
     throw new Error(`Font download failed: ${fontResponse.status}`);
   }

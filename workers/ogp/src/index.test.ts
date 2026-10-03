@@ -9,6 +9,8 @@ vi.mock("./og-image", () => ({
 }));
 
 import worker from "./index";
+import { UPSTREAM_TIMEOUT_MS } from "./github-grid";
+import { IN_FLIGHT_MAX_AGE_MS } from "./in-flight";
 
 type WaitContext = {
   ctx: ExecutionContext;
@@ -45,6 +47,16 @@ function createContext(): WaitContext {
     } as ExecutionContext,
     settled: () => Promise.all(pending).then(() => undefined),
   };
+}
+
+/** Whether every promise has settled by the time the pending microtasks have run. */
+async function haveSettled(promises: Promise<unknown>[]): Promise<boolean> {
+  let settled = false;
+  void Promise.allSettled(promises).then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return settled;
 }
 
 function createRenderResult(gridIncluded = true) {
@@ -84,6 +96,7 @@ describe("OG image route", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("renders and caches a legitimate GET image for 24 hours", async () => {
@@ -307,6 +320,37 @@ describe("OG image route", () => {
     expect(rateLimit).toHaveBeenCalledTimes(1);
   });
 
+  it("hands the shared render to waitUntil before it settles, so a client disconnect cannot strand the entry", async () => {
+    // #given
+    let resolveRender: ((value: ReturnType<typeof createRenderResult>) => void) | undefined;
+    renderOgImageMock.mockImplementation(
+      () => new Promise<ReturnType<typeof createRenderResult>>((resolve) => {
+        resolveRender = resolve;
+      }),
+    );
+    const { ctx, settled } = createContext();
+    const waitUntil = vi.spyOn(ctx, "waitUntil");
+
+    // #when
+    const response = worker.fetch(
+      new Request("https://example.com/share/toshi0607/og.png?s=1&p=50"),
+      env,
+      ctx,
+    );
+    try {
+      await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1));
+
+      // #then
+      const handed = waitUntil.mock.calls.map(([promise]) => promise);
+      expect({ handed: handed.length, settled: await haveSettled(handed) }).toEqual({ handed: 1, settled: false });
+    } finally {
+      resolveRender?.(createRenderResult());
+      await response;
+      await settled();
+      waitUntil.mockRestore();
+    }
+  });
+
   it("canonicalizes username casing for cache and singleflight while rendering the original casing", async () => {
     // #given
     let resolveRender: ((value: ReturnType<typeof createRenderResult>) => void) | undefined;
@@ -416,6 +460,115 @@ describe("OG image route", () => {
     expect(renderOgImageMock).toHaveBeenCalledTimes(1);
     expect(cachePut).toHaveBeenCalledTimes(1);
     expect(rateLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces a shared render that is IN_FLIGHT_MAX_AGE_MS old, so a stuck key does not pin its URL", async () => {
+    // #given
+    vi.useFakeTimers();
+    renderOgImageMock.mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValue(createRenderResult());
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = createContext();
+    const second = createContext();
+    const url = "https://example.com/share/stuck-render/og.png?s=1&p=50";
+
+    try {
+      // #when
+      void worker.fetch(new Request(url), env, first.ctx);
+      await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1), { interval: 0 });
+      await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS);
+      const response = await worker.fetch(new Request(url), env, second.ctx);
+      await second.settled();
+
+      // #then — the eviction is also the only production trace that an entry was abandoned
+      expect({
+        status: response.status,
+        renders: renderOgImageMock.mock.calls.length,
+        logged: errorSpy.mock.calls.map(([message, key]) => [message, key]),
+      }).toEqual({ status: 200, renders: 2, logged: [["abandoned in-flight entry replaced", url]] });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("keeps joining a shared render younger than IN_FLIGHT_MAX_AGE_MS", async () => {
+    // #given
+    vi.useFakeTimers();
+    let resolveRender: ((value: ReturnType<typeof createRenderResult>) => void) | undefined;
+    renderOgImageMock.mockImplementation(
+      () => new Promise<ReturnType<typeof createRenderResult>>((resolve) => {
+        resolveRender = resolve;
+      }),
+    );
+    const first = createContext();
+    const second = createContext();
+    const url = "https://example.com/share/young-render/og.png?s=1&p=50";
+
+    // #when
+    const firstResponse = worker.fetch(new Request(url), env, first.ctx);
+    await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1), { interval: 0 });
+    await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS - 1);
+    const secondResponse = worker.fetch(new Request(url), env, second.ctx);
+    await vi.advanceTimersByTimeAsync(0);
+    resolveRender?.(createRenderResult());
+    const responses = await Promise.all([firstResponse, secondResponse]);
+    await Promise.all([first.settled(), second.settled()]);
+
+    // #then
+    expect({
+      statuses: responses.map((response) => response.status),
+      renders: renderOgImageMock.mock.calls.length,
+    }).toEqual({ statuses: [200, 200], renders: 1 });
+  });
+
+  it("replaces a limiter admission that is IN_FLIGHT_MAX_AGE_MS old, so a binding that never answers does not pin its URL", async () => {
+    // #given
+    vi.useFakeTimers();
+    rateLimit.mockImplementationOnce(() => new Promise(() => undefined)).mockResolvedValue({ success: true });
+    renderOgImageMock.mockResolvedValue(createRenderResult());
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = createContext();
+    const second = createContext();
+    const url = "https://example.com/share/stuck-limiter/og.png?s=1&p=50";
+
+    try {
+      // #when
+      void worker.fetch(new Request(url), env, first.ctx);
+      await vi.waitFor(() => expect(rateLimit).toHaveBeenCalledTimes(1), { interval: 0 });
+      await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS);
+      const response = await worker.fetch(new Request(url), env, second.ctx);
+      await second.settled();
+
+      // #then
+      expect({ status: response.status, admissions: rateLimit.mock.calls.length }).toEqual({ status: 200, admissions: 2 });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("renders again once a render whose cache write never settles is IN_FLIGHT_MAX_AGE_MS old", async () => {
+    // #given
+    vi.useFakeTimers();
+    cachePut.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    renderOgImageMock.mockResolvedValue(createRenderResult());
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = createContext();
+    const retry = createContext();
+    const url = "https://example.com/share/stuck-cache-write/og.png?s=1&p=50";
+
+    try {
+      // #when
+      await worker.fetch(new Request(url), env, first.ctx);
+      await vi.waitFor(() => expect(cachePut).toHaveBeenCalledTimes(1), { interval: 0 });
+      await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS);
+      const second = await worker.fetch(new Request(url), env, retry.ctx);
+      await retry.settled();
+
+      // #then
+      expect({ status: second.status, renders: renderOgImageMock.mock.calls.length }).toEqual({ status: 200, renders: 2 });
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("serves HEAD from the canonical GET cache entry", async () => {
@@ -655,6 +808,11 @@ describe("grid API route", () => {
       { date: "2024-01-02", count: 2, level: 2 },
     ],
   };
+  // An upstream that never sends response headers: like the real fetch, it rejects with the signal's reason on abort.
+  const neverAnswers = (_url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
   let cache: Cache;
   let cacheMatch: ReturnType<typeof vi.fn>;
   let cachePut: ReturnType<typeof vi.fn>;
@@ -678,6 +836,7 @@ describe("grid API route", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("passes the validated upstream payload through byte for byte and caches it for ten minutes", async () => {
@@ -693,7 +852,10 @@ describe("grid API route", () => {
     expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
     expect(response.headers.get("cache-control")).toBe("public, max-age=600, s-maxage=600");
     expect(await response.text()).toBe(JSON.stringify(PAYLOAD));
-    expect(fetchMock).toHaveBeenCalledWith("https://github-contributions-api.jogruber.de/v4/toshi0607?y=last");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github-contributions-api.jogruber.de/v4/toshi0607?y=last",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(cachePut).toHaveBeenCalledWith(expect.objectContaining({ url: "https://example.com/api/grid/toshi0607" }), expect.any(Response));
   });
 
@@ -801,6 +963,110 @@ describe("grid API route", () => {
     expect(await second.json()).toEqual(PAYLOAD);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(gridLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a stalled upstream with an uncached 502 once the timeout passes", async () => {
+    // #given
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(neverAnswers);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { ctx, settled } = createContext();
+
+    try {
+      // #when
+      const pending = worker.fetch(new Request("https://example.com/api/grid/octocat"), env, ctx);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+      const response = await pending;
+      await settled();
+
+      // #then
+      expect({
+        status: response.status,
+        cacheControl: response.headers.get("cache-control"),
+        cacheWrites: cachePut.mock.calls,
+      }).toEqual({ status: 502, cacheControl: "no-store", cacheWrites: [] });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("does not leave the user stuck after a stalled upstream: the next request reaches the upstream again", async () => {
+    // #given
+    vi.useFakeTimers();
+    fetchMock.mockImplementation(neverAnswers);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = createContext();
+
+    try {
+      // #when
+      const pending = worker.fetch(new Request("https://example.com/api/grid/hubot"), env, first.ctx);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+      const outage = await pending;
+      await first.settled();
+      fetchMock.mockImplementation(async () => new Response(JSON.stringify(PAYLOAD)));
+      const retry = createContext();
+      const response = await worker.fetch(new Request("https://example.com/api/grid/hubot"), env, retry.ctx);
+      await retry.settled();
+
+      // #then
+      expect({
+        outageStatus: outage.status,
+        retryStatus: response.status,
+        upstreamCalls: fetchMock.mock.calls.length,
+      }).toEqual({ outageStatus: 502, retryStatus: 200, upstreamCalls: 2 });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("replaces a shared grid fetch that is IN_FLIGHT_MAX_AGE_MS old even when its abort never landed, as after the creating request was cut off", async () => {
+    // #given
+    vi.useFakeTimers();
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => undefined))
+      .mockImplementation(async () => new Response(JSON.stringify(PAYLOAD)));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = createContext();
+    const second = createContext();
+    const url = "https://example.com/api/grid/cut-off";
+
+    try {
+      // #when
+      void worker.fetch(new Request(url), env, first.ctx);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1), { interval: 0 });
+      await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS);
+      const response = await worker.fetch(new Request(url), env, second.ctx);
+      await second.settled();
+
+      // #then
+      expect({ status: response.status, upstreamCalls: fetchMock.mock.calls.length }).toEqual({ status: 200, upstreamCalls: 2 });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("hands the upstream fetch to waitUntil before it settles, so a client disconnect cannot strand the entry", async () => {
+    // #given
+    let release: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { release = resolve; }));
+    const { ctx, settled } = createContext();
+    const waitUntil = vi.spyOn(ctx, "waitUntil");
+
+    // #when
+    const response = worker.fetch(new Request("https://example.com/api/grid/defunkt"), env, ctx);
+    try {
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+      // #then
+      const handed = waitUntil.mock.calls.map(([promise]) => promise);
+      expect({ handed: handed.length, settled: await haveSettled(handed) }).toEqual({ handed: 1, settled: false });
+    } finally {
+      release(new Response(JSON.stringify(PAYLOAD)));
+      await response;
+      await settled();
+      waitUntil.mockRestore();
+    }
   });
 
   it("maps an upstream failure or a malformed payload to an uncached 502", async () => {

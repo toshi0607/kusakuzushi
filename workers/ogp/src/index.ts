@@ -20,6 +20,7 @@ import { isValidGithubUsername, parseShareParams } from "./share-params";
 import { buildOgpHtml } from "./ogp-page";
 import { renderOgImage, type OgImageRender } from "./og-image";
 import { fetchJogruberContributions } from "./github-grid";
+import { InFlightMap } from "./in-flight";
 
 const SITE_URL = "https://kusakuzushi.toshi0607.com";
 const SHARE_PAGE_PATTERN = /^\/share\/([^/]+)$/;
@@ -47,10 +48,12 @@ type InFlightRender = {
   render: Promise<OgImageRender>;
   cacheWrite: Promise<void>;
 };
-const inFlightRenders = new Map<string, InFlightRender>();
-const pendingRenderAdmissions = new Map<string, Promise<InFlightRender | null>>();
+// Shared across concurrent requests; entries that never settle are replaced
+// after IN_FLIGHT_MAX_AGE_MS (in-flight.ts).
+const inFlightRenders = new InFlightMap<InFlightRender>();
+const pendingRenderAdmissions = new InFlightMap<Promise<InFlightRender | null>>();
 /** Concurrent misses for one user share one upstream fetch (and one limiter token). */
-const inFlightGrids = new Map<string, Promise<Response>>();
+const inFlightGrids = new InFlightMap<Promise<Response>>();
 
 function notFound(): Response {
   return new Response("Not Found", { status: 404 });
@@ -132,14 +135,16 @@ async function handleGridApi(request: Request, user: string, env: Env, ctx: Exec
   // requests that both missed the cache share one admission and one fetch.
   let pending = inFlightGrids.get(cacheKey.url);
   if (!pending) {
-    pending = admitAndFetchGrid(request, user, env);
-    inFlightGrids.set(cacheKey.url, pending);
+    const created = admitAndFetchGrid(request, user, env);
+    pending = created;
+    inFlightGrids.set(cacheKey.url, created);
     const remove = () => {
-      if (inFlightGrids.get(cacheKey.url) === pending) {
-        inFlightGrids.delete(cacheKey.url);
-      }
+      inFlightGrids.release(cacheKey.url, created);
     };
-    void pending.then(remove, remove);
+    // A client that gives up mid-fetch must not cancel the upstream work
+    // this shared entry is waiting on. Keep it alive until it settles,
+    // or the entry would never be removed and later requests would hang.
+    ctx.waitUntil(pending.then(remove, remove));
   }
 
   const response = (await pending).clone();
@@ -228,9 +233,7 @@ function createInFlightRender(
   const entry = { render, cacheWrite };
   inFlightRenders.set(cacheKey.url, entry);
   const removeEntry = () => {
-    if (inFlightRenders.get(cacheKey.url) === entry) {
-      inFlightRenders.delete(cacheKey.url);
-    }
+    inFlightRenders.release(cacheKey.url, entry);
   };
   void cacheWrite.then(removeEntry, removeEntry);
   return entry;
@@ -283,9 +286,7 @@ function getOrCreateInFlightRender(
   });
   pendingRenderAdmissions.set(cacheKey.url, admission);
   const removeAdmission = () => {
-    if (pendingRenderAdmissions.get(cacheKey.url) === admission) {
-      pendingRenderAdmissions.delete(cacheKey.url);
-    }
+    pendingRenderAdmissions.release(cacheKey.url, admission);
   };
   void admission.then(removeAdmission, removeAdmission);
   return admission;
@@ -353,16 +354,25 @@ async function handleOgImage(
     }
   }
 
+  const admission = getOrCreateInFlightRender(
+    cache,
+    cacheKey,
+    params.user,
+    params.score,
+    params.percentage,
+    env.OGP_RENDER_RATE_LIMITER,
+  );
+  // Register before awaiting: a client disconnect must not cancel the work
+  // shared by the admission and render entries, or they would never settle
+  // and be removed. waitUntil holds it for 30 s after the disconnect; the
+  // upstream and font deadlines keep the render inside that, and an entry
+  // that still outlives it is replaced on the next lookup
+  // (IN_FLIGHT_MAX_AGE_MS). Failures are reported on the request path below.
+  ctx.waitUntil(admission.then((entry) => entry?.cacheWrite).catch(() => undefined));
+
   let inFlight: InFlightRender | null;
   try {
-    inFlight = await getOrCreateInFlightRender(
-      cache,
-      cacheKey,
-      params.user,
-      params.score,
-      params.percentage,
-      env.OGP_RENDER_RATE_LIMITER,
-    );
+    inFlight = await admission;
   } catch {
     return serviceUnavailable("og image generation");
   }
@@ -383,7 +393,8 @@ async function handleOgImage(
   }
 
   // A grid-less fallback card (jogruber outage) is cached briefly so the full
-  // card replaces it soon after recovery.
+  // card replaces it soon after recovery. Handed over unguarded, unlike the
+  // keep-alive above, so a failed cache write still shows up in the logs.
   ctx.waitUntil(inFlight.cacheWrite);
   return createOgImageResponse(render);
 }

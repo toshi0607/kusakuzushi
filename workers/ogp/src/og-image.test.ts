@@ -9,6 +9,7 @@ vi.mock("workers-og", () => ({ ImageResponse: imageResponseMock }));
 vi.mock("./fonts", () => ({ loadOgFonts: loadOgFontsMock }));
 
 import { renderOgImage } from "./og-image";
+import { UPSTREAM_TIMEOUT_MS } from "./github-grid";
 
 const VALID_RESPONSE = {
   contributions: [
@@ -27,12 +28,31 @@ describe("renderOgImage contribution response limits", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("keeps the grid for a normal response", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(VALID_RESPONSE))));
 
     await expect(renderOgImage("octocat", 1, 50)).resolves.toMatchObject({ gridIncluded: true });
+  });
+
+  it("falls back to a grid-less card when the upstream never answers", async () => {
+    // #given
+    vi.useFakeTimers();
+    // An upstream that never sends response headers: like the real fetch, it rejects with the signal's reason on abort.
+    const neverAnswers = (_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    vi.stubGlobal("fetch", vi.fn(neverAnswers));
+
+    // #when
+    const render = renderOgImage("octocat", 1, 50);
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+
+    // #then
+    await expect(render).resolves.toMatchObject({ gridIncluded: false });
   });
 
   it("falls back to a grid-less card when Content-Length exceeds the response limit", async () => {

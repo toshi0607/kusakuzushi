@@ -52,6 +52,9 @@ type ContributionGrid = {
 `github-grid.ts`)を経由する。Worker が検証した JSON をそのまま返すので `fetchGrid` のパーサは不変。
 ページの通信先は自オリジンだけになり、上流を替える(GitHub の HTML を直接読む等)のは Worker の
 デプロイで済む。Worker 側は Cache API(10 分)と rate limit(60/分)を持つ。
+上流の応答は 10 秒で打ち切る(`UPSTREAM_TIMEOUT_MS`)。打ち切った回は上流の障害と同じ扱いで、
+`/api/grid` は 502、共有カードは草なしで返す。
+フォントの取得も 10 秒で打ち切る(`FONT_TIMEOUT_MS`)。同時リクエストが合流する登録は、30 秒(`IN_FLIGHT_MAX_AGE_MS`)たっても決着していなければ放棄とみなし、次のリクエストが作り直す。
 `fetchGrid(user): Promise<ContributionGrid>` のインターフェースはそのまま。
 
 ### データ源B: 拡張版 — ページのDOM(検証済み)
