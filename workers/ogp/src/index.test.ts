@@ -479,8 +479,12 @@ describe("OG image route", () => {
       const response = await worker.fetch(new Request(url), env, second.ctx);
       await second.settled();
 
-      // #then
-      expect({ status: response.status, renders: renderOgImageMock.mock.calls.length }).toEqual({ status: 200, renders: 2 });
+      // #then — the eviction is also the only production trace that an entry was abandoned
+      expect({
+        status: response.status,
+        renders: renderOgImageMock.mock.calls.length,
+        logged: errorSpy.mock.calls.map(([message, key]) => [message, key]),
+      }).toEqual({ status: 200, renders: 2, logged: [["abandoned in-flight entry replaced", url]] });
     } finally {
       errorSpy.mockRestore();
     }
