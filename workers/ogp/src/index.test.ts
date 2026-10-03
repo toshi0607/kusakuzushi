@@ -489,20 +489,31 @@ describe("OG image route", () => {
   it("keeps joining a shared render younger than IN_FLIGHT_MAX_AGE_MS", async () => {
     // #given
     vi.useFakeTimers();
-    renderOgImageMock.mockImplementation(() => new Promise(() => undefined));
+    let resolveRender: ((value: ReturnType<typeof createRenderResult>) => void) | undefined;
+    renderOgImageMock.mockImplementation(
+      () => new Promise<ReturnType<typeof createRenderResult>>((resolve) => {
+        resolveRender = resolve;
+      }),
+    );
     const first = createContext();
     const second = createContext();
     const url = "https://example.com/share/young-render/og.png?s=1&p=50";
 
     // #when
-    void worker.fetch(new Request(url), env, first.ctx);
+    const firstResponse = worker.fetch(new Request(url), env, first.ctx);
     await vi.waitFor(() => expect(renderOgImageMock).toHaveBeenCalledTimes(1), { interval: 0 });
     await vi.advanceTimersByTimeAsync(IN_FLIGHT_MAX_AGE_MS - 1);
-    void worker.fetch(new Request(url), env, second.ctx);
+    const secondResponse = worker.fetch(new Request(url), env, second.ctx);
     await vi.advanceTimersByTimeAsync(0);
+    resolveRender?.(createRenderResult());
+    const responses = await Promise.all([firstResponse, secondResponse]);
+    await Promise.all([first.settled(), second.settled()]);
 
     // #then
-    expect(renderOgImageMock).toHaveBeenCalledTimes(1);
+    expect({
+      statuses: responses.map((response) => response.status),
+      renders: renderOgImageMock.mock.calls.length,
+    }).toEqual({ statuses: [200, 200], renders: 1 });
   });
 
   it("replaces a limiter admission that is IN_FLIGHT_MAX_AGE_MS old, so a binding that never answers does not pin its URL", async () => {
