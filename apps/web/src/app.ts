@@ -95,6 +95,13 @@ function buildFormView(initialUsername: string, errorMessage: string | undefined
   input.placeholder = "GitHub ユーザー名";
   input.required = true;
   input.autocomplete = "off";
+  // GitHub のユーザー名は英数字とハイフンだけ。iOS Safari は日本語キーボードを
+  // かなのまま開くので、英字キーボードで開く url を指定する(email や lang="en" では
+  // 切り替わらなかった。2026-10-03 シミュレータで実測)。大文字化・自動修正も切る。
+  input.setAttribute("inputmode", "url");
+  input.setAttribute("autocapitalize", "none");
+  input.setAttribute("autocorrect", "off");
+  input.setAttribute("spellcheck", "false");
   input.value = initialUsername;
   form.appendChild(input);
 

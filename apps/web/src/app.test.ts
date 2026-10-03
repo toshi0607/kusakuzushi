@@ -101,6 +101,24 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
+describe("initApp username form", () => {
+  it("ユーザー名欄は英字キーボードで開き、大文字化と自動修正をしない", () => {
+    // #given
+    const { root } = mountApp("/");
+
+    // #when
+    const input = root.querySelector<HTMLInputElement>('input[name="username"]');
+
+    // #then
+    expect({
+      inputmode: input?.getAttribute("inputmode"),
+      autocapitalize: input?.getAttribute("autocapitalize"),
+      autocorrect: input?.getAttribute("autocorrect"),
+      spellcheck: input?.getAttribute("spellcheck"),
+    }).toEqual({ inputmode: "url", autocapitalize: "none", autocorrect: "off", spellcheck: "false" });
+  });
+});
+
 describe("initApp link-arrival sessions", () => {
   it("共有リンクで着地すると「自分の草を刈る」をトップへの実リンクとして表示する", async () => {
     // #given

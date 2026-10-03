@@ -2767,7 +2767,7 @@ reviewer の台帳ウォーク: Constraints は 1〜7・9 が Pass(4 行目は L
 | `.session-status` と見出しのマークアップに依存する箇所は app.ts / style.css / index.html / shell.test.ts だけ | VERIFIED | `grep -rn "session-status\|site-header"`(e2e・拡張・tools に該当なし) |
 | ステータス行にリンクを足しても、行の増分は `.stage` の min-height の内側に収まる | VERIFIED | 実装後に 1280 / 375 / 360 / 320px で再計測(下の「変更後の実測」)。39 文字のユーザー名(ハイフン入り / W だけ / m だけ)に 5 桁の数を添えても header / footer の移動は 0px |
 | WebMCP の `start_game` は「フォームに入力したのと同じ」扱いでよい | VERIFIED | apps/web/src/webmcp/tools.ts のツール説明(as if their name had been typed into the form) |
-| iOS Safari で、リンクを押したあとの `input.focus()` がキーボードを開く | UNVERIFIED-ACCEPTED(2026-10-02) | この Mac には Xcode が無く(CommandLineTools のみ)シミュレータを使えない。Playwright の WebKit も導入済みの版が合わず起動しない。フォーカスが移らなくてもフォームは表示されるので、入力欄を押せば入力できる(失うのは 1 タップぶん)。報告でユーザーに伝える |
+| iOS Safari で、リンクを押したあとの `input.focus()` がキーボードを開く | VERIFIED(2026-10-03) | 当初はこの Mac に Xcode が無いと判断して UNVERIFIED-ACCEPTED にしていたが、Xcode 26.6 は入っており `xcode-select` が CommandLineTools を向いていただけだった。iPhone 17 シミュレータ(iOS 26.5)の Safari で本番の `/share/toshi0607` を開き、リンクを押すと入力欄にフォーカスが移り画面上のキーボードが開いた(次節) |
 
 ### 変更前の実測(Playwright、本物のページ。2026-10-02)
 
@@ -2832,7 +2832,7 @@ reviewer の台帳ウォーク: Constraints は 1〜7・9 が Pass(4 行目は L
   - 修飾キー付きクリックは新しいタブで `/` を開き、元のタブの盤面とアドレスは変わらない
   - 見出しリンク: 色は継承・下線なし・箱の寸法は変更前と同じ(291.9 x 57.6)。押すとトップが開く
   - 39 文字のユーザー名(ハイフン入り / W だけ / m だけ)+ 5 桁: 行は 3 行(69.3px)、header / footer の移動 0px
-- 確認できていないこと: iOS の実機・シミュレータ(Assumptions の最終行)
+- 確認できていないこと: iOS の実機・シミュレータ(Assumptions の最終行) → 2026-10-03 にシミュレータで確認済み(次節)
 
 ### 見つけたが直していないもの
 
@@ -2869,3 +2869,31 @@ reviewer の台帳ウォーク(レビュー時点): Constraints 13 行のうち 
 2. **壊す入力・状態は?** 39 文字のユーザー名(3 種)と 5 桁の数、320px、取得失敗、存在しないユーザー、修飾キー 4 種、差し替え中の例外は試した。区切れない 39 文字では横にはみ出すが、変更前と同じ量
 3. **テストしていないこと**: iOS の実機(キーボードが開くか)。Firefox と Safari の実ブラウザ(使ったのは Chromium だけ。使っている CSS は flex の `row-gap`、`inset`、`text-decoration-thickness`。3 つとも主要ブラウザの現行版にあるという認識だが、実機では確かめていない)。本番オリジン(確認は開発サーバーと dist の Lighthouse まで)
 4. **計画との矛盾**: タップ領域の実装(余白 → `::after`)と、取得失敗後のやり直しの扱いを変えた。どちらも Notes に理由を書き、DESIGN-VISUAL §3 を実装に合わせた
+
+
+## セッション: ユーザー名欄を英字キーボードで開く(2026-10-03)
+
+前節の iOS 確認の続き。iPhone 17 シミュレータ(iOS 26.5、キーボードは日本語かなのみ)で、リンクを押したあとにキーボードが開くことは確かめられた。ただし開いたのはかなキーボードで、`octocat` と打つと「おcとcあt」になった。GitHub のユーザー名は英数字とハイフンだけなので、利用者は毎回 ABC に切り替える必要があった。トップページのフォームも同じ欄なので、変更前からの挙動。
+
+### 実測(シミュレータの Safari に 6 通りの属性の入力欄を並べたページを開き、1 つずつ押した)
+
+| 属性 | 開いたキーボード |
+|---|---|
+| `type="text"`(変更前) | かな |
+| + `autocapitalize="none"` `autocorrect="off"` `spellcheck="false"` | かな |
+| + `inputmode="url"` | 英字(かなキーボードの英字配列) |
+| + `inputmode="email"` | かな |
+| + `lang="en"` | かな |
+| + `autocomplete="username"` | 未確認(url で決まったので打ち切った) |
+
+### やったこと
+
+- `apps/web/src/app.ts` のユーザー名欄に `inputmode="url"` `autocapitalize="none"` `autocorrect="off"` `spellcheck="false"` を付けた。英字キーボードで開くのは url だけだった。大文字化と自動修正を切るのは、英字キーボードで打ったときに先頭が大文字になったり、名前が辞書の単語へ置き換わったりしないようにするため
+- 4 つとも `setAttribute` で付ける。jsdom は `autocapitalize` と `spellcheck` のプロパティを属性に反映しないので、プロパティで書くとテストから見えない
+- `app.test.ts` に 1 件追加(4 つの属性)
+
+### 検証
+
+- `pnpm -r test` exit 0(core 75 / ogp 133 / web 136 / extension 80 / mcp 12)、`pnpm -r build` exit 0
+- シミュレータで開発サーバーの `/?user=toshi0607` を開き、「自分の草を刈る」を押すと、入力欄にフォーカスが移り、英字キーボードで開いた
+- 確認できていないこと: 実機。日本語ローマ字キーボードや英語キーボードを足した構成(シミュレータにはかなキーボードしか無い)。Android の Chrome

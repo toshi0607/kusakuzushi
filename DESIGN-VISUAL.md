@@ -222,7 +222,7 @@ Theme 型の変更は optional フィールドのみ(`hudFont?`, `accentColor?`,
 |---|---|
 | タイトル | 草崩し |
 | サブタイトル | GitHub の草を、ブロック崩しで刈り取ろう |
-| 入力 placeholder | GitHub ユーザー名 |
+| 入力 placeholder | GitHub ユーザー名(欄は英字キーボードで開く: `inputmode="url"`。iOS の日本語キーボードはかなのまま開き、url 以外では切り替わらなかった。2026-10-03 実測) |
 | CTA | 草を刈る |
 | ローディング | {user} の草を取得中… |
 | 発射ガイド | クリック / Space で発射 |
