@@ -19,7 +19,12 @@ const SITE_URL = "https://kusakuzushi.toshi0607.com";
 export const TOOL_OUTPUT_CHAR_LIMIT = 1500;
 /** Marks Service Binding requests so the OGP Worker can throttle agent traffic on its own budget. */
 export const VIA_HEADERS = { "x-kusakuzushi-via": "mcp" } as const;
-/** How long a Service Binding call may take before the tool gives up (the render can take a few seconds cold). */
+/**
+ * How long a Service Binding call may take before the tool gives up. The
+ * OGP Worker bounds its own waits: 10 s for the jogruber fetch
+ * (UPSTREAM_TIMEOUT_MS) with the font load (FONT_TIMEOUT_MS) in parallel,
+ * then a cold render of about 4 s — roughly 15 s at worst, under this.
+ */
 export const OGP_TIMEOUT_MS = 20_000;
 
 /** The subset of `Fetcher` the tools use; a Service Binding satisfies it, and so does a test double. */
