@@ -2870,6 +2870,85 @@ reviewer の台帳ウォーク(レビュー時点): Constraints 13 行のうち 
 3. **テストしていないこと**: iOS の実機(キーボードが開くか)。Firefox と Safari の実ブラウザ(使ったのは Chromium だけ。使っている CSS は flex の `row-gap`、`inset`、`text-decoration-thickness`。3 つとも主要ブラウザの現行版にあるという認識だが、実機では確かめていない)。本番オリジン(確認は開発サーバーと dist の Lighthouse まで)
 4. **計画との矛盾**: タップ領域の実装(余白 → `::after`)と、取得失敗後のやり直しの扱いを変えた。どちらも Notes に理由を書き、DESIGN-VISUAL §3 を実装に合わせた
 
+## セッション: 決着しない共有登録を放棄する(2026-10-03)
+
+依頼: PR #100 のあとも共有登録が残る 4 つの経路(フォント取得の停止、rate limit binding の無応答、`cache.put` の無応答、登録を作ったリクエストの打ち切り)を、最小の変更で塞ぐ。reviewer の案(登録を引くときの年齢チェック)と、`fonts.ts` の期限のどちらを採るか決めて PR に書く。`og-image-html.ts` には触らない。PR を開き、マージしない。
+
+### 設計の判断
+
+年齢チェックを本体にした。4 つ目の経路では、登録を作ったリクエストが打ち切られると、そのリクエストが持つタイマーも `waitUntil` も一緒に消える。登録が古いことに気づけるのは、あとから来て生きているリクエストだけである。2 つ目と 3 つ目の経路には、期限を付ける対象(自前の `fetch`)がない。年齢チェックは 1 つの定数と 1 つの `Map` の包みで 4 つとも覆う。
+
+フォントの期限は追加として入れた。4 つの経路のうち期限を安く付けられるのはここだけで、期限がないと、放棄までの 30 秒に来たリクエストはすべて止まり、30 秒後の最初のリクエストも止まる登録を作り直すだけになる。期限があれば 10 秒で 500(`no-store`)が返り、登録は自分で消える。上流の 10 秒と並列に走るので、健全な描画は遅くならない。
+
+放棄までの 30 秒は、健全な登録の最長(limiter、上流 10 秒とフォント 10 秒の並列、冷えた描画 4 秒、キャッシュ書き込み。合わせて 15 秒ほど)の 2 倍で、切断後に `waitUntil` が延命する上限(30 秒)と同じ値。これを過ぎた登録は、誰も作業していない。
+
+### Constraints
+
+| Constraint | Source | Verify by |
+|---|---|---|
+| 4 つの経路すべてで、同じキーの後続リクエストが永久に待たない | 依頼 | index.test.ts の 5 件(経路ごとに 1 件、合流の境界 1 件) |
+| 採った案と理由を PR に書く | 依頼 | PR 本文 |
+| `og-image-html.ts` に触らない(PR #95 と重なる) | 依頼 | `git diff --stat` |
+| テストは既存の書き方(`#given/#when/#then`、1 テスト 1 主張、期限は偽タイマー、`AbortController` + `setTimeout`) | 依頼 | diff |
+| `pnpm -r test` / `pnpm -r build` が exit 0 | 依頼 | 下の検証 |
+| MCP と WebMCP の 20 秒のコメントを、上流の 10 秒を数えた形に直す(安ければ) | 依頼 | diff |
+| 値を変えたら、その値を文章で繰り返す箇所も直す | lessons 2026-07-27 | `grep "deadline of its own"` が 0 件 |
+| PR を開き、マージしない | 依頼 | — |
+
+### Assumptions
+
+| Assumption | Status | Evidence |
+|---|---|---|
+| vitest の偽タイマーは `Date.now()` も進める | VERIFIED | 年齢チェックを外した変異で、年齢のテスト 4 件が落ち、戻すと通る |
+| workerd は、ヘッダー受信後の abort で `arrayBuffer()` も reject する | VERIFIED(機構は #100)/ 今回は未再検証 | #100 で、本文の途中で止まる上流に対して 10 秒で返ることを実物の workerd で確認した。フォント取得は同じ `fetch` の本文読み取りで、読む手段が `reader` か `arrayBuffer()` かの違いだけ |
+| 放棄のあとの二重作業は無害 | VERIFIED(コードを読んだ) | 古い登録の `release` は自分の登録しか消さない。古い `cache.put` が遅れて届いても、同じキーに同じ内容を書くだけ |
+| 健全な登録は 30 秒に収まる | VERIFIED | #100 の計測(上流は最長 11.6 秒)と、冷えた描画 4 秒 |
+
+### やったこと
+
+- `workers/ogp/src/index.ts`: `IN_FLIGHT_MAX_AGE_MS = 30_000` と `InFlightMap`(`get` が年齢を見て放棄、`release` は比較して消すだけ)。3 つの `Map` を置き換え、`waitUntil` のコメントを書き直した
+- `workers/ogp/src/fonts.ts`: `FONT_TIMEOUT_MS = 10_000`。`loadSubsetFont` が `AbortController` + `setTimeout` を持ち、css2 と TTF の両方の `fetch` に signal を渡す
+- `workers/ogp/src/index.test.ts`: 5 件(描画の放棄、30 秒未満は合流、limiter の放棄、`cache.put` の放棄、abort が届かない grid の放棄)。`fonts.test.ts`: 3 件(css2 の停止、TTF の停止、期限切れの次の呼び出しで取り直す)
+- `workers/mcp/src/tools.ts` と `apps/web/src/webmcp/register.ts`: コメントだけ。DESIGN.md §2 に 1 文
+
+### 検証
+
+- `pnpm -r test` exit 0: core 74 / ogp 141 / web 111 / extension 80 / mcp 12(ogp は修正前 133)。`pnpm -r build` exit 0。origin/main(PR #100 のマージ後)に rebase したあとも同じ
+- 変異テスト: `InFlightMap.get` の年齢判定を無効にすると、年齢のテスト 4 件が落ちる(合流の境界のテストは判定と無関係なので通る)。`fonts.ts` の 2 つの `fetch` から signal を外すと、フォントのテスト 3 件が落ちる
+- 実物の workerd では再検証していない。年齢チェックは時刻の比較だけで workerd 固有の挙動に依存しない。フォントの abort は #100 が実物で確かめた本文読み取りの中断と同じ機構
+
+### Notes
+
+- 実装は Codex(gpt-6.1-sol)に 1 回委譲した。戻ってきた diff の `pending!`(非 null アサーション)だけ自分で書き直した(作った Promise を別の定数で持つ)
+- 新しいテストの `vi.waitFor` は `{ interval: 0 }` を渡す。既定の 50ms のポーリングが偽の時計を進めて、30 秒の境界をずらす
+- PR #100 は作業中にマージされた。コードのコミット後に origin/main へ rebase し、#100 のコミットは落ちた
+
+### 見つけたが直していないもの
+
+- MCP の `render_share_card` は、スコア付きで上流が止まっていると、カード(10 秒)のあと `/api/grid`(10 秒)を待ち、ページ側の上限(`REMOTE_TIMEOUT_MS` = 20 秒)に並ぶ。この二度目の取得は「総数ヘッダーが付く前にキャッシュされたカード」のためにあるが、ヘッダーは 2026-09-04 に入り、カードのキャッシュは最長 1 日なので、その理由はすでに消えている。いま二度目の取得が走るのは草なしカード(上流が直前に落ちた)のときだけ。直し方は 2 つ: 二度目の取得をやめる(10 秒で「retry」になるが、上流が 300 秒以内に復旧した場合に取れた総数を失う)か、ツール呼び出し全体に 1 本の期限を置いてページ側の上限をそれより上げる。どちらも `workers/mcp` の挙動を変えてテストが要るので、この PR には入れていない
+- 止まった登録が 30 秒になるまでは、合流したリクエストは待ち続ける。放棄は後続を救うだけで、合流済みのリクエストは救わない
+- カードの経路は上流を打ち切った理由をログに出さない(#100 から持ち越し)
+- `wrangler dev` の最初のリクエストで jogruber への `fetch` が 10 秒を超える原因(#100 から持ち越し)
+
+### Review(2026-10-03)
+
+`/code-review high`: Low 4 件、Medium 以上は無し。
+
+| 指摘 | 対応 |
+|---|---|
+| 放棄のログ行を主張するテストが無い(テストは `console.error` を黙らせるだけ) | 描画の放棄のテストで、ログの文言とキーも主張する形にした |
+| 描画は終わっていて `cache.put` だけが止まった登録も、30 秒で捨てて描き直す | 対応しない。二重作業は limiter が抑え、結果は変わらない。「見つけたが直していないもの」の合流の件と同じ割り切り |
+| 止まる `fetch` の代役 `neverAnswers` が 3 つのテストファイルに重複 | 対応しない。#100 のレビューで、ファイルごとに代役を持つ書き方に合わせると決めた |
+| `handleGridApi` が同じ Promise を `pending` と `created` の 2 つの名前で持つ | 対応しない。`release` に渡す値を `const` で捕まえるためで、非 null アサーションを避けた結果 |
+
+### 追記: CI の e2e が落ちた(2026-10-03)
+
+最初の push で e2e が落ちた。原因は、テストから参照するために `index.ts` から `IN_FLIGHT_MAX_AGE_MS` を export したこと。workerd はエントリーモジュールの名前付き export をすべてハンドラとして読むので、`Incorrect type for map entry 'IN_FLIGHT_MAX_AGE_MS'` で Worker が起動しない。単体テストと `tsc` は通るので、手元では検出できなかった(lessons に追記)。
+
+対応: 定数と `InFlightMap` を `workers/ogp/src/in-flight.ts` に移し、`index.ts` の export は `default` だけに戻した。手元の `wrangler dev`(ポート 8793)で起動し、`/share/toshi0607` がクローラー UA で 200 を返すことを確認した。`pnpm -r test` / `pnpm -r build` exit 0。
+
+修正後の CI は、e2e の 7 件(WebMCP の 3 件を含む)を含めてすべて通った。手元の `pnpm test:e2e` は WebMCP の 3 件(`remote.*` のツール呼び出し)が「Tool was executed but the invocation failed」で落ちるが、origin/main を同じ Mac の別 worktree で回しても同じ 3 件が落ちるので、この変更とは無関係で、この環境の問題(同じマシンで別セッションの `wrangler dev` が動いている状態。dev registry の古い登録を消しても変わらず、原因は未特定)。
+
 
 ## セッション: ユーザー名欄を英字キーボードで開く(2026-10-03)
 

@@ -21,7 +21,12 @@ import { createPageTools } from "./tools";
 
 /** Remote tools show up as `remote.<name>` so they can never shadow a page tool (collisions are silent). */
 export const REMOTE_TOOL_PREFIX = "remote.";
-/** Per-request cap for `tools/list` and `tools/call` — a cold card render can take a few seconds. */
+/**
+ * Per-request cap for `tools/list` and `tools/call`. A card render waits up
+ * to 10 s for the upstream (workers/ogp UPSTREAM_TIMEOUT_MS, font load in
+ * parallel) plus a cold render of about 4 s; the MCP Worker's own cap is
+ * OGP_TIMEOUT_MS (workers/mcp/src/tools.ts), the same 20 s.
+ */
 const REMOTE_TIMEOUT_MS = 20_000;
 
 export async function registerWebMcpTools(controller: AppController, signal: AbortSignal): Promise<void> {
