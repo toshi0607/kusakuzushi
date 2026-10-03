@@ -1,7 +1,9 @@
 import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
+import { SHARE_INVITATION, SITE_HOST } from "@kusakuzushi/core/share-link";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FONT_TEXT, FONT_TIMEOUT_MS, loadOgFonts } from "./fonts";
+import { buildOgImageHtml } from "./og-image-html";
 
 /**
  * The font is fetched as a `text=`-subset from Google Fonts, so a character
@@ -18,13 +20,62 @@ describe("FONT_TEXT", () => {
     expect(missing).toEqual([]);
   });
 
-  it("covers the card's own fixed strings", () => {
-    // #given the result phrase, the site label and the digits/punctuation
+  it("covers the result phrase, the score label and the digits and punctuation of a request", () => {
+    // #given the result phrase, score label, and request digits/punctuation
     const covered = new Set(FONT_TEXT);
     // #when
-    const missing = [...new Set("の草を刈り取ったスコア草崩kusakuzushi.toshi0607.com0123456789%,.- ")].filter(
+    const missing = [...new Set("の草を % 刈り取った" + "スコア " + "0123456789%,.- ")].filter(
       (char) => !covered.has(char),
     );
+    // #then
+    expect(missing).toEqual([]);
+  });
+
+  it("covers every character of the product line", () => {
+    // #given the wordmark, invitation, and host printed on the card
+    const covered = new Set(FONT_TEXT);
+    // #when
+    const missing = [...new Set("草崩し" + SHARE_INVITATION + SITE_HOST)].filter(
+      (char) => !covered.has(char),
+    );
+    // #then
+    expect(missing).toEqual([]);
+  });
+
+  it.each([
+    {
+      name: "no-taunt card",
+      input: { user: "toshi0607", score: 1234567, percentage: 56, gridSvgDataUri: null, taunt: null },
+    },
+    {
+      name: "score-less card",
+      input: { user: "octo-cat", score: null, percentage: 87, gridSvgDataUri: null },
+    },
+    {
+      name: "card with a grid",
+      input: { user: "toshi0607", score: 1234, percentage: 56, gridSvgDataUri: "data:image/svg+xml;base64,AAAA", taunt: null },
+    },
+    {
+      name: "score-less cleared card",
+      input: { user: "toshi0607", score: null, percentage: 100, gridSvgDataUri: null, taunt: CLEAR_MESSAGES[0] },
+    },
+    ...CLEAR_MESSAGES.map((message) => ({
+      name: `cleared card: ${message}`,
+      input: {
+        user: "toshi0607",
+        score: 1234,
+        percentage: 100,
+        gridSvgDataUri: null,
+        taunt: message,
+      },
+    })),
+  ])("covers every character the $name prints", ({ input }) => {
+    // #given every supported result variant and each clear message
+    const covered = new Set(FONT_TEXT);
+    // #when
+    const html = buildOgImageHtml(input);
+    const text = html.replace(/<[^>]*>/g, "").replace(/\n/g, "");
+    const missing = [...new Set(text)].filter((char) => !covered.has(char));
     // #then
     expect(missing).toEqual([]);
   });

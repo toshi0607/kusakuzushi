@@ -9,18 +9,23 @@
  * Fonts are subset via the `text` param to keep the fetched TTF small, but the
  * subset must be independent of any single request's username so the module-
  * scope cache below can serve every request without re-fetching: it covers
- * the fixed Japanese phrases plus every character a GitHub username or the
- * score/percentage/domain text could ever contain.
+ * the card's fixed strings (from og-image-html.ts), the clear taunts, and every
+ * character a GitHub username or the score and percentage of a request could
+ * contain.
  */
 
 import { CLEAR_MESSAGES } from "@kusakuzushi/core/clear-message";
 
+import { CARD_FIXED_TEXT } from "./og-image-html";
+
 const FONT_FAMILY = "Noto Sans JP";
 
-/** The card's own fixed strings: the result phrase and the site label. */
-const CARD_TEXT =
-  "の草を刈り取ったスコア草崩" +
-  "kusakuzushi.toshi0607.com" +
+/**
+ * Characters a request can add: a GitHub username and score/percentage digits
+ * and separators. `%`, `.` and the space also appear in the card's fixed
+ * strings; keep them here so this list does not depend on the card's wording.
+ */
+const REQUEST_TEXT =
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
   "%,.- ";
 
@@ -28,12 +33,13 @@ const CARD_TEXT =
  * Every character the card can print, deduplicated (the subset is a set of
  * glyphs — repeats only make the request URL longer).
  *
- * The clear taunts come from core's own table rather than a copy pasted here:
+ * The card's fixed strings and clear taunts come from the modules that own them
+ * rather than a copy pasted here:
  * a character the copy uses but the subset misses renders as tofu, and that
  * failure is invisible until someone looks at a real PNG (2026-07-26: it
  * shipped exactly that way for one render).
  */
-export const FONT_TEXT = [...new Set(CARD_TEXT + CLEAR_MESSAGES.join(""))].join("");
+export const FONT_TEXT = [...new Set(CARD_FIXED_TEXT + REQUEST_TEXT + CLEAR_MESSAGES.join(""))].join("");
 
 // Google's css2 endpoint serves WOFF2 (which satori cannot parse) to modern
 // browsers; this old-Safari User-Agent makes it fall back to a TTF URL.
