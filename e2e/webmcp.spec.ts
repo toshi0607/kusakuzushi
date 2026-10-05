@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { ALL_TOOLS, listedToolNames, runTool, storageFingerprint, TOOL_OUTPUT_CHAR_LIMIT } from "./fixtures";
+import { ALL_TOOLS, listedToolNames, runTool, runToolSettled, storageFingerprint, TOOL_OUTPUT_CHAR_LIMIT } from "./fixtures";
 
 const USER = "toshi0607";
 
@@ -59,14 +59,8 @@ test.describe("WebMCP on the page", () => {
     expect(local.text).not.toContain("not_valid");
 
     // A remote tool error becomes a thrown error in the page (the adapter rethrows isError results).
-    const remote = await page.evaluate(async () => {
-      const testing = (navigator as unknown as { modelContextTesting: { executeTool(name: string, input: string): Promise<string> } }).modelContextTesting;
-      try {
-        return { ok: true, result: await testing.executeTool("remote.get_contribution_grid", JSON.stringify({ user: "not_valid" })) };
-      } catch (error) {
-        return { ok: false, result: String(error) };
-      }
-    });
+    // Chrome 153 reports a tool error only as a generic UnknownError, so the no-echo check is weaker there.
+    const remote = await runToolSettled(page, "remote.get_contribution_grid", { user: "not_valid" });
     expect(remote.ok).toBe(false);
     expect(remote.result).not.toContain("not_valid");
   });
