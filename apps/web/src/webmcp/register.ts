@@ -1,17 +1,19 @@
 /**
- * Registers the page's tools on `navigator.modelContext` and mirrors the
- * remote MCP server's tools (workers/mcp, same origin at `/mcp`) in beside
- * them through Cloudflare's WebMCP adapter.
+ * Registers the page's tools on `document.modelContext` (falling back to
+ * `navigator.modelContext` on older Chrome) and mirrors the remote MCP server's
+ * tools (workers/mcp, same origin at `/mcp`) in beside them through Cloudflare's
+ * WebMCP adapter.
  *
- * Loaded only when the browser has a native `navigator.modelContext`
- * (main.ts gates the import): without one the adapter is a documented
- * no-op, and the adapter alone is ~90 KB gzipped of MCP client — far more
- * than this page's whole script budget (lighthouserc.cjs).
+ * Loaded only when the browser has a native `document.modelContext` or its
+ * older `navigator.modelContext` alias (main.ts gates the import): without
+ * one the adapter is a documented no-op, and the adapter alone is ~90 KB
+ * gzipped of MCP client — far more than this page's whole script budget
+ * (lighthouserc.cjs).
  *
  * The adapter is experimental and pinned exactly (apps/web/package.json);
- * it reads `navigator.modelContext`, not the spec's `document.modelContext`,
- * so it stops working the day Chrome drops that alias. See
- * tasks/webmcp-article-notes.md.
+ * it only reads `navigator.modelContext`, so the page aliases that to
+ * `document.modelContext` when Chrome no longer provides it (Chrome 153).
+ * See tasks/webmcp-article-notes.md.
  */
 
 import { registerWebMcp } from "agents/experimental/webmcp";
@@ -29,8 +31,15 @@ export const REMOTE_TOOL_PREFIX = "remote.";
  */
 const REMOTE_TIMEOUT_MS = 20_000;
 
+function aliasModelContextForAdapter(context: NonNullable<Navigator["modelContext"]>): void {
+  // Chrome 153 dropped the navigator alias; the adapter only reads navigator.modelContext.
+  if (!("modelContext" in navigator)) {
+    Object.defineProperty(navigator, "modelContext", { value: context, configurable: true });
+  }
+}
+
 export async function registerWebMcpTools(controller: AppController, signal: AbortSignal): Promise<void> {
-  const context = navigator.modelContext;
+  const context = document.modelContext ?? navigator.modelContext;
   if (!context) {
     return;
   }
@@ -40,10 +49,14 @@ export async function registerWebMcpTools(controller: AppController, signal: Abo
   // away only with the signal it was registered under.
   for (const tool of createPageTools(controller)) {
     if (signal.aborted) return;
-    context.registerTool(tool, { signal });
+    const registration = context.registerTool(tool, { signal }) as void | Promise<unknown>;
+    if (registration && typeof registration.then === "function") {
+      registration.catch((err) => console.warn("[webmcp] tool registration failed:", err));
+    }
   }
 
   try {
+    aliasModelContextForAdapter(context);
     const remote = await registerWebMcp({
       url: "/mcp",
       prefix: REMOTE_TOOL_PREFIX,
