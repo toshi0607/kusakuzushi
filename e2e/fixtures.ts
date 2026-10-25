@@ -24,16 +24,16 @@ export async function listedToolNames(page: Page): Promise<string[]> {
  */
 export async function runTool(page: Page, name: string, input: Record<string, unknown> = {}): Promise<{ value: unknown; text: string }> {
   const raw = await page.evaluate(
-    async ({ name, inputJson }) => {
+    async ({ name, input }) => {
       const context = (document as unknown as { modelContext: {
         getTools(): Promise<{ name: string }[]>;
-        executeTool(tool: { name: string }, inputJson: string): Promise<string>;
+        executeTool(tool: { name: string }, input: Record<string, unknown>): Promise<string>;
       } }).modelContext;
       const tool = (await context.getTools()).find((tool) => tool.name === name);
       if (!tool) throw new Error(`tool not registered: ${name}`);
-      return context.executeTool(tool, inputJson);
+      return context.executeTool(tool, input);
     },
-    { name, inputJson: JSON.stringify(input) },
+    { name, input },
   );
   let value: unknown;
   try {
@@ -55,20 +55,20 @@ export async function runTool(page: Page, name: string, input: Record<string, un
 /** Runs a registered tool and captures the browser's rejection inside the page. */
 export async function runToolSettled(page: Page, name: string, input: Record<string, unknown> = {}): Promise<{ ok: true; result: string } | { ok: false; result: string }> {
   return page.evaluate(
-    async ({ name, inputJson }) => {
+    async ({ name, input }) => {
       try {
         const context = (document as unknown as { modelContext: {
           getTools(): Promise<{ name: string }[]>;
-          executeTool(tool: { name: string }, inputJson: string): Promise<string>;
+          executeTool(tool: { name: string }, input: Record<string, unknown>): Promise<string>;
         } }).modelContext;
         const tool = (await context.getTools()).find((tool) => tool.name === name);
         if (!tool) throw new Error(`tool not registered: ${name}`);
-        return { ok: true as const, result: await context.executeTool(tool, inputJson) };
+        return { ok: true as const, result: await context.executeTool(tool, input) };
       } catch (error) {
         return { ok: false as const, result: String(error) };
       }
     },
-    { name, inputJson: JSON.stringify(input) },
+    { name, input },
   );
 }
 
