@@ -2533,11 +2533,6 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  semver@7.8.6:
-    resolution: {integrity: sha512-9lpSSU4Mly3mrtruwLs1eLK6+gzbzqeBFwRNjIjE+9LuDpWdYctrQlQ3ej1Ilgi7gknpsTRnPoLP8DpCHqHIJw==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   send@0.19.2:
     resolution: {integrity: sha512-VMbMxbDeehAxpOtWJXlcUS5E8iXh6QmN+BkRX1GARS3wRaXEEgzCcB10gTQazO42tpNIya8xIyNx8fll1OFPrg==}
     engines: {node: '>= 0.8.0'}
@@ -5342,8 +5337,6 @@ snapshots:
   semver@5.7.2: {}
 
   semver@6.3.2: {}
-
-  semver@7.8.6: {}
 
   semver@7.8.6: {}
 
