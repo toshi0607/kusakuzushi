@@ -60,10 +60,14 @@ const assertions = {
 
   /*
    * セッション8 の回帰ガード。Google Fonts の CSS を素の <link rel="stylesheet"> に
-   * 戻すと 2 件増えて落ちる(それで FCP/LCP が 3.0s に戻る)。
+   * 戻すと 2 件増えて落ちる(slow で FCP が 961ms から 2070ms に延びる)。
    * セッション12 で自前 CSS をインライン化したので、いまは 0 件が正。
+   *
+   * 監査名は insight のほうを使う。Lighthouse 13(@lhci/cli 0.16)の LHR には
+   * render-blocking-resources が無い。insight は Lighthouse 12.6.1(@lhci/cli 0.15.1)
+   * にもあり、上の退行でどちらの版でも 2 件になる(2026-11-18 に両方で実測)。
    */
-  "render-blocking-resources": ["error", { maxLength: 0 }],
+  "render-blocking-insight": ["error", { maxLength: 0 }],
 
   // JS が肥大化していないか。実測 9KB(転送量)に対する上限。
   "resource-summary:script:size": ["error", { maxNumericValue: 40000 }],
@@ -72,8 +76,10 @@ const assertions = {
 };
 
 if (target === "production") {
-  // Cloudflare Pages のキャッシュヘッダは本番でしか評価できない
-  assertions["uses-long-cache-ttl"] = ["warn", {}];
+  // Cloudflare Pages のキャッシュヘッダは本番でしか評価できない。
+  // 監査名は render-blocking と同じ理由で insight のほうを使う(Lighthouse 13 に
+  // uses-long-cache-ttl は無い。12.6.1 では両者のスコアと指摘 2 件が一致した)。
+  assertions["cache-insight"] = ["warn", {}];
 }
 
 /*
