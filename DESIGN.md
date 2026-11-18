@@ -206,7 +206,8 @@ site tools が 0 個になった(2026-09-04 実測)。そこで agents 0.22.0 �
 拡張版はページ所有者が GitHub なので計測対象外。
 
 **この構成が守っている性質**: Google Fonts の CSS を素の `<link rel="stylesheet">` に戻すと
-`render-blocking-resources` が 1 → 3 に増え、FCP/LCP が 0.9s → 3.0s に戻って CI が落ちる(実測で確認済み)。
+`render-blocking-insight` が 0 → 2 件に増えて CI が落ちる(2026-11-18 に @lhci/cli 0.15.1 と 0.16.0 の両方で実測)。
+このとき `pnpm lh:slow` の FCP は 961ms → 2070ms に延び、FCP のしきい値でも落ちる(0.15.1 での実測)。
 
 ## 7. フェーズ計画
 

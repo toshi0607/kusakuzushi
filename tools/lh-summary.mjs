@@ -19,8 +19,21 @@ const METRICS = [
   ["TBT", (r) => Math.round(r.audits["total-blocking-time"].numericValue)],
   ["CLS", (r) => Number(r.audits["cumulative-layout-shift"].numericValue.toFixed(4))],
   ["TTFB", (r) => Math.round(r.audits["server-response-time"].numericValue)],
-  ["blocking", (r) => (r.audits["render-blocking-resources"].details?.items ?? []).length],
+  ["blocking", renderBlockingCount],
 ];
+
+/**
+ * render-blocking の件数。監査名は lighthouserc.cjs の assert と揃える。
+ *
+ * 0 件のとき Lighthouse 12 は details を付けない(notApplicable)ので、details が
+ * 無ければ 0 件と読む。監査そのものが LHR に無いときは 0 と区別して "n/a" を出す
+ * (Lighthouse 13 で旧名の render-blocking-resources が消えたとき、ここが例外で
+ * 落ちて緑の計測ごと CI を赤くした)。
+ */
+function renderBlockingCount(r) {
+  const audit = r.audits["render-blocking-insight"];
+  return audit ? (audit.details?.items ?? []).length : "n/a";
+}
 
 const median = (xs) => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
